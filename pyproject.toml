@@ -1,0 +1,46 @@
+[tool.poetry]
+name = "booklens"
+version = "0.1.0"
+description = "A single-user, spoiler-safe reading companion web app"
+authors = ["Anshumaan Ravi"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.32.0"}
+python-multipart = "^0.0.12"
+ebooklib = "^0.18"
+beautifulsoup4 = "^4.12.3"
+lxml = "^5.3.0"
+sentence-transformers = "^3.3.1"
+qdrant-client = "^1.12.1"
+anthropic = "^0.39.0"
+pydantic = "^2.10.3"
+python-dotenv = "^1.0.1"
+pydantic-settings = "^2.13.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+black = "^24.10.0"
+ruff = "^0.8.4"
+mypy = "^1.13.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
