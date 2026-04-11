@@ -44,6 +44,7 @@ class Library(BaseModel):
     """Complete library state."""
 
     series: List[Series]
+    standalone_books: List[Book] = []
 
 
 @dataclass
