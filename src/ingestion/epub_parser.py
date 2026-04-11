@@ -49,8 +49,9 @@ def parse_epub(filepath: str | Path) -> List[ParsedChapter]:
         html_content = item.get_content()
         soup = BeautifulSoup(html_content, "xml")
 
-        # Extract body text (remove HTML tags)
-        text = soup.get_text(separator=" ", strip=True)
+        # Extract body text (preserve paragraph breaks)
+        # Use "\n\n" separator to maintain paragraph boundaries for chunking
+        text = soup.get_text(separator="\n\n", strip=True)
 
         # Skip very short sections (likely metadata, copyright pages, part dividers)
         if len(text) < 100:
