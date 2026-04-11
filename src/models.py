@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class BookStatus(str, Enum):
@@ -59,3 +59,16 @@ class ParsedChapter:
     index: int
     label: str
     text: str
+
+
+class ChunkRecord(BaseModel):
+    """Represents a chunk of text from a chapter with metadata."""
+
+    chunk_id: str
+    chapter_index: int
+    chapter_label: str
+    text: str
+    word_count: int
+    position: int  # Chunk number within chapter (0-indexed)
+
+    model_config = ConfigDict(frozen=True)  # Immutable like ParsedChapter
