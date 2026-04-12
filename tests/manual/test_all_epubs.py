@@ -30,7 +30,7 @@ def test_epub(epub_path: Path) -> None:
         print(f"\n... and {len(chapters) - 15} more chapters")
 
     print("\n" + "=" * 80)
-    print(f"Sample from first chapter (index 0):")
+    print("Sample from first chapter (index 0):")
     print("=" * 80)
     if len(chapters) > 0:
         sample = chapters[0].text[:300]

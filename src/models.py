@@ -41,10 +41,14 @@ class Series(BaseModel):
 
 
 class Library(BaseModel):
-    """Complete library state."""
+    """Complete library state.
+
+    All books live inside a Series, including standalone novels.
+    A standalone novel is represented as a single-book series — this avoids
+    a separate code path in the query engine and keeps the data model uniform.
+    """
 
     series: List[Series]
-    standalone_books: List[Book] = []
 
 
 @dataclass

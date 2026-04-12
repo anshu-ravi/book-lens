@@ -83,3 +83,26 @@ Chunks need to be embedded for semantic search. Options range from local open-so
 - Embedding quality is lower than larger models (e.g. OpenAI `text-embedding-3-large`)
 - All queries must use the same model as indexing — changing models requires re-indexing all books
 - Model loading takes ~1 second; handled via singleton in `src/ingestion/embedder.py`
+
+---
+
+## ADR-004: No standalone_books — All Books Live in a Series
+
+**Date:** 2026-04-12
+**Phase:** 4
+
+### Context
+The original `Library` model had a `standalone_books: List[Book]` field alongside `series: List[Series]`. A user asked how to upload a standalone novel, exposing that this field had no corresponding API endpoint and would require a separate code path in every layer (manager, API, query engine, UI).
+
+### Decision
+Remove `standalone_books` from the `Library` model entirely. A standalone novel is represented as a **single-book series** — the user creates a series with the same name as the book, then uploads the book into it.
+
+### Rationale
+- The query engine (Phase 5) filters vectors by `series_id` + `book_index`. A single-book series works identically — no special cases
+- Eliminates a dead field and a second code path through every layer
+- If a standalone novel later gets a sequel, the series is already there
+- The UX cost is minimal: Phase 6 can visually distinguish single-book series from multi-book ones
+
+### Consequences
+- `standalone_books` removed from `Library` model`, all manager functions, and tests
+- Any existing `library.json` files with `standalone_books` data would need migration (not a concern at this stage — no production data)
