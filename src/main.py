@@ -4,6 +4,7 @@ import shutil
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncGenerator
 
+import anthropic
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
@@ -22,6 +23,8 @@ from src.library.manager import (
     upsert_book,
 )
 from src.models import Book, BookStatus, Chapter, Library
+from src.query.prompt_builder import build_prompt
+from src.query.retriever import retrieve_chunks
 from src.vector_store.qdrant_store import QdrantVectorStore
 
 
@@ -35,6 +38,29 @@ class CreateSeriesRequest(BaseModel):
 
     id: str
     name: str
+
+
+class QueryRequest(BaseModel):
+    """Request body for the query endpoint."""
+
+    series_id: str
+    question: str
+    top_k: int = 5
+
+
+class SourceChunk(BaseModel):
+    """A single source chunk returned alongside a query answer."""
+
+    book_index: int
+    chapter_label: str
+    score: float
+
+
+class QueryResponse(BaseModel):
+    """Response returned from the query endpoint."""
+
+    answer: str
+    sources: list[SourceChunk]
 
 
 class UploadBookResponse(BaseModel):
@@ -230,3 +256,53 @@ def delete_book(series_id: str, book_index: int, request: Request) -> Library:
 
     save_library(updated)
     return updated
+
+
+@app.post("/query", response_model=QueryResponse)
+def query(body: QueryRequest, request: Request) -> QueryResponse:
+    """Ask a spoiler-safe question about a series.
+
+    Retrieves relevant chunks filtered to the user's reading progress,
+    builds a prompt, and returns Claude's answer with source attribution.
+
+    Args:
+        body: series_id, question, and optional top_k.
+
+    Returns:
+        Claude's answer and the source chunks it was based on.
+
+    Raises:
+        404: If the series does not exist.
+    """
+    library = load_library()
+    series = get_series(library, body.series_id)
+    if series is None:
+        raise HTTPException(status_code=404, detail=f"Series '{body.series_id}' not found.")
+
+    vector_store: QdrantVectorStore = request.app.state.vector_store
+    chunks = retrieve_chunks(body.question, series, vector_store, body.top_k)
+
+    if not chunks:
+        return QueryResponse(
+            answer="I don't have access to that information based on your current reading progress.",
+            sources=[],
+        )
+
+    prompt = build_prompt(body.question, chunks, series)
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    message = client.messages.create(
+        model=settings.llm_model,
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    answer = message.content[0].text
+
+    sources = [
+        SourceChunk(
+            book_index=chunk.book_index,
+            chapter_label=chunk.chapter_label,
+            score=round(chunk.score, 3),
+        )
+        for chunk in chunks
+    ]
+    return QueryResponse(answer=answer, sources=sources)
