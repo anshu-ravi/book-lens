@@ -32,9 +32,7 @@ def _parse_and_chunk() -> list:
 
     all_chunks = []
     for chapter in chapters:
-        all_chunks.extend(
-            chunk_chapter(chapter, settings.chunk_size, settings.chunk_overlap)
-        )
+        all_chunks.extend(chunk_chapter(chapter, settings.chunk_size, settings.chunk_overlap))
     print(f"  Chunked into {len(all_chunks)} chunks")
     return all_chunks
 

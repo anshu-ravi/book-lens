@@ -114,7 +114,7 @@ def test_chunker() -> None:
             print(f"  ⚠️ Chapter {ch_idx} has incorrect positions: {actual_positions}")
             break
     else:
-        print(f"  Chunk positions correct: ✅")
+        print("  Chunk positions correct: ✅")
 
     print("\n" + "=" * 80)
     print("✅ Chunking test complete!")
