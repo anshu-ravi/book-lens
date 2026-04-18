@@ -2,10 +2,12 @@
 
 import shutil
 from contextlib import asynccontextmanager
-from typing import Annotated, AsyncGenerator
+from typing import Annotated, AsyncGenerator, Optional
 
 import anthropic
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.config import settings
@@ -20,6 +22,7 @@ from src.library.manager import (
     remove_book,
     remove_series,
     save_library,
+    update_book_status,
     upsert_book,
 )
 from src.models import Book, BookStatus, Chapter, Library
@@ -38,6 +41,13 @@ class CreateSeriesRequest(BaseModel):
 
     id: str
     name: str
+
+
+class UpdateBookStatusRequest(BaseModel):
+    """Request body for updating a book's reading status."""
+
+    status: BookStatus
+    current_chapter_index: Optional[int] = None
 
 
 class QueryRequest(BaseModel):
@@ -91,6 +101,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="BookLens", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="src/static"), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def root() -> FileResponse:
+    """Serve the frontend."""
+    return FileResponse("src/static/index.html")
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +271,36 @@ def delete_book(series_id: str, book_index: int, request: Request) -> Library:
     if epub_path.exists():
         epub_path.unlink()
 
+    save_library(updated)
+    return updated
+
+
+@app.patch("/library/series/{series_id}/books/{book_index}/status", response_model=Library)
+def patch_book_status(series_id: str, book_index: int, body: UpdateBookStatusRequest) -> Library:
+    """Update a book's reading status and current chapter.
+
+    Args:
+        series_id: Series containing the book.
+        book_index: 0-based book index to update.
+        body: New status and optional current chapter index.
+
+    Returns:
+        Updated library state.
+
+    Raises:
+        404: If the series or book does not exist.
+    """
+    library = load_library()
+    try:
+        updated = update_book_status(
+            library,
+            series_id,
+            book_index,
+            body.status,
+            body.current_chapter_index,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     save_library(updated)
     return updated
 
