@@ -9,7 +9,7 @@ holding state themselves.
 import json
 
 from src.config import settings
-from src.models import Book, Library, Series
+from src.models import Book, BookStatus, Library, Series
 
 
 def load_library() -> Library:
@@ -126,6 +126,47 @@ def remove_book(library: Library, series_id: str, book_index: int) -> Library:
         for s in library.series
     ]
     return Library(series=updated_series)
+
+
+def update_book_status(
+    library: Library,
+    series_id: str,
+    book_index: int,
+    status: BookStatus,
+    current_chapter_index: int | None,
+) -> Library:
+    """Update a book's reading status and current chapter progress.
+
+    Args:
+        library: Current library state.
+        series_id: Series containing the book.
+        book_index: 0-based index of the book to update.
+        status: New reading status.
+        current_chapter_index: Chapter the user is currently reading (required
+            when status is READING, ignored otherwise).
+
+    Returns:
+        Updated Library.
+
+    Raises:
+        ValueError: If series_id or book_index does not exist.
+    """
+    series = get_series(library, series_id)
+    if series is None:
+        raise ValueError(f"Series '{series_id}' not found.")
+
+    book = next((b for b in series.books if b.index == book_index), None)
+    if book is None:
+        raise ValueError(f"Book {book_index} not found in series '{series_id}'.")
+
+    updated_book = Book(
+        index=book.index,
+        title=book.title,
+        status=status,
+        chapters=book.chapters,
+        current_chapter_index=current_chapter_index if status == BookStatus.READING else None,
+    )
+    return upsert_book(library, series_id, updated_book)
 
 
 def upsert_book(library: Library, series_id: str, book: Book) -> Library:

@@ -18,6 +18,7 @@ from src.library.manager import (
     remove_book,
     remove_series,
     save_library,
+    update_book_status,
     upsert_book,
 )
 
@@ -232,6 +233,58 @@ def test_remove_book_unknown_index() -> None:
     print("  ✅ remove_book: raises ValueError for unknown book index")
 
 
+def test_update_book_status_to_reading() -> None:
+    """update_book_status sets READING with chapter index."""
+    library = Library(series=[])
+    library = create_series(library, "red-rising", "Red Rising Saga")
+    book = Book(
+        index=0,
+        title="Red Rising",
+        status=BookStatus.NOT_STARTED,
+        chapters=[Chapter(index=i, label=f"Chapter {i}") for i in range(10)],
+    )
+    library = upsert_book(library, "red-rising", book)
+
+    updated = update_book_status(library, "red-rising", 0, BookStatus.READING, 4)
+    series = get_series(updated, "red-rising")
+    assert series is not None
+    assert series.books[0].status == BookStatus.READING
+    assert series.books[0].current_chapter_index == 4
+    print("  ✅ update_book_status: READING with chapter index set")
+
+
+def test_update_book_status_to_completed() -> None:
+    """update_book_status sets COMPLETED and clears chapter index."""
+    library = Library(series=[])
+    library = create_series(library, "red-rising", "Red Rising Saga")
+    book = Book(
+        index=0,
+        title="Red Rising",
+        status=BookStatus.READING,
+        chapters=[],
+        current_chapter_index=5,
+    )
+    library = upsert_book(library, "red-rising", book)
+
+    updated = update_book_status(library, "red-rising", 0, BookStatus.COMPLETED, None)
+    series = get_series(updated, "red-rising")
+    assert series is not None
+    assert series.books[0].status == BookStatus.COMPLETED
+    assert series.books[0].current_chapter_index is None
+    print("  ✅ update_book_status: COMPLETED clears current_chapter_index")
+
+
+def test_update_book_status_unknown() -> None:
+    """update_book_status raises ValueError for unknown series/book."""
+    library = Library(series=[])
+    try:
+        update_book_status(library, "nonexistent", 0, BookStatus.COMPLETED, None)
+        assert False, "Expected ValueError"
+    except ValueError as exc:
+        assert "not found" in str(exc)
+    print("  ✅ update_book_status: raises ValueError for unknown series")
+
+
 def cleanup() -> None:
     """Remove test library file."""
     if _TEST_LIBRARY_PATH.exists():
@@ -258,6 +311,9 @@ def main() -> None:
     test_remove_book()
     test_remove_book_unknown_series()
     test_remove_book_unknown_index()
+    test_update_book_status_to_reading()
+    test_update_book_status_to_completed()
+    test_update_book_status_unknown()
     cleanup()
 
     print("\n✅ All library manager tests passed!")

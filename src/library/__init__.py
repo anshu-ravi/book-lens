@@ -7,6 +7,7 @@ from src.library.manager import (
     remove_book,
     remove_series,
     save_library,
+    update_book_status,
     upsert_book,
 )
 
@@ -18,4 +19,5 @@ __all__ = [
     "upsert_book",
     "remove_series",
     "remove_book",
+    "update_book_status",
 ]
