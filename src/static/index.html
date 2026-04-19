@@ -70,7 +70,7 @@
       font-family: 'Playfair Display', serif;
       font-size: 1.5rem;
       font-weight: 700;
-      color: var(--text);
+      color: var(--ink);
       letter-spacing: -0.02em;
       display: flex;
       align-items: center;
@@ -78,7 +78,7 @@
     }
 
     .wordmark span {
-      color: var(--accent);
+      color: var(--brass);
     }
 
     /* ── Tab nav ──────────────────────────────────────────────── */
@@ -86,7 +86,7 @@
       display: flex;
       gap: 0;
       margin-top: 20px;
-      border-bottom: 1px solid var(--border);
+      border-bottom: 1px solid var(--hairline);
     }
 
     .tab {
@@ -94,7 +94,7 @@
       font-size: 0.875rem;
       font-weight: 600;
       font-family: 'Manrope', sans-serif;
-      color: var(--text-muted);
+      color: var(--ink-3);
       background: none;
       border: none;
       border-bottom: 2px solid transparent;
@@ -105,11 +105,11 @@
       white-space: nowrap;
     }
 
-    .tab:hover { color: var(--text); }
+    .tab:hover { color: var(--ink); }
 
     .tab.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
+      color: var(--brass);
+      border-bottom-color: var(--brass);
     }
 
     /* ── Main content ─────────────────────────────────────────── */
@@ -130,8 +130,8 @@
 
     /* ── Cards ────────────────────────────────────────────────── */
     .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
+      background: var(--bone-2);
+      border: 1px solid var(--hairline);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       padding: 20px;
@@ -142,13 +142,13 @@
       font-family: 'Playfair Display', serif;
       font-size: 1.05rem;
       font-weight: 600;
-      color: var(--text);
+      color: var(--ink);
       margin-bottom: 4px;
     }
 
     .card-sub {
       font-size: 0.8rem;
-      color: var(--text-muted);
+      color: var(--ink-3);
       margin-bottom: 16px;
     }
 
@@ -158,7 +158,7 @@
       align-items: center;
       gap: 10px;
       padding: 10px 0;
-      border-top: 1px solid var(--border-soft);
+      border-top: 1px solid var(--hairline);
     }
 
     .book-row:first-of-type { border-top: none; }
@@ -167,7 +167,7 @@
       flex: 1;
       font-size: 0.9rem;
       font-weight: 500;
-      color: var(--text);
+      color: var(--ink);
       min-width: 0;
       white-space: nowrap;
       overflow: hidden;
@@ -188,7 +188,7 @@
 
     .badge-completed  { background: var(--green-dim);  color: var(--green);  }
     .badge-reading    { background: var(--amber-dim);  color: var(--amber);  }
-    .badge-not-started{ background: rgba(255,255,255,0.06); color: var(--text-muted); }
+    .badge-not-started{ background: rgba(255,255,255,0.06); color: var(--ink-3); }
 
     /* ── Buttons ──────────────────────────────────────────────── */
     .btn {
@@ -211,17 +211,17 @@
     .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
     .btn-primary {
-      background: var(--accent);
+      background: var(--brass);
       color: #1a1208;
     }
-    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:hover:not(:disabled) { background: var(--brass); }
 
     .btn-ghost {
       background: transparent;
-      color: var(--text-muted);
-      border: 1px solid var(--border);
+      color: var(--ink-3);
+      border: 1px solid var(--hairline);
     }
-    .btn-ghost:hover:not(:disabled) { color: var(--text); border-color: rgba(255,255,255,0.18); }
+    .btn-ghost:hover:not(:disabled) { color: var(--ink); border-color: rgba(255,255,255,0.18); }
 
     .btn-danger {
       background: var(--red-dim);
@@ -237,7 +237,7 @@
       border: none;
       padding: 5px;
       cursor: pointer;
-      color: var(--text-muted);
+      color: var(--ink-3);
       border-radius: 6px;
       transition: color var(--transition), background var(--transition);
       display: inline-flex;
@@ -252,7 +252,7 @@
       display: block;
       font-size: 0.8rem;
       font-weight: 600;
-      color: var(--text-muted);
+      color: var(--ink-3);
       text-transform: uppercase;
       letter-spacing: 0.05em;
       margin-bottom: 6px;
@@ -263,10 +263,10 @@
     select,
     textarea {
       width: 100%;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
+      background: var(--bone-2);
+      border: 1px solid var(--hairline);
       border-radius: var(--radius-sm);
-      color: var(--text);
+      color: var(--ink);
       font-family: 'Manrope', sans-serif;
       font-size: 0.9rem;
       padding: 10px 14px;
@@ -276,7 +276,7 @@
     }
 
     input:focus, select:focus, textarea:focus {
-      border-color: var(--accent);
+      border-color: var(--brass);
     }
 
     textarea { resize: vertical; min-height: 100px; }
@@ -290,7 +290,7 @@
 
     /* ── File drop zone ───────────────────────────────────────── */
     .drop-zone {
-      border: 2px dashed var(--border);
+      border: 2px dashed var(--hairline);
       border-radius: var(--radius);
       padding: 32px 20px;
       text-align: center;
@@ -301,8 +301,8 @@
 
     .drop-zone:hover,
     .drop-zone.drag-over {
-      border-color: var(--accent);
-      background: var(--accent-dim);
+      border-color: var(--brass);
+      background: var(--brass-dim);
     }
 
     .drop-zone input[type="file"] {
@@ -318,15 +318,15 @@
 
     .drop-zone-text {
       font-size: 0.875rem;
-      color: var(--text-muted);
+      color: var(--ink-3);
     }
 
-    .drop-zone-text strong { color: var(--accent); }
+    .drop-zone-text strong { color: var(--brass); }
 
     .drop-zone-filename {
       margin-top: 8px;
       font-size: 0.85rem;
-      color: var(--text);
+      color: var(--ink);
       font-weight: 500;
     }
 
@@ -341,14 +341,14 @@
 
     .progress-bar {
       height: 100%;
-      background: var(--accent);
+      background: var(--brass);
       border-radius: 99px;
       transition: width 0.4s ease;
     }
 
     .progress-label {
       font-size: 0.8rem;
-      color: var(--text-muted);
+      color: var(--ink-3);
       margin-top: 6px;
       text-align: center;
     }
@@ -356,7 +356,7 @@
     /* ── Divider ──────────────────────────────────────────────── */
     .divider {
       height: 1px;
-      background: var(--border);
+      background: var(--hairline);
       margin: 20px 0;
     }
 
@@ -378,7 +378,7 @@
     .empty-state {
       text-align: center;
       padding: 56px 20px;
-      color: var(--text-muted);
+      color: var(--ink-3);
     }
 
     .empty-state-icon { font-size: 3rem; margin-bottom: 12px; }
@@ -410,8 +410,8 @@
     }
 
     .modal {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
+      background: var(--bone-2);
+      border: 1px solid var(--hairline);
       border-radius: var(--radius);
       box-shadow: 0 24px 64px rgba(0,0,0,0.5);
       padding: 24px;
@@ -428,7 +428,7 @@
 
     .modal-sub {
       font-size: 0.825rem;
-      color: var(--text-muted);
+      color: var(--ink-3);
       margin-bottom: 20px;
     }
 
@@ -448,18 +448,18 @@
       gap: 10px;
       padding: 10px 14px;
       border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
+      border: 1px solid var(--hairline);
       cursor: pointer;
       transition: border-color var(--transition), background var(--transition);
     }
 
     .radio-option:has(input:checked) {
-      border-color: var(--accent);
-      background: var(--accent-dim);
+      border-color: var(--brass);
+      background: var(--brass-dim);
     }
 
     .radio-option input[type="radio"] {
-      accent-color: var(--accent);
+      accent-color: var(--brass);
       width: 16px;
       height: 16px;
       flex-shrink: 0;
@@ -469,9 +469,9 @@
 
     /* ── Answer card ──────────────────────────────────────────── */
     .answer-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-left: 3px solid var(--accent);
+      background: var(--bone-2);
+      border: 1px solid var(--hairline);
+      border-left: 3px solid var(--brass);
       border-radius: var(--radius);
       padding: 20px;
       margin-top: 20px;
@@ -480,14 +480,14 @@
     .answer-text {
       font-size: 0.925rem;
       line-height: 1.75;
-      color: var(--text);
+      color: var(--ink);
       white-space: pre-wrap;
     }
 
     .sources-toggle {
       margin-top: 14px;
       font-size: 0.8rem;
-      color: var(--text-muted);
+      color: var(--ink-3);
       cursor: pointer;
       display: inline-flex;
       align-items: center;
@@ -495,7 +495,7 @@
       user-select: none;
     }
 
-    .sources-toggle:hover { color: var(--accent); }
+    .sources-toggle:hover { color: var(--brass); }
 
     .source-chip {
       display: inline-flex;
@@ -503,20 +503,20 @@
       gap: 6px;
       padding: 4px 10px;
       background: rgba(255,255,255,0.05);
-      border: 1px solid var(--border);
+      border: 1px solid var(--hairline);
       border-radius: 99px;
       font-size: 0.775rem;
-      color: var(--text-muted);
+      color: var(--ink-3);
       margin: 4px 4px 0 0;
     }
 
-    .source-chip span { color: var(--accent); font-weight: 600; }
+    .source-chip span { color: var(--brass); font-weight: 600; }
 
     /* ── Spinner ──────────────────────────────────────────────── */
     .spinner {
       width: 18px; height: 18px;
       border: 2px solid rgba(255,255,255,0.1);
-      border-top-color: var(--accent);
+      border-top-color: var(--brass);
       border-radius: 50%;
       animation: spin 0.7s linear infinite;
       flex-shrink: 0;
@@ -526,8 +526,8 @@
 
     /* ── Inline form (new series) ─────────────────────────────── */
     .inline-form {
-      background: var(--bg-input);
-      border: 1px solid var(--border);
+      background: var(--bone-2);
+      border: 1px solid var(--hairline);
       border-radius: var(--radius);
       padding: 16px;
       margin-bottom: 20px;
@@ -543,17 +543,17 @@
 
     /* ── Reading progress summary ─────────────────────────────── */
     .progress-summary {
-      background: var(--accent-dim);
+      background: var(--brass-dim);
       border: 1px solid rgba(200,150,90,0.2);
       border-radius: var(--radius-sm);
       padding: 12px 16px;
       font-size: 0.85rem;
-      color: var(--text-muted);
+      color: var(--ink-3);
       margin-bottom: 16px;
       line-height: 1.5;
     }
 
-    .progress-summary strong { color: var(--text); }
+    .progress-summary strong { color: var(--ink); }
 
     /* ── Responsive ───────────────────────────────────────────── */
     @media (max-width: 480px) {
@@ -632,8 +632,8 @@
             </button>
           </div>
 
-          <div x-show="series.books.length === 0" style="font-size:0.85rem;color:var(--text-muted);padding:8px 0;">
-            No books — <a href="#" style="color:var(--accent);text-decoration:none;" @click.prevent="upload.seriesId = series.id; switchView('upload')">upload one</a>
+          <div x-show="series.books.length === 0" style="font-size:0.85rem;color:var(--ink-3);padding:8px 0;">
+            No books — <a href="#" style="color:var(--brass);text-decoration:none;" @click.prevent="upload.seriesId = series.id; switchView('upload')">upload one</a>
           </div>
 
           <template x-for="book in sortedBooks(series.books)" :key="book.index">
