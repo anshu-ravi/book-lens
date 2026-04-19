@@ -1,6 +1,5 @@
 """BookLens FastAPI application."""
 
-import inspect
 import logging
 import shutil
 from contextlib import asynccontextmanager
@@ -279,12 +278,12 @@ async def upload_book(
         
         cover_result = extract_cover(tmp_path) or fetch_cover_open_library(title, tmp_path)
         if cover_result is not None:
-            cover_bytes, cover_ext = cover_result
-            cover_path = f"{user_id}/{series_id}/cover_{book_index}{cover_ext}"
+            cover_bytes, _ = cover_result
+            cover_path = f"{user_id}/{series_id}/cover_{book_index}.jpg"
             client.storage.from_("covers").upload(
                 path=cover_path,
                 file=cover_bytes,
-                file_options={"contentType": f"image/{cover_ext[1:]}", "upsert": "true"}
+                file_options={"contentType": "image/jpeg", "upsert": "true"}
             )
             has_cover = True
         
@@ -440,18 +439,14 @@ async def extract_book_endpoint(
     anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     logger.info("Starting knowledge extraction: series=%s book=%d", series_id, book_index)
-    # Note: extract_book_knowledge might need to be async if it calls LLM
-    # If it's sync, it remains as is. I'll check its definition if needed.
-    kb = extract_book_knowledge(
+    kb = await extract_book_knowledge(
         chapters=parsed_chapters,
         series_id=series_id,
         book_index=book_index,
+        user_id=user_id,
         client=anthropic_client,
         extraction_model=settings.extraction_model,
     )
-    # kb might be a coroutine now if I change extract_book_knowledge
-    if inspect.iscoroutine(kb):
-        kb = await kb
 
     await save_knowledge(kb, user_id)
     
