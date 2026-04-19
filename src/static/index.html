@@ -574,6 +574,12 @@
       margin-bottom: 16px;
     }
 
+    .form-hint {
+      font-size: 0.8rem;
+      color: var(--ink-3);
+      margin-bottom: 16px;
+    }
+
     label {
       display: block;
       font-family: var(--mono);
@@ -1707,13 +1713,6 @@
           </svg>
           Ask
         </button>
-        <button class="sidebar-tab" :class="{ active: view === 'compendium' }"
-          @click="switchView('compendium'); loadCompendium();">
-          <svg viewBox="0 0 20 20" fill="none">
-            <path d="M4 4h12M4 10h12M4 16h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-          Lore
-        </button>
       </nav>
       <button class="sidebar-signout" @click="logOut()">
         <svg viewBox="0 0 20 20" fill="none">
@@ -2033,6 +2032,9 @@
               <input type="number" x-model.number="upload.bookIndex" min="1" placeholder="1" style="max-width:120px;" />
             </div>
 
+            <!-- Standalone book hint -->
+            <p class="form-hint">Uploading a standalone book? Use the same value for Series ID, Series Name, and Book Title.</p>
+
             <!-- Epub file picker -->
             <div class="form-group">
               <label>Epub File</label>
@@ -2080,161 +2082,6 @@
         </div>
 
         <!-- ═══════════════════ COMPENDIUM VIEW ═══════════════════════ -->
-        <div x-show="view === 'compendium'" class="view-enter" style="padding:20px 0 48px;">
-          <header style="margin-bottom:20px;">
-            <div class="view-eyebrow">Lore</div>
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
-              <h1 class="view-title-display" style="font-size:36px;">The Compendium.</h1>
-              <!-- Extraction coverage ring -->
-              <template x-if="compendium.seriesId && !compendium.syncing && loreExtractionPct().total > 0">
-                <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:4px;padding-top:4px;">
-                  <svg width="52" height="52" viewBox="0 0 52 52">
-                    <circle cx="26" cy="26" r="22" fill="none" stroke="var(--bone-3)" stroke-width="4"/>
-                    <circle cx="26" cy="26" r="22" fill="none" stroke="var(--brass)" stroke-width="4"
-                      stroke-linecap="round"
-                      :stroke-dasharray="2 * Math.PI * 22"
-                      :stroke-dashoffset="2 * Math.PI * 22 * (1 - loreExtractionPct().pct / 100)"
-                      transform="rotate(-90 26 26)"
-                      style="transition:stroke-dashoffset 0.5s ease;"/>
-                    <text x="26" y="30" text-anchor="middle"
-                      style="font-family:var(--mono);font-size:10px;fill:var(--ink);font-weight:600;"
-                      x-text="loreExtractionPct().pct + '%'"></text>
-                  </svg>
-                  <span style="font-family:var(--mono);font-size:0.6rem;color:var(--ink-4);letter-spacing:0.06em;text-transform:uppercase;">Extracted</span>
-                </div>
-              </template>
-            </div>
-
-            <div style="display:flex;align-items:center;gap:8px;margin-top:14px;flex-wrap:wrap;">
-              <select x-model="compendium.seriesId" @change="loadCompendium()"
-                style="font-family:var(--mono);font-size:11px;padding:5px 32px 5px 10px;background:var(--bone-2);border:1px solid var(--hairline);border-radius:4px;color:var(--ink);outline:none;appearance:none;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8864a' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 10px center;">
-                <option value="" disabled>Select a series...</option>
-                <template x-for="s in (library?.series ?? [])" :key="s.id">
-                  <option :value="s.id" x-text="s.name"></option>
-                </template>
-              </select>
-              <button class="btn btn-sm" style="background:var(--bone-2);color:var(--ink);" @click="syncLore()"
-                :disabled="compendium.syncing || !compendium.seriesId">
-                <span x-show="compendium.syncing" class="spinner" style="width:12px;height:12px;"></span>
-                <span x-text="compendium.syncing ? 'Extracting...' : 'Extract Lore'"></span>
-              </button>
-            </div>
-
-            <!-- Active sync progress bar -->
-            <div x-show="compendium.syncing && compendium.syncProgress.total > 0" style="margin-top:14px;">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
-                <span style="font-family:var(--mono);font-size:0.65rem;color:var(--ink-3);letter-spacing:0.05em;"
-                  x-text="'Processing: ' + compendium.syncProgress.bookTitle"></span>
-                <span style="font-family:var(--mono);font-size:0.65rem;color:var(--ink-4);"
-                  x-text="compendium.syncProgress.current + ' / ' + compendium.syncProgress.total + ' books'"></span>
-              </div>
-              <div style="height:3px;background:var(--bone-3);border-radius:100px;overflow:hidden;">
-                <div style="height:100%;background:var(--brass);border-radius:100px;transition:width 0.4s ease;"
-                  :style="'width:' + Math.round((compendium.syncProgress.current / compendium.syncProgress.total) * 100) + '%'">
-                </div>
-              </div>
-            </div>
-          </header>
-
-          <!-- Loading -->
-          <div x-show="loadingCompendium" class="empty-state">
-            <span class="spinner"></span>
-            <p>Loading compendium...</p>
-          </div>
-
-          <!-- Empty -->
-          <div x-show="!loadingCompendium && compendium.characters.length === 0" class="empty-state">
-            <p>No lore extracted yet. Select a series and click "Extract Lore" after uploading a book.</p>
-          </div>
-
-          <!-- Content -->
-          <div x-show="!loadingCompendium && compendium.characters.length > 0">
-
-            <!-- Inner tab bar -->
-            <div style="display:flex;gap:2px;margin-bottom:24px;border-bottom:1px solid var(--hairline);padding-bottom:0;">
-              <template x-for="tab in [{id:'characters',label:'Characters'},{id:'relationships',label:'Relationships'},{id:'world',label:'World'}]" :key="tab.id">
-                <button @click="compendium.tab = tab.id"
-                  :style="compendium.tab === tab.id
-                    ? 'border-bottom:2px solid var(--brass);color:var(--ink);margin-bottom:-1px;'
-                    : 'border-bottom:2px solid transparent;color:var(--ink-3);margin-bottom:-1px;'"
-                  style="background:none;border-top:none;border-left:none;border-right:none;padding:8px 14px;font-family:var(--mono);font-size:0.7rem;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:color var(--transition);"
-                  x-text="tab.label">
-                </button>
-              </template>
-            </div>
-
-            <!-- Characters tab -->
-            <div x-show="compendium.tab === 'characters'" style="display:flex;flex-direction:column;gap:12px;">
-              <template x-for="char in compendium.characters" :key="char.name">
-                <div class="card">
-                  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
-                    <div class="card-title" x-text="char.name"></div>
-                    <div x-show="char.faction" style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--brass);opacity:0.85;" x-text="char.faction"></div>
-                  </div>
-                  <div x-show="char.role" class="card-sub" style="color:var(--moss);margin-bottom:6px;" x-text="char.role"></div>
-                  <p x-show="char.description" style="font-size:13.5px;color:var(--ink-2);line-height:1.6;margin-bottom:8px;" x-text="char.description"></p>
-                  <div x-show="char.aliases && char.aliases.length" style="font-family:var(--mono);font-size:0.65rem;color:var(--ink-4);letter-spacing:0.05em;">
-                    Also known as: <span x-text="char.aliases.join(', ')"></span>
-                  </div>
-                  <div x-show="char.key_events && char.key_events.length" style="margin-top:10px;display:flex;flex-direction:column;gap:5px;">
-                    <div style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-4);margin-bottom:2px;">Key Events</div>
-                    <template x-for="ev in char.key_events" :key="ev.description">
-                      <div style="font-size:13px;color:var(--ink-2);padding-left:10px;border-left:2px solid var(--hairline);">
-                        <span style="font-family:var(--mono);font-size:0.6rem;color:var(--ink-4);" x-text="'Bk '+(ev.book_index+1)+' Ch '+(ev.chapter_index+1)+' · '"></span>
-                        <span x-text="ev.description"></span>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-              </template>
-            </div>
-
-            <!-- Relationships tab -->
-            <div x-show="compendium.tab === 'relationships'" style="display:flex;flex-direction:column;gap:12px;">
-              <div x-show="compendium.relationships.length === 0" class="empty-state" style="padding:32px 0;">
-                <p>No relationships extracted yet.</p>
-              </div>
-              <template x-for="rel in compendium.relationships" :key="rel.character_a + rel.character_b">
-                <div class="card">
-                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
-                    <span class="card-title" x-text="rel.character_a"></span>
-                    <span style="color:var(--ink-4);">↔</span>
-                    <span class="card-title" x-text="rel.character_b"></span>
-                    <span style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--brass);padding:2px 7px;background:var(--brass-dim);border-radius:100px;" x-text="rel.type"></span>
-                  </div>
-                  <p style="font-size:13.5px;color:var(--ink-2);line-height:1.6;margin-bottom:8px;" x-text="rel.description"></p>
-                  <div x-show="rel.moments && rel.moments.length" style="display:flex;flex-direction:column;gap:5px;margin-top:8px;">
-                    <div style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--ink-4);margin-bottom:2px;">Key Moments</div>
-                    <template x-for="m in rel.moments" :key="m.description">
-                      <div style="font-size:13px;color:var(--ink-2);padding-left:10px;border-left:2px solid var(--hairline);">
-                        <span style="font-family:var(--mono);font-size:0.6rem;color:var(--ink-4);" x-text="'Bk '+(m.book_index+1)+' Ch '+(m.chapter_index+1)+' · '"></span>
-                        <span x-text="m.description"></span>
-                      </div>
-                    </template>
-                  </div>
-                </div>
-              </template>
-            </div>
-
-            <!-- World tab -->
-            <div x-show="compendium.tab === 'world'" style="display:flex;flex-direction:column;gap:12px;">
-              <div x-show="compendium.world_facts.length === 0" class="empty-state" style="padding:32px 0;">
-                <p>No world facts extracted yet.</p>
-              </div>
-              <template x-for="fact in compendium.world_facts" :key="fact.name">
-                <div class="card">
-                  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
-                    <div class="card-title" x-text="fact.name"></div>
-                    <span style="font-family:var(--mono);font-size:0.65rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--moss);" x-text="fact.category"></span>
-                  </div>
-                  <p style="font-size:13.5px;color:var(--ink-2);line-height:1.6;" x-text="fact.description"></p>
-                </div>
-              </template>
-            </div>
-
-          </div>
-        </div>
-
         <!-- ═══════════════════ ASK VIEW ═══════════════════════ -->
         <div x-show="view === 'ask'" class="view-enter ask-view-layout">
 
@@ -2418,14 +2265,6 @@
           Upload
           <div class="tab-dot"></div>
         </button>
-        <button class="tab" :class="{ active: view === 'compendium' }"
-          @click="switchView('compendium'); loadCompendium();">
-          <svg viewBox="0 0 20 20" fill="none">
-            <path d="M4 4h12M4 10h12M4 16h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-          </svg>
-          Lore
-          <div class="tab-dot"></div>
-        </button>
         <button class="tab" :class="{ active: view === 'ask' }" @click="switchView('ask')">
           <svg viewBox="0 0 20 20" fill="none">
             <path d="M10 2.5a7.5 7.5 0 00-6.3 11.6L2.5 17.5l3.4-1.2A7.5 7.5 0 1010 2.5z" stroke="currentColor"
@@ -2530,8 +2369,6 @@
         uploadSuccess: '',
         uploadError: '',
 
-        compendium: { characters: [], relationships: [], world_facts: [], extracted_chapters: [], seriesId: '', syncing: false, tab: 'characters', syncProgress: { current: 0, total: 0, bookTitle: '' } },
-        loadingCompendium: false,
         proactivePrompt: null,
 
         async fetchProactivePrompt(seriesId, bookIndex, chapterIndex) {
@@ -2568,31 +2405,6 @@
           chapterIndex: 0,
           saving: false,
           error: '',
-        },
-
-        async loadCompendium(force = false) {
-          if (!force && this.compendium.seriesId && this.compendium.characters.length > 0) return;
-
-          if (!this.library?.series?.length) return;
-          const reading = this.currentlyReading();
-          const defaultSeriesId = reading.length > 0 ? reading[0]._series.id : this.library.series[0].id;
-          const seriesId = this.compendium.seriesId || defaultSeriesId;
-          if (!force && this.compendium.seriesId === seriesId) return;
-
-          this.loadingCompendium = true;
-          try {
-            const res = await this.secureFetch(`/library/series/${seriesId}/knowledge`);
-            if (res.ok) {
-              const data = await res.json();
-              this.compendium.characters = data.characters || [];
-              this.compendium.relationships = data.relationships || [];
-              this.compendium.world_facts = data.world_facts || [];
-              this.compendium.extracted_chapters = data.extracted_chapters || [];
-              this.compendium.seriesId = seriesId;
-            }
-          } catch (e) { } finally {
-            this.loadingCompendium = false;
-          }
         },
 
         async initAuth() {
@@ -2975,29 +2787,6 @@
         },
 
 
-        async syncLore() {
-          if (!this.compendium.seriesId || !this.library?.series) return;
-          const series = this.library.series.find(s => s.id === this.compendium.seriesId);
-          if (!series || !series.books.length) return;
-
-          const booksInScope = series.books.filter(b => b.status !== 'not_started');
-          this.compendium.syncing = true;
-          this.compendium.syncProgress = { current: 0, total: booksInScope.length, bookTitle: '' };
-          try {
-            for (const book of booksInScope) {
-              this.compendium.syncProgress.current += 1;
-              this.compendium.syncProgress.bookTitle = book.title;
-              await this.secureFetch(`/library/series/${series.id}/books/${book.index}/extract`, { method: 'POST' });
-            }
-            await this.loadCompendium(true);
-          } catch (e) {
-            console.error("Sync failed", e);
-          } finally {
-            this.compendium.syncing = false;
-            this.compendium.syncProgress = { current: 0, total: 0, bookTitle: '' };
-          }
-        },
-
         currentlyReading() {
           if (!this.library) return [];
           return this.library.series.flatMap((s, si) =>
@@ -3016,15 +2805,6 @@
           return Math.round((series.books.filter(b => b.status === 'completed').length / series.books.length) * 100);
         },
 
-        loreExtractionPct() {
-          const series = this.library?.series?.find(s => s.id === this.compendium.seriesId);
-          if (!series) return { pct: 0, extracted: 0, total: 0 };
-          const inScope = series.books.filter(b => b.status !== 'not_started');
-          const total = inScope.reduce((sum, b) => sum + (b.chapters?.length ?? 0), 0);
-          if (total === 0) return { pct: 0, extracted: 0, total: 0 };
-          const extracted = this.compendium.extracted_chapters.length;
-          return { pct: Math.min(Math.round((extracted / total) * 100), 100), extracted, total };
-        },
       };
     }
   </script>
