@@ -351,6 +351,7 @@ temp/
 ehthumbs.db
 Thumbs.db
 # BookLens specific
-uploads/              
-library.json          
+uploads/
+library.json
+/knowledge/
 *.epub

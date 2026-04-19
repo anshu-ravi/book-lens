@@ -1,7 +1,38 @@
 """Claude prompt assembly for spoiler-safe Q&A."""
 
+from typing import Optional
+
 from src.models import BookStatus, Series
+from src.query.classifier import QuestionType
 from src.vector_store.base import SearchResult
+
+# Re-export so callers can import QuestionType from one place.
+__all__ = ["build_prompt", "build_reading_summary", "QuestionType"]
+
+_QUESTION_TYPE_INSTRUCTIONS: dict[QuestionType, str] = {
+    QuestionType.CHARACTER: (
+        "Provide a comprehensive character profile, drawing on the structured knowledge."
+    ),
+    QuestionType.CHARACTER_ARC: (
+        "Trace this character's journey chronologically from their first appearance to now."
+    ),
+    QuestionType.RELATIONSHIP: (
+        "Describe the full history and evolution of this relationship."
+    ),
+    QuestionType.RECAP: (
+        "Give a detailed chronological recap of the events requested."
+    ),
+    QuestionType.CAUSAL: (
+        "Explain the causal chain. Use the structured knowledge for context "
+        "and the passages for specifics."
+    ),
+    QuestionType.WORLD_BUILDING: (
+        "Explain this aspect of the world using the structured knowledge and passages provided."
+    ),
+    QuestionType.DETAIL: (
+        "Answer from the context passages provided."
+    ),
+}
 
 
 def build_reading_summary(series: Series) -> str:
@@ -36,16 +67,25 @@ def build_prompt(
     question: str,
     chunks: list[SearchResult],
     series: Series,
+    entity_context: Optional[str] = None,
+    question_type: Optional[QuestionType] = None,
+    mode: str = "default",
 ) -> str:
     """Assemble the full prompt to send to Claude.
 
     The prompt instructs Claude to answer only from the provided context,
     preventing hallucination about content the user has not yet read.
 
+    When entity_context is provided the prompt gains a structured knowledge
+    section above the RAG passages. When question_type is provided a
+    type-specific answering instruction is appended.
+
     Args:
         question: The user's question.
         chunks: Retrieved context passages (already spoiler-filtered).
         series: The series being queried (for progress summary and name).
+        entity_context: Optional structured knowledge from the KnowledgeBase.
+        question_type: Optional question type for tailored instructions.
 
     Returns:
         Complete prompt string ready for the Claude messages API.
@@ -57,17 +97,51 @@ def build_prompt(
         for i, chunk in enumerate(chunks)
     )
 
-    return f"""You are a spoiler-safe reading companion for the "{series.name}" series.
+    mode_instructions = {
+        "theory": "MODE INTERVENTION: The user is in 'Theory' mode. Encourage speculation, brainstorm theories with them, and act as a sounding board without confirming any future facts from the series.",
+        "recap": "MODE INTERVENTION: The user is in 'Recap' mode. Focus heavily on summarizing events chronologically up to the current progress.",
+        "default": ""
+    }
+    mode_text = mode_instructions.get(mode, "")
 
-Your job is to answer questions based ONLY on the context passages provided below. \
-Do not use any knowledge beyond what is in these passages. \
-If the answer cannot be found in the passages, say: \
-"I don't have enough information from your reading so far to answer that."
+    citation_instruction = (
+        "IMPORTANT: When stating facts, YOU MUST explicitly cite your sources using the exact chapter label. "
+        "Append [Ch. X] to your sentences where X is the chapter label from the context passages, for example: [Chapter 4]."
+    )
 
-Reading progress:
-{reading_summary}
+    type_instruction = (
+        _QUESTION_TYPE_INSTRUCTIONS.get(question_type, _QUESTION_TYPE_INSTRUCTIONS[QuestionType.DETAIL])
+        if question_type is not None
+        else "Answer from the context passages provided."
+    )
 
-Context passages:
-{context_passages}
+    if entity_context:
+        passages_section = (
+            f"\nSupporting passages (for specific details):\n{context_passages}\n"
+            if chunks
+            else ""
+        )
+        return (
+            f'You are a spoiler-safe reading companion for the "{series.name}" series.\n'
+            "Answer based ONLY on the knowledge and passages below. Never use outside knowledge.\n"
+            "If the answer cannot be found in the provided content, say: "
+            '"I don\'t have enough information from your reading so far to answer that."\n\n'
+            f"{mode_text}\n{citation_instruction}\n\n"
+            f"Reading progress:\n{reading_summary}\n\n"
+            f"Structured knowledge about the series so far:\n{entity_context}\n"
+            f"{passages_section}\n"
+            f"{type_instruction}\n\n"
+            f"Question: {question}"
+        )
 
-Question: {question}"""
+    return (
+        f'You are a spoiler-safe reading companion for the "{series.name}" series.\n\n'
+        "Your job is to answer questions based ONLY on the context passages provided below. "
+        "Do not use any knowledge beyond what is in these passages. "
+        'If the answer cannot be found in the passages, say: '
+        '"I don\'t have enough information from your reading so far to answer that."\n\n'
+        f"{mode_text}\n{citation_instruction}\n\n"
+        f"Reading progress:\n{reading_summary}\n\n"
+        f"Context passages:\n{context_passages}\n\n"
+        f"Question: {question}"
+    )

@@ -6,14 +6,12 @@ from src.library.manager import (
     load_library,
     remove_book,
     remove_series,
-    save_library,
     update_book_status,
     upsert_book,
 )
 
 __all__ = [
     "load_library",
-    "save_library",
     "get_series",
     "create_series",
     "upsert_book",

@@ -33,6 +33,7 @@ class VectorStore(ABC):
         embeddings: list[list[float]],
         series_id: str,
         book_index: int,
+        user_id: str,
     ) -> int:
         """Store chunk embeddings with metadata.
 
@@ -41,6 +42,7 @@ class VectorStore(ABC):
             embeddings: One embedding vector per chunk (same order).
             series_id: Identifier for the series (used as collection name).
             book_index: 0-based position of the book within the series.
+            user_id: Authenticated user's ID for data isolation.
 
         Returns:
             Number of points successfully upserted.
@@ -51,6 +53,7 @@ class VectorStore(ABC):
         self,
         embedding: list[float],
         series_id: str,
+        user_id: str,
         filters: dict,
         top_k: int = 5,
     ) -> list[SearchResult]:
@@ -59,6 +62,7 @@ class VectorStore(ABC):
         Args:
             embedding: Query vector (same model as used during indexing).
             series_id: Collection to search within.
+            user_id: Authenticated user's ID for data isolation.
             filters: Backend-specific filter dict (built by the query engine).
             top_k: Maximum number of results to return.
 
@@ -67,10 +71,33 @@ class VectorStore(ABC):
         """
 
     @abstractmethod
-    def delete_book(self, series_id: str, book_index: int) -> None:
+    def delete_book(self, series_id: str, book_index: int, user_id: str) -> None:
         """Remove all vectors for a specific book.
 
         Args:
             series_id: Collection containing the book's vectors.
             book_index: Book to delete (all its chunks are removed).
+            user_id: Authenticated user's ID for data isolation.
         """
+
+    @abstractmethod
+    def fetch_by_positions(
+        self,
+        series_id: str,
+        book_index: int,
+        chapter_index: int,
+        user_id: str,
+        positions: list[int],
+    ) -> list[SearchResult]:
+        """Fetch specific chunks by their position within a chapter."""
+
+    @abstractmethod
+    def fetch_chapter_chunks(
+        self,
+        series_id: str,
+        book_index: int,
+        chapter_index: int,
+        user_id: str,
+        limit: int = 10,
+    ) -> list[SearchResult]:
+        """Fetch chunks for a specific chapter."""

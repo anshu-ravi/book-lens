@@ -30,6 +30,8 @@ class Book(BaseModel):
     status: BookStatus
     chapters: List[Chapter]
     current_chapter_index: Optional[int] = None
+    has_cover: bool = False
+    cover_url: Optional[str] = None
 
 
 class Series(BaseModel):

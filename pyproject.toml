@@ -21,6 +21,7 @@ pydantic = "^2.10.3"
 python-dotenv = "^1.0.1"
 pydantic-settings = "^2.13.1"
 urllib3 = ">=1.26.14,<2.0.0"
+supabase = "^2.28.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.4"
@@ -49,5 +50,4 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore::Warning:urllib3",
-    "ignore::urllib3.exceptions.NotOpenSSLWarning",
 ]
