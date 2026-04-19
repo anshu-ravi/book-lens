@@ -24,8 +24,8 @@ class Settings(BaseSettings):
 
     # Model Configuration
     embedding_model: str = "all-MiniLM-L6-v2"
-    llm_model: str = "claude-3-7-sonnet-latest"
-    extraction_model: str = "claude-3-7-sonnet-latest"
+    llm_model: str = "claude-haiku-4-5-20251001"
+    extraction_model: str = "claude-haiku-4-5-20251001"
 
     # Chunking Parameters
     chunk_size: int = 400  # words
