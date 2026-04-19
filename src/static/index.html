@@ -1090,12 +1090,13 @@
             <button class="continue-card" @click="openProgressModal(book._series, book)">
               <div class="cover" :class="'cover-family-' + (book._seriesIndex % 5)"
                 style="width:54px;height:82px;flex-shrink:0;cursor:default;">
-                <img
-                  x-show="book.has_cover"
-                  :src="`/library/series/${book._series.id}/books/${book.index}/cover`"
-                  :alt="book.title"
-                  style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:1;"
-                  @error="book.has_cover = false">
+                <template x-if="book.has_cover">
+                  <img
+                    :src="`/library/series/${book._series.id}/books/${book.index}/cover`"
+                    :alt="book.title"
+                    style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:1;"
+                    @error="book.has_cover = false">
+                </template>
                 <div class="cover-frame" x-show="!book.has_cover"></div>
                 <div class="cover-inner" style="inset:6px 5px;" x-show="!book.has_cover">
                   <div class="cover-title" style="font-size:9px;" x-text="book.title"></div>
@@ -1163,12 +1164,13 @@
                       @click="openProgressModal(series, book)"
                       :title="book.title"
                       :aria-label="book.title">
-                      <img
-                        x-show="book.has_cover"
-                        :src="`/library/series/${series.id}/books/${book.index}/cover`"
-                        :alt="book.title"
-                        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:1;"
-                        @error="book.has_cover = false">
+                      <template x-if="book.has_cover">
+                        <img
+                          :src="`/library/series/${series.id}/books/${book.index}/cover`"
+                          :alt="book.title"
+                          style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:1;"
+                          @error="book.has_cover = false">
+                      </template>
                       <div class="cover-frame" x-show="!book.has_cover"></div>
                       <div class="cover-inner" x-show="!book.has_cover">
                         <div class="cover-series-label" x-text="series.name"></div>
