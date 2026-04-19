@@ -32,10 +32,10 @@ class QuestionType(str, Enum):
 _PATTERNS: list[tuple[re.Pattern, QuestionType]] = [
     # CAUSAL: why / what caused — check before CHARACTER to avoid "why is X" → CHARACTER
     (re.compile(r"\bwhy\b|\bwhat\s+caused\b|\breason\s+for\b", re.IGNORECASE), QuestionType.CAUSAL),
-    # RECAP: explicit recap/summarise/what happened
+    # RECAP: explicit recap/summarise/what happened/what happens
     (
         re.compile(
-            r"\brecap\b|\bsummar(?:y|ize|ise)\b|\bwhat\s+happened\b",
+            r"\brecap\b|\bsummar(?:y|ize|ise)\b|\bwhat\s+happen(?:s|ed|s\s+in)?\b",
             re.IGNORECASE,
         ),
         QuestionType.RECAP,
