@@ -82,6 +82,11 @@ class QdrantVectorStore(VectorStore):
             field_name="chapter_index",
             field_schema=PayloadSchemaType.INTEGER,
         )
+        self._client.create_payload_index(
+            collection_name=series_id,
+            field_name="position",
+            field_schema=PayloadSchemaType.INTEGER,
+        )
 
     def upsert(
         self,
@@ -172,6 +177,65 @@ class QdrantVectorStore(VectorStore):
             )
             for hit in response.points
         ]
+
+    def fetch_by_positions(
+        self,
+        series_id: str,
+        book_index: int,
+        chapter_index: int,
+        positions: list[int],
+    ) -> list[SearchResult]:
+        """Fetch specific chunks by their position within a chapter.
+
+        Used for neighbor expansion: given a chunk at position N, callers
+        pass [N-1, N+1] to retrieve adjacent chunks without a vector query.
+
+        Args:
+            series_id: Collection to search.
+            book_index: Book containing the chapter.
+            chapter_index: Chapter to look within.
+            positions: List of 0-based position values to fetch.
+
+        Returns:
+            SearchResult list for matching positions (score=0.0 for scroll results).
+        """
+        existing = {c.name for c in self._client.get_collections().collections}
+        if series_id not in existing:
+            return []
+
+        self._ensure_collection(series_id)
+
+        from qdrant_client.http.models import Range
+
+        results = []
+        for position in positions:
+            scroll_filter = Filter(
+                must=[
+                    FieldCondition(key="book_index", match=MatchValue(value=book_index)),
+                    FieldCondition(key="chapter_index", match=MatchValue(value=chapter_index)),
+                    FieldCondition(key="position", range=Range(gte=position, lte=position)),
+                ]
+            )
+            response, _ = self._client.scroll(
+                collection_name=series_id,
+                scroll_filter=scroll_filter,
+                limit=1,
+                with_payload=True,
+            )
+            for point in response:
+                p = point.payload or {}
+                results.append(
+                    SearchResult(
+                        chunk_id=p["chunk_id"],
+                        text=p["text"],
+                        chapter_index=p["chapter_index"],
+                        chapter_label=p["chapter_label"],
+                        series_id=p["series_id"],
+                        book_index=p["book_index"],
+                        score=0.0,
+                    )
+                )
+        return results
 
     def delete_book(self, series_id: str, book_index: int) -> None:
         """Remove all points for a given book from the collection.

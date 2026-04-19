@@ -1,5 +1,6 @@
 """BookLens FastAPI application."""
 
+import logging
 import shutil
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncGenerator, Optional
@@ -15,6 +16,14 @@ from src.ingestion.chunker import chunk_chapter
 from src.ingestion.embedder import get_embedder
 from src.ingestion.epub_parser import parse_epub
 from src.ingestion.indexer import index_book
+from src.knowledge.models import KnowledgeBase
+from src.knowledge.pipeline import extract_book_knowledge
+from src.knowledge.store import (
+    delete_book_knowledge,
+    delete_series_knowledge,
+    filter_to_progress,
+    load_knowledge,
+)
 from src.library.manager import (
     create_series,
     get_series,
@@ -26,9 +35,35 @@ from src.library.manager import (
     upsert_book,
 )
 from src.models import Book, BookStatus, Chapter, Library
-from src.query.prompt_builder import build_prompt
+from src.query.classifier import classify_question, extract_entity_mentions
+from src.query.context_builder import build_entity_context
+from src.query.prompt_builder import QuestionType, build_prompt
 from src.query.retriever import retrieve_chunks
 from src.vector_store.qdrant_store import QdrantVectorStore
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_chunk_position(chunk_id: str) -> Optional[int]:
+    """Parse the chunk position from a chunk_id string.
+
+    Chunk IDs follow the format "chapter_{chapter_index}_chunk_{position}",
+    e.g. "chapter_3_chunk_2" → position 2.
+
+    Args:
+        chunk_id: Chunk identifier from ChunkRecord / SearchResult.
+
+    Returns:
+        0-based position integer, or None if the format is unexpected.
+    """
+    parts = chunk_id.split("_")
+    # Expected: ['chapter', '<ch_idx>', 'chunk', '<position>']
+    if len(parts) == 4 and parts[0] == "chapter" and parts[2] == "chunk":
+        try:
+            return int(parts[3])
+        except ValueError:
+            pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +90,8 @@ class QueryRequest(BaseModel):
 
     series_id: str
     question: str
-    top_k: int = 5
+    top_k: int = 12
+    conversation_history: list[dict] = []
 
 
 class SourceChunk(BaseModel):
@@ -71,6 +107,8 @@ class QueryResponse(BaseModel):
 
     answer: str
     sources: list[SourceChunk]
+    question_type: Optional[str] = None
+    entities_used: Optional[list[str]] = None
 
 
 class UploadBookResponse(BaseModel):
@@ -81,6 +119,16 @@ class UploadBookResponse(BaseModel):
     title: str
     chapter_count: int
     chunks_indexed: int
+
+
+class ExtractBookResponse(BaseModel):
+    """Response returned after knowledge extraction completes."""
+
+    series_id: str
+    book_index: int
+    characters_found: int
+    summaries_generated: int
+    relationships_found: int
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +285,9 @@ def delete_series(series_id: str, request: Request) -> Library:
     if series_upload_dir.exists():
         shutil.rmtree(series_upload_dir)
 
+    # Delete knowledge base
+    delete_series_knowledge(series_id)
+
     updated = remove_series(library, series_id)
     save_library(updated)
     return updated
@@ -270,6 +321,9 @@ def delete_book(series_id: str, book_index: int, request: Request) -> Library:
     epub_path = settings.upload_dir / series_id / f"book_{book_index}.epub"
     if epub_path.exists():
         epub_path.unlink()
+
+    # Remove this book's entries from the knowledge base
+    delete_book_knowledge(series_id, book_index)
 
     save_library(updated)
     return updated
@@ -305,18 +359,115 @@ def patch_book_status(series_id: str, book_index: int, body: UpdateBookStatusReq
     return updated
 
 
+@app.post(
+    "/library/series/{series_id}/books/{book_index}/extract",
+    response_model=ExtractBookResponse,
+)
+def extract_book(series_id: str, book_index: int) -> ExtractBookResponse:
+    """Trigger knowledge extraction for an already-uploaded book.
+
+    Reads the epub from uploads/, parses its chapters, and runs the
+    entity extraction pipeline to populate knowledge/{series_id}.json.
+    Already-extracted chapters are skipped, making this endpoint idempotent.
+
+    Knowledge extraction is intentionally separate from upload so that:
+    - Upload stays fast (vector indexing only, ~30s)
+    - Users control when to incur extraction cost (LLM API calls)
+    - Re-running after a partial failure skips completed chapters
+
+    Args:
+        series_id: Series the book belongs to.
+        book_index: 0-based book index to extract.
+
+    Returns:
+        Counts of entities found during extraction.
+
+    Raises:
+        404: If the series or epub file does not exist.
+    """
+    library = load_library()
+    if get_series(library, series_id) is None:
+        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
+
+    epub_path = settings.upload_dir / series_id / f"book_{book_index}.epub"
+    if not epub_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"No epub found for book {book_index} in series '{series_id}'. Upload it first.",
+        )
+
+    parsed_chapters = parse_epub(epub_path)
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    logger.info("Starting knowledge extraction: series=%s book=%d", series_id, book_index)
+    kb = extract_book_knowledge(
+        chapters=parsed_chapters,
+        series_id=series_id,
+        book_index=book_index,
+        client=client,
+        extraction_model=settings.extraction_model,
+    )
+    logger.info(
+        "Extraction complete: %d characters, %d summaries, %d relationships",
+        len(kb.characters),
+        len(kb.summaries),
+        len(kb.relationships),
+    )
+
+    return ExtractBookResponse(
+        series_id=series_id,
+        book_index=book_index,
+        characters_found=len(kb.characters),
+        summaries_generated=len(kb.summaries),
+        relationships_found=len(kb.relationships),
+    )
+
+
+@app.get("/library/series/{series_id}/knowledge", response_model=KnowledgeBase)
+def get_knowledge(series_id: str) -> KnowledgeBase:
+    """Return the knowledge base for a series, filtered to reading progress.
+
+    The returned knowledge contains only entities, summaries, and facts
+    within the reader's current progress — spoiler-safe by construction.
+
+    Args:
+        series_id: Series to retrieve knowledge for.
+
+    Returns:
+        Filtered KnowledgeBase. Empty if extraction has not been run.
+
+    Raises:
+        404: If the series does not exist.
+    """
+    library = load_library()
+    series = get_series(library, series_id)
+    if series is None:
+        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
+
+    kb = load_knowledge(series_id)
+    return filter_to_progress(kb, series)
+
+
 @app.post("/query", response_model=QueryResponse)
 def query(body: QueryRequest, request: Request) -> QueryResponse:
     """Ask a spoiler-safe question about a series.
 
-    Retrieves relevant chunks filtered to the user's reading progress,
-    builds a prompt, and returns Claude's answer with source attribution.
+    Enhanced flow when a knowledge base exists:
+      1. Load KB filtered to reading progress
+      2. Classify the question type
+      3. Extract entity mentions via the alias registry
+      4. Build entity context (characters, summaries, relationships)
+      5. Retrieve RAG chunks if needed for this question type
+      6. Build enriched prompt with conversation history
+      7. Claude answers
+
+    Falls back to pure RAG when the KB is empty.
 
     Args:
-        body: series_id, question, and optional top_k.
+        body: series_id, question, optional top_k, optional conversation_history.
 
     Returns:
-        Claude's answer and the source chunks it was based on.
+        Claude's answer, source chunks, question type, and entities used.
 
     Raises:
         404: If the series does not exist.
@@ -326,21 +477,87 @@ def query(body: QueryRequest, request: Request) -> QueryResponse:
     if series is None:
         raise HTTPException(status_code=404, detail=f"Series '{body.series_id}' not found.")
 
-    vector_store: QdrantVectorStore = request.app.state.vector_store
-    chunks = retrieve_chunks(body.question, series, vector_store, body.top_k)
+    # 1. Load knowledge base filtered to reading progress.
+    raw_kb = load_knowledge(body.series_id)
+    kb = filter_to_progress(raw_kb, series)
+    kb_populated = bool(kb.characters or kb.summaries)
 
-    if not chunks:
+    # 2. Classify the question.
+    question_type = classify_question(body.question)
+
+    # 3. Extract entity mentions using the alias registry.
+    entity_mentions = extract_entity_mentions(body.question, kb.alias_registry)
+
+    # 4. Build entity context when the KB has data.
+    entity_context: Optional[str] = None
+    if kb_populated:
+        ctx = build_entity_context(question_type, entity_mentions, kb)
+        entity_context = ctx if ctx else None
+
+    # 5. Decide whether to run RAG retrieval.
+    # For knowledge-heavy types where the KB is populated, skip RAG —
+    # entity context + summaries are sufficient and more accurate.
+    _kb_only_types = {QuestionType.CHARACTER, QuestionType.CHARACTER_ARC, QuestionType.RECAP}
+    skip_rag = kb_populated and entity_context and question_type in _kb_only_types
+
+    chunks = []
+    if not skip_rag:
+        vector_store: QdrantVectorStore = request.app.state.vector_store
+        raw_chunks = retrieve_chunks(body.question, series, vector_store, body.top_k)
+
+        # Neighbor expansion: include chunks at position ±1 in the same chapter
+        # to improve local narrative coherence (the adjacent passage often has
+        # the critical context around a relevant chunk).
+        seen_keys: set[tuple[int, int, str]] = {
+            (c.book_index, c.chapter_index, c.chunk_id) for c in raw_chunks
+        }
+        expanded = list(raw_chunks)
+        for chunk in raw_chunks:
+            position = _parse_chunk_position(chunk.chunk_id)
+            if position is None:
+                continue
+            neighbor_positions = [p for p in (position - 1, position + 1) if p >= 0]
+            neighbors = vector_store.fetch_by_positions(
+                series_id=series.id,
+                book_index=chunk.book_index,
+                chapter_index=chunk.chapter_index,
+                positions=neighbor_positions,
+            )
+            for nr in neighbors:
+                key = (nr.book_index, nr.chapter_index, nr.chunk_id)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    expanded.append(nr)
+        chunks = expanded
+
+    if not chunks and not entity_context:
         return QueryResponse(
             answer="I don't have access to that information based on your current reading progress.",
             sources=[],
+            question_type=question_type.value,
+            entities_used=entity_mentions or None,
         )
 
-    prompt = build_prompt(body.question, chunks, series)
+    # 6. Build the prompt.
+    prompt = build_prompt(
+        body.question,
+        chunks,
+        series,
+        entity_context=entity_context,
+        question_type=question_type,
+    )
+
+    # Conversation history: cap at 6 turns (3 exchanges) to bound token usage.
+    history = body.conversation_history[-6:] if body.conversation_history else []
+
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     message = client.messages.create(
         model=settings.llm_model,
         max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            *history,
+            {"role": "user", "content": prompt},
+        ],
     )
     answer = message.content[0].text
 
@@ -352,4 +569,9 @@ def query(body: QueryRequest, request: Request) -> QueryResponse:
         )
         for chunk in chunks
     ]
-    return QueryResponse(answer=answer, sources=sources)
+    return QueryResponse(
+        answer=answer,
+        sources=sources,
+        question_type=question_type.value,
+        entities_used=entity_mentions if entity_mentions else None,
+    )
