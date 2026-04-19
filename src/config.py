@@ -15,10 +15,12 @@ class Settings(BaseSettings):
     # Application Paths
     library_path: Path = Path("./library.json")
     upload_dir: Path = Path("./uploads")
+    knowledge_dir: Path = Path("./knowledge")
 
     # Model Configuration
     embedding_model: str = "all-MiniLM-L6-v2"
     llm_model: str = "claude-haiku-4-5"
+    extraction_model: str = "claude-haiku-4-5-20251001"
 
     # Chunking Parameters
     chunk_size: int = 400  # words
