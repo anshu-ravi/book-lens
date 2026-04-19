@@ -74,3 +74,23 @@ class VectorStore(ABC):
             series_id: Collection containing the book's vectors.
             book_index: Book to delete (all its chunks are removed).
         """
+
+    @abstractmethod
+    def fetch_by_positions(
+        self,
+        series_id: str,
+        book_index: int,
+        chapter_index: int,
+        positions: list[int],
+    ) -> list[SearchResult]:
+        """Fetch specific chunks by their position within a chapter."""
+
+    @abstractmethod
+    def fetch_chapter_chunks(
+        self,
+        series_id: str,
+        book_index: int,
+        chapter_index: int,
+        limit: int = 10,
+    ) -> list[SearchResult]:
+        """Fetch chunks for a specific chapter."""

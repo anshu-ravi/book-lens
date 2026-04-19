@@ -56,10 +56,34 @@ def build_qdrant_filter(series: Series) -> Filter | None:
     return Filter(should=conditions)
 
 
+def build_supabase_filter(series: Series) -> list[dict] | None:
+    """Build a list of filter conditions for Supabase/Postgres.
+    
+    Each condition is a dict that can be used with JSONB containment @>.
+    Since Postgres doesn't easily support OR-ing multiple JSONB filters in a single 
+    containment check without complex SQL, we'll return a structure that the 
+    database function can interpret.
+    """
+    conditions = []
+    for book in series.books:
+        if book.status == BookStatus.NOT_STARTED:
+            continue
+        
+        if book.status == BookStatus.COMPLETED:
+            conditions.append({"book_index": book.index})
+        elif book.status == BookStatus.READING:
+            max_chapter = book.current_chapter_index if book.current_chapter_index is not None else 0
+            # Note: This requires the database function to handle 'lte' for chapter_index
+            conditions.append({"book_index": book.index, "max_chapter": max_chapter})
+            
+    return conditions if conditions else None
+
+
 def retrieve_chunks(
     question: str,
     series: Series,
     vector_store: VectorStore,
+    user_id: str,
     top_k: int = 5,
 ) -> list[SearchResult]:
     """Embed a question and retrieve the top-k spoiler-safe chunks.
@@ -69,21 +93,35 @@ def retrieve_chunks(
 
     Args:
         question: The user's question to answer.
-        series: Series to search within (defines the Qdrant collection).
+        series: Series to search within.
         vector_store: VectorStore backend to query.
+        user_id: The authenticated user's ID.
         top_k: Maximum number of chunks to return.
 
     Returns:
         Ranked list of SearchResult objects, highest relevance first.
     """
-    qdrant_filter = build_qdrant_filter(series)
-    if qdrant_filter is None:
-        return []
+    filters = {}
+    
+    # Check what kind of vector store we are using
+    from src.vector_store.qdrant_store import QdrantVectorStore
+    if isinstance(vector_store, QdrantVectorStore):
+        qf = build_qdrant_filter(series)
+        if qf is None:
+            return []
+        filters["qdrant_filter"] = qf
+    else:
+        # Fallback to Supabase/Generic
+        sf = build_supabase_filter(series)
+        if sf is None:
+            return []
+        filters["supabase_filter"] = sf
 
     embedding = embed_query(question)
     return vector_store.search(
         embedding=embedding,
         series_id=series.id,
-        filters={"qdrant_filter": qdrant_filter},
+        user_id=user_id,
+        filters=filters,
         top_k=top_k,
     )

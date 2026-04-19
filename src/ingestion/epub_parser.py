@@ -1,7 +1,7 @@
 """Epub parsing functionality to extract structured chapter data."""
 
 from pathlib import Path
-from typing import List
+from typing import List, BinaryIO, Union
 
 import ebooklib  # type: ignore[import-untyped]
 from bs4 import BeautifulSoup
@@ -10,26 +10,29 @@ from ebooklib import epub  # type: ignore[import-untyped]
 from src.models import ParsedChapter
 
 
-def parse_epub(filepath: str | Path) -> List[ParsedChapter]:
+def parse_epub(data: Union[str, Path, BinaryIO]) -> List[ParsedChapter]:
     """
     Parse an epub file into a list of chapters with labels and text.
 
     Args:
-        filepath: Path to the epub file.
+        data: Path to the epub file or a file-like object.
 
     Returns:
         List of ParsedChapter objects in reading order.
 
     Raises:
-        FileNotFoundError: If epub file doesn't exist.
+        FileNotFoundError: If epub file doesn't exist (path only).
         ebooklib.epub.EpubException: If file is not a valid epub.
     """
-    filepath = Path(filepath)
-    if not filepath.exists():
-        raise FileNotFoundError(f"Epub file not found: {filepath}")
-
-    # Read the epub file (ignore_ncx=True to avoid future deprecation)
-    book = epub.read_epub(str(filepath), options={"ignore_ncx": True})
+    if isinstance(data, (str, Path)):
+        filepath = Path(data)
+        if not filepath.exists():
+            raise FileNotFoundError(f"Epub file not found: {filepath}")
+        # Read the epub file
+        book = epub.read_epub(str(filepath), options={"ignore_ncx": True})
+    else:
+        # data is a file-like object (e.g. BytesIO)
+        book = epub.read_epub(data, options={"ignore_ncx": True})
 
     # Build TOC mapping: href -> label
     toc_map = _build_toc_mapping(book.toc)

@@ -69,6 +69,7 @@ def build_prompt(
     series: Series,
     entity_context: Optional[str] = None,
     question_type: Optional[QuestionType] = None,
+    mode: str = "default",
 ) -> str:
     """Assemble the full prompt to send to Claude.
 
@@ -96,6 +97,18 @@ def build_prompt(
         for i, chunk in enumerate(chunks)
     )
 
+    mode_instructions = {
+        "theory": "MODE INTERVENTION: The user is in 'Theory' mode. Encourage speculation, brainstorm theories with them, and act as a sounding board without confirming any future facts from the series.",
+        "recap": "MODE INTERVENTION: The user is in 'Recap' mode. Focus heavily on summarizing events chronologically up to the current progress.",
+        "default": ""
+    }
+    mode_text = mode_instructions.get(mode, "")
+
+    citation_instruction = (
+        "IMPORTANT: When stating facts, YOU MUST explicitly cite your sources using the exact chapter label. "
+        "Append [Ch. X] to your sentences where X is the chapter label from the context passages, for example: [Chapter 4]."
+    )
+
     type_instruction = (
         _QUESTION_TYPE_INSTRUCTIONS.get(question_type, _QUESTION_TYPE_INSTRUCTIONS[QuestionType.DETAIL])
         if question_type is not None
@@ -113,6 +126,7 @@ def build_prompt(
             "Answer based ONLY on the knowledge and passages below. Never use outside knowledge.\n"
             "If the answer cannot be found in the provided content, say: "
             '"I don\'t have enough information from your reading so far to answer that."\n\n'
+            f"{mode_text}\n{citation_instruction}\n\n"
             f"Reading progress:\n{reading_summary}\n\n"
             f"Structured knowledge about the series so far:\n{entity_context}\n"
             f"{passages_section}\n"
@@ -126,6 +140,7 @@ def build_prompt(
         "Do not use any knowledge beyond what is in these passages. "
         'If the answer cannot be found in the passages, say: '
         '"I don\'t have enough information from your reading so far to answer that."\n\n'
+        f"{mode_text}\n{citation_instruction}\n\n"
         f"Reading progress:\n{reading_summary}\n\n"
         f"Context passages:\n{context_passages}\n\n"
         f"Question: {question}"

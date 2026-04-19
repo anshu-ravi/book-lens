@@ -309,33 +309,14 @@ def _parse_tool_input(
 # ---------------------------------------------------------------------------
 
 
-def extract_chapter(
+async def extract_chapter(
     chapter: ParsedChapter,
     book_index: int,
     kb: KnowledgeBase,
-    client: anthropic.Anthropic,
+    client: anthropic.AsyncAnthropic,
     extraction_model: str,
 ) -> ChapterExtraction:
-    """Extract structured knowledge from a single chapter using Claude tool_use.
-
-    Feeds the current alias_registry and character list into the prompt so
-    Claude resolves names consistently (coreference resolution). Call this
-    chapter-by-chapter in order so each chapter benefits from all prior
-    character knowledge.
-
-    Args:
-        chapter: Parsed chapter (label + text).
-        book_index: 0-based book index within the series.
-        kb: Current knowledge base — provides known-character context.
-        client: Anthropic client.
-        extraction_model: Model ID to use (e.g. "claude-haiku-4-5-20251001").
-
-    Returns:
-        ChapterExtraction with all structured entities found in this chapter.
-
-    Raises:
-        RuntimeError: If Claude does not return a tool_use block.
-    """
+    """Extract structured knowledge from a single chapter using Claude tool_use."""
     prompt = _build_extraction_prompt(chapter, book_index, kb)
 
     logger.debug(
@@ -345,7 +326,7 @@ def extract_chapter(
         chapter.index,
     )
 
-    response = client.messages.create(
+    response = await client.messages.create(
         model=extraction_model,
         max_tokens=4096,
         tools=[_EXTRACTION_TOOL],

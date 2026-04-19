@@ -23,33 +23,16 @@ from src.models import ParsedChapter
 logger = logging.getLogger(__name__)
 
 
-def extract_book_knowledge(
+async def extract_book_knowledge(
     chapters: list[ParsedChapter],
     series_id: str,
     book_index: int,
-    client: anthropic.Anthropic,
+    user_id: str,
+    client: anthropic.AsyncAnthropic,
     extraction_model: str,
 ) -> KnowledgeBase:
-    """Extract structured knowledge from all chapters of a book.
-
-    Processes chapters in order. Each chapter's extracted aliases are merged
-    into the KB before the next chapter is processed, so later chapters
-    benefit from knowing all previously established canonical names.
-
-    Chapters already present in extracted_chapters are skipped, making
-    this function safe to call multiple times (idempotent).
-
-    Args:
-        chapters: Parsed chapters from parse_epub(), in reading order.
-        series_id: Series this book belongs to.
-        book_index: 0-based book index within the series.
-        client: Anthropic client for LLM calls.
-        extraction_model: Model ID to use for extraction.
-
-    Returns:
-        Updated KnowledgeBase after processing all chapters.
-    """
-    kb = load_knowledge(series_id)
+    """Extract structured knowledge from all chapters of a book."""
+    kb = await load_knowledge(series_id, user_id)
 
     total = len(chapters)
     skipped = 0
@@ -69,7 +52,7 @@ def extract_book_knowledge(
             chapter.label,
         )
 
-        extraction = extract_chapter(
+        extraction = await extract_chapter(
             chapter=chapter,
             book_index=book_index,
             kb=kb,
@@ -80,7 +63,7 @@ def extract_book_knowledge(
         kb = merge_extraction(kb, extraction, book_index=book_index, chapter_index=chapter.index)
 
         # Save after every chapter for crash recovery.
-        save_knowledge(kb)
+        await save_knowledge(kb, user_id)
         processed += 1
 
     logger.info(

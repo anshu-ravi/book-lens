@@ -1,6 +1,8 @@
 """Application configuration and settings."""
 
 from pathlib import Path
+from typing import Optional
+
 from pydantic_settings import BaseSettings
 
 
@@ -9,18 +11,21 @@ class Settings(BaseSettings):
 
     # API Keys
     anthropic_api_key: str
-    qdrant_url: str
-    qdrant_api_key: str
+    supabase_url: str
+    supabase_key: str  # This can be the service_role key for backend bypass
+    supabase_anon_key: Optional[str] = None # Public key for frontend
+    qdrant_url: Optional[str] = None
+    qdrant_api_key: Optional[str] = None
 
-    # Application Paths
+    # Application Paths (Fallback for local dev)
     library_path: Path = Path("./library.json")
     upload_dir: Path = Path("./uploads")
     knowledge_dir: Path = Path("./knowledge")
 
     # Model Configuration
     embedding_model: str = "all-MiniLM-L6-v2"
-    llm_model: str = "claude-haiku-4-5"
-    extraction_model: str = "claude-haiku-4-5-20251001"
+    llm_model: str = "claude-3-7-sonnet-latest"
+    extraction_model: str = "claude-3-7-sonnet-latest"
 
     # Chunking Parameters
     chunk_size: int = 400  # words

@@ -237,6 +237,57 @@ class QdrantVectorStore(VectorStore):
                 )
         return results
 
+    def fetch_chapter_chunks(
+        self,
+        series_id: str,
+        book_index: int,
+        chapter_index: int,
+        limit: int = 10,
+    ) -> list[SearchResult]:
+        """Fetch chunks for a specific chapter.
+        
+        Args:
+            series_id: Collection to search.
+            book_index: Book containing the chapter.
+            chapter_index: Chapter to retrieve.
+            limit: Max chunks to retrieve.
+            
+        Returns:
+            SearchResult list for the chapter.
+        """
+        existing = {c.name for c in self._client.get_collections().collections}
+        if series_id not in existing:
+            return []
+
+        self._ensure_collection(series_id)
+
+        from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+
+        scroll_filter = Filter(
+            must=[
+                FieldCondition(key="book_index", match=MatchValue(value=book_index)),
+                FieldCondition(key="chapter_index", match=MatchValue(value=chapter_index)),
+            ]
+        )
+        response, _ = self._client.scroll(
+            collection_name=series_id,
+            scroll_filter=scroll_filter,
+            limit=limit,
+            with_payload=True,
+        )
+        return [
+            SearchResult(
+                chunk_id=p.payload["chunk_id"],
+                text=p.payload["text"],
+                chapter_index=p.payload["chapter_index"],
+                chapter_label=p.payload["chapter_label"],
+                series_id=p.payload["series_id"],
+                book_index=p.payload["book_index"],
+                score=0.0,
+            )
+            for p in response if p.payload
+        ]
+
     def delete_book(self, series_id: str, book_index: int) -> None:
         """Remove all points for a given book from the collection.
 

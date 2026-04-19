@@ -14,10 +14,7 @@ spoiler boundary to structured entity data:
   - NOT_STARTED books: excluded entirely
 """
 
-import json
-from pathlib import Path
-
-from src.config import settings
+from src.supabase_client import get_supabase_client
 from src.knowledge.models import (
     ChapterRef,
     ChapterSummary,
@@ -30,59 +27,39 @@ from src.knowledge.models import (
 )
 from src.models import BookStatus, Series
 
-
-def _knowledge_path(series_id: str) -> Path:
-    """Return the path for a series knowledge file.
-
-    Args:
-        series_id: Series identifier.
-
-    Returns:
-        Path to knowledge/{series_id}.json.
-    """
-    return Path(settings.knowledge_dir) / f"{series_id}.json"
-
-
-def load_knowledge(series_id: str) -> KnowledgeBase:
-    """Read knowledge base from disk.
+async def load_knowledge(series_id: str, user_id: str) -> KnowledgeBase:
+    """Read knowledge base from Supabase for a specific user.
 
     Args:
         series_id: Series identifier.
+        user_id: The authenticated user's ID.
 
     Returns:
-        Persisted KnowledgeBase, or an empty KnowledgeBase if the file does not exist.
+        KnowledgeBase object.
     """
-    path = _knowledge_path(series_id)
-    if not path.exists():
+    client = get_supabase_client()
+    resp = client.table("knowledge").select("data").filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).execute()
+    
+    if not resp.data:
         return KnowledgeBase(series_id=series_id)
-    return KnowledgeBase.model_validate_json(path.read_text(encoding="utf-8"))
+    
+    return KnowledgeBase.model_validate(resp.data[0]["data"])
 
 
-def save_knowledge(kb: KnowledgeBase) -> None:
-    """Write knowledge base to disk.
+async def save_knowledge(kb: KnowledgeBase, user_id: str) -> None:
+    """Write knowledge base to Supabase for a specific user.
 
     Args:
         kb: KnowledgeBase to persist.
+        user_id: The authenticated user's ID.
     """
-    path = _knowledge_path(kb.series_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(kb.model_dump(), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    client = get_supabase_client()
+    data = kb.model_dump()
+    client.table("knowledge").upsert({"series_id": kb.series_id, "user_id": user_id, "data": data}).execute()
 
 
 def is_chapter_extracted(kb: KnowledgeBase, book_index: int, chapter_index: int) -> bool:
-    """Check whether a chapter has already been processed for extraction.
-
-    Args:
-        kb: Current knowledge base.
-        book_index: Book to check.
-        chapter_index: Chapter to check.
-
-    Returns:
-        True if the chapter is in extracted_chapters.
-    """
+    """Check whether a chapter has already been processed for extraction."""
     return any(
         ref.book_index == book_index and ref.chapter_index == chapter_index
         for ref in kb.extracted_chapters
@@ -92,16 +69,7 @@ def is_chapter_extracted(kb: KnowledgeBase, book_index: int, chapter_index: int)
 def _is_within_progress(
     book_index: int, chapter_index: int, series: Series
 ) -> bool:
-    """Check if a (book_index, chapter_index) pair is within reading progress.
-
-    Args:
-        book_index: Book to check.
-        chapter_index: Chapter to check.
-        series: Series with book statuses and chapter progress.
-
-    Returns:
-        True if the content is within the reader's progress.
-    """
+    """Check if a (book_index, chapter_index) pair is within reading progress."""
     book = next((b for b in series.books if b.index == book_index), None)
     if book is None:
         return False
@@ -115,27 +83,11 @@ def _is_within_progress(
 
 
 def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
-    """Return a KnowledgeBase containing only knowledge within reading progress.
-
-    This is the knowledge-layer equivalent of build_qdrant_filter(). It applies
-    the same spoiler boundary so the query engine never sees future content.
-
-    For characters and relationships, the entities themselves are included if
-    first_appearance is within scope, but their key_events / moments lists are
-    truncated to only include entries within scope.
-
-    Args:
-        kb: Full knowledge base (all extracted knowledge).
-        series: Series with current reading status per book.
-
-    Returns:
-        New KnowledgeBase with spoiler content removed.
-    """
+    """Return a KnowledgeBase containing only knowledge within reading progress."""
     def within(book_index: int, chapter_index: int) -> bool:
         return _is_within_progress(book_index, chapter_index, series)
 
-    # Filter characters: include if first_appearance is in scope,
-    # then truncate key_events to those within scope.
+    # Filter characters
     filtered_characters: list[CharacterEntity] = []
     for char in kb.characters:
         if char.first_appearance is None:
@@ -157,8 +109,7 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
             )
         )
 
-    # Filter relationships: include if all moments with a chapter stamp are in scope.
-    # A relationship is visible if at least one moment is in scope (first moment establishes it).
+    # Filter relationships
     filtered_relationships: list[Relationship] = []
     for rel in kb.relationships:
         safe_moments: list[RelationshipMoment] = [
@@ -176,12 +127,12 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
             )
         )
 
-    # Filter world facts by their establishment chapter.
+    # Filter world facts
     filtered_world_facts: list[WorldFact] = [
         wf for wf in kb.world_facts if within(wf.book_index, wf.chapter_index)
     ]
 
-    # Filter summaries and extracted_chapters.
+    # Filter summaries and extracted_chapters
     filtered_summaries: list[ChapterSummary] = [
         s for s in kb.summaries if within(s.book_index, s.chapter_index)
     ]
@@ -189,7 +140,7 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
         r for r in kb.extracted_chapters if within(r.book_index, r.chapter_index)
     ]
 
-    # Rebuild alias_registry to only include aliases for visible characters.
+    # Rebuild alias_registry
     visible_names = {c.name for c in filtered_characters}
     filtered_aliases = {
         alias: canonical
@@ -208,46 +159,23 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
     )
 
 
-def delete_series_knowledge(series_id: str) -> None:
-    """Delete the entire knowledge file for a series.
-
-    A no-op if no knowledge file exists.
-
-    Args:
-        series_id: Series whose knowledge file should be deleted.
-    """
-    path = _knowledge_path(series_id)
-    if path.exists():
-        path.unlink()
+async def delete_series_knowledge(series_id: str, user_id: str) -> None:
+    """Delete the knowledge for a series from Supabase for a specific user."""
+    client = get_supabase_client()
+    client.table("knowledge").delete().filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).execute()
 
 
-def delete_book_knowledge(series_id: str, book_index: int) -> KnowledgeBase:
-    """Remove all knowledge entries for a specific book from the knowledge base.
+async def delete_book_knowledge(series_id: str, book_index: int, user_id: str) -> KnowledgeBase:
+    """Remove knowledge entries for a specific book and save."""
+    kb = await load_knowledge(series_id, user_id)
 
-    Removes characters first-appearing in that book, relationships whose only
-    moments are in that book, world facts established in that book, summaries
-    for that book, and extracted_chapter entries for that book.
-
-    Characters who first appeared in the deleted book but have events in other
-    books are removed entirely — their first_appearance is gone.
-
-    Args:
-        series_id: Series containing the book.
-        book_index: 0-based book index to remove.
-
-    Returns:
-        Updated KnowledgeBase with the book's entries removed. Also saves to disk.
-    """
-    kb = load_knowledge(series_id)
-
-    # Remove characters first-appearing in this book.
+    # Remove characters first-appearing in this book
     kept_characters: list[CharacterEntity] = []
     removed_names: set[str] = set()
     for char in kb.characters:
         if char.first_appearance is not None and char.first_appearance.book_index == book_index:
             removed_names.add(char.name)
         else:
-            # Strip any events from this book.
             safe_events = [e for e in char.key_events if e.book_index != book_index]
             kept_characters.append(
                 CharacterEntity(
@@ -261,7 +189,7 @@ def delete_book_knowledge(series_id: str, book_index: int) -> KnowledgeBase:
                 )
             )
 
-    # Remove relationships whose all moments are in this book, or trim moments.
+    # Remove relationships
     kept_relationships: list[Relationship] = []
     for rel in kb.relationships:
         if rel.character_a in removed_names or rel.character_b in removed_names:
@@ -283,7 +211,7 @@ def delete_book_knowledge(series_id: str, book_index: int) -> KnowledgeBase:
     kept_summaries = [s for s in kb.summaries if s.book_index != book_index]
     kept_extracted = [r for r in kb.extracted_chapters if r.book_index != book_index]
 
-    # Rebuild alias_registry excluding removed characters.
+    # Rebuild alias_registry
     kept_aliases = {
         alias: canonical
         for alias, canonical in kb.alias_registry.items()
@@ -299,5 +227,5 @@ def delete_book_knowledge(series_id: str, book_index: int) -> KnowledgeBase:
         alias_registry=kept_aliases,
         extracted_chapters=kept_extracted,
     )
-    save_knowledge(updated)
+    await save_knowledge(updated, user_id)
     return updated
