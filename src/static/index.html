@@ -1090,11 +1090,17 @@
             <button class="continue-card" @click="openProgressModal(book._series, book)">
               <div class="cover" :class="'cover-family-' + (book._seriesIndex % 5)"
                 style="width:54px;height:82px;flex-shrink:0;cursor:default;">
-                <div class="cover-frame"></div>
-                <div class="cover-inner" style="inset:6px 5px;">
+                <img
+                  x-show="book.has_cover"
+                  :src="`/library/series/${book._series.id}/books/${book.index}/cover`"
+                  :alt="book.title"
+                  style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:1;"
+                  @error="book.has_cover = false">
+                <div class="cover-frame" x-show="!book.has_cover"></div>
+                <div class="cover-inner" style="inset:6px 5px;" x-show="!book.has_cover">
                   <div class="cover-title" style="font-size:9px;" x-text="book.title"></div>
                 </div>
-                <div class="cover-sheen"></div>
+                <div class="cover-sheen" x-show="!book.has_cover"></div>
               </div>
               <div class="continue-meta">
                 <div class="continue-series-name" x-text="book._series.name"></div>
@@ -1157,8 +1163,14 @@
                       @click="openProgressModal(series, book)"
                       :title="book.title"
                       :aria-label="book.title">
-                      <div class="cover-frame"></div>
-                      <div class="cover-inner">
+                      <img
+                        x-show="book.has_cover"
+                        :src="`/library/series/${series.id}/books/${book.index}/cover`"
+                        :alt="book.title"
+                        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit;z-index:1;"
+                        @error="book.has_cover = false">
+                      <div class="cover-frame" x-show="!book.has_cover"></div>
+                      <div class="cover-inner" x-show="!book.has_cover">
                         <div class="cover-series-label" x-text="series.name"></div>
                         <div class="cover-rule"></div>
                         <div class="cover-title" style="font-size:14px;" x-text="book.title"></div>
@@ -1173,7 +1185,7 @@
                         <svg viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-7" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
                       <div class="cover-unread-tag" x-show="book.status === 'not_started'">UNREAD</div>
-                      <div class="cover-sheen"></div>
+                      <div class="cover-sheen" x-show="!book.has_cover"></div>
                     </button>
                     <!-- Actions below cover -->
                     <button class="btn-icon" :title="'Delete ' + book.title" :aria-label="'Delete ' + book.title" @click="confirmDeleteBook(series, book)">
