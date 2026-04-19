@@ -122,7 +122,16 @@ class SupabaseVectorStore(VectorStore):
         positions: list[int],
     ) -> list[SearchResult]:
         """Fetch chunks by position for a user."""
-        response = self._client.table("vectors").select("*").filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).filter("book_index", "eq", book_index).filter("chapter_index", "eq", chapter_index).filter("metadata->>position", "in", f"({','.join(map(str, positions))})").execute()
+        response = (
+            self._client.table("vectors")
+            .select("*")
+            .filter("series_id", "eq", series_id)
+            .filter("user_id", "eq", user_id)
+            .filter("book_index", "eq", book_index)
+            .filter("chapter_index", "eq", chapter_index)
+            .filter("metadata->>position", "in", f"({','.join(map(str, positions))})")
+            .execute()
+        )
         
         return [
             SearchResult(
@@ -146,7 +155,16 @@ class SupabaseVectorStore(VectorStore):
         limit: int = 10,
     ) -> list[SearchResult]:
         """Fetch chunks for a specific chapter and user."""
-        response = self._client.table("vectors").select("*").filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).filter("book_index", "eq", book_index).filter("chapter_index", "eq", chapter_index).limit(limit).execute()
+        response = (
+            self._client.table("vectors")
+            .select("*")
+            .filter("series_id", "eq", series_id)
+            .filter("user_id", "eq", user_id)
+            .filter("book_index", "eq", book_index)
+            .filter("chapter_index", "eq", chapter_index)
+            .limit(limit)
+            .execute()
+        )
 
         return [
             SearchResult(
@@ -163,4 +181,21 @@ class SupabaseVectorStore(VectorStore):
 
     def delete_book(self, series_id: str, book_index: int, user_id: str) -> None:
         """Delete book vectors for a user."""
-        self._client.table("vectors").delete().filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).filter("book_index", "eq", book_index).execute()
+        (
+            self._client.table("vectors")
+            .delete()
+            .filter("series_id", "eq", series_id)
+            .filter("user_id", "eq", user_id)
+            .filter("book_index", "eq", book_index)
+            .execute()
+        )
+
+    def delete_series(self, series_id: str, user_id: str) -> None:
+        """Delete all vectors for a series and user."""
+        (
+            self._client.table("vectors")
+            .delete()
+            .filter("series_id", "eq", series_id)
+            .filter("user_id", "eq", user_id)
+            .execute()
+        )
