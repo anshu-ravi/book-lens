@@ -20,7 +20,9 @@ _QUESTION_TYPE_INSTRUCTIONS: dict[QuestionType, str] = {
         "Describe the full history and evolution of this relationship."
     ),
     QuestionType.RECAP: (
-        "Give a detailed chronological recap of the events requested."
+        "Give a chronological recap of the events from the context provided. "
+        "Synthesize what you know into a flowing narrative — do not list gaps or "
+        "mention missing chapters. Cover what the context shows, chapter by chapter."
     ),
     QuestionType.CAUSAL: (
         "Explain the causal chain. Use the structured knowledge for context "

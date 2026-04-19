@@ -153,6 +153,8 @@ def build_entity_context(
 
     elif question_type == QuestionType.RECAP:
         for summary in kb.summaries:
+            if not summary.summary.strip():
+                continue
             sections.append(
                 f"CHAPTER SUMMARY (Book {summary.book_index + 1}, {summary.chapter_label}):\n"
                 f"  {summary.summary}"

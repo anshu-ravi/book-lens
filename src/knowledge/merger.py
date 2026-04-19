@@ -135,7 +135,7 @@ def merge_extraction(
                 if alias not in merged_aliases and alias != existing.name:
                     merged_aliases.append(alias)
 
-            characters[idx] = CharacterEntity(
+            merged = CharacterEntity(
                 name=existing.name,
                 aliases=merged_aliases,
                 faction=new_char.faction or existing.faction,
@@ -149,13 +149,20 @@ def merge_extraction(
                 first_appearance=existing.first_appearance,
                 key_events=existing.key_events + new_char.key_events,
             )
+            characters[idx] = merged
         else:
             # New character — add directly.
             characters.append(new_char)
 
-        # Update alias_registry immediately so subsequent characters in the
-        # same extraction can resolve against newly added aliases.
-        alias_registry = _rebuild_alias_registry(characters)
+        # Incrementally update the registry so subsequent characters in this
+        # extraction can resolve against newly added aliases without a full rebuild.
+        updated = characters[idx] if idx is not None else new_char
+        alias_registry[updated.name.lower()] = updated.name
+        for alias in updated.aliases:
+            alias_registry[alias.lower()] = updated.name
+
+    # Final authoritative rebuild after all characters are merged.
+    alias_registry = _rebuild_alias_registry(characters)
 
     # ------------------------------------------------------------------
     # Merge relationships
