@@ -923,14 +923,24 @@
       padding-top: 12px;
       border-top: 1px dashed var(--hairline);
     }
-    .sources-label {
+    .sources-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      padding: 0;
+      cursor: pointer;
       font-family: var(--mono);
       font-size: 9px;
       letter-spacing: 0.12em;
       text-transform: uppercase;
       color: var(--ink-3);
-      margin-bottom: 8px;
+      margin-bottom: 0;
     }
+    .sources-toggle:hover { color: var(--ink-2); }
+    .sources-toggle svg { transition: transform 0.2s; }
+    .sources-toggle.open svg { transform: rotate(180deg); }
     .source-row {
       display: flex;
       align-items: center;
@@ -1342,13 +1352,21 @@
                 <div class="msg-bubble-ai">
                   <span x-text="msg.text"></span>
                   <div x-show="msg.sources && msg.sources.length > 0" class="sources-section">
-                    <div class="sources-label">Sources</div>
-                    <template x-for="(src, j) in (msg.sources ?? [])" :key="j">
-                      <div class="source-row">
-                        <span class="source-loc" x-text="'Book ' + (src.book_index + 1) + ' · ' + src.chapter_label"></span>
-                        <span class="source-score" x-text="src.score ? (src.score * 100).toFixed(0) + '%' : ''"></span>
-                      </div>
-                    </template>
+                    <button class="sources-toggle" :class="msg.showSources ? 'open' : ''"
+                      @click="msg.showSources = !msg.showSources">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      <span x-text="msg.sources.length + ' source' + (msg.sources.length !== 1 ? 's' : '')"></span>
+                    </button>
+                    <div x-show="msg.showSources" x-transition style="margin-top:8px;">
+                      <template x-for="(src, j) in (msg.sources ?? [])" :key="j">
+                        <div class="source-row">
+                          <span class="source-loc" x-text="'Book ' + (src.book_index + 1) + ' · ' + src.chapter_label"></span>
+                          <span class="source-score" x-text="src.score ? (src.score * 100).toFixed(0) + '%' : ''"></span>
+                        </div>
+                      </template>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1760,6 +1778,7 @@ function app() {
             role: 'assistant',
             text: data.answer,
             sources: data.sources ?? [],
+            showSources: false,
             seriesName,
             summary: this.ask.summary,
           });
