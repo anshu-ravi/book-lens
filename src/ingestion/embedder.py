@@ -32,7 +32,7 @@ def embed_chunks(chunks: list[ChunkRecord], batch_size: int = 64) -> list[list[f
     """
     model = get_embedder()
     texts = [chunk.text for chunk in chunks]
-    embeddings = model.encode(texts, batch_size=batch_size, show_progress_bar=True)
+    embeddings = model.encode(texts, batch_size=batch_size, show_progress_bar=False)
     return [e.tolist() for e in embeddings]
 
 
