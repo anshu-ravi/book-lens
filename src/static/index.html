@@ -1829,40 +1829,7 @@ function app() {
 
     clearThread() {
       this.thread = [];
-      this.ask.answer = '';
-      this.ask.sources = [];
       this.ask.error = '';
-    },
-
-    // ── Ask: submit question ────────────────────────────────────
-    async askQuestion() {
-      this.ask.error = '';
-      this.ask.answer = '';
-      this.ask.sources = [];
-      this.ask.loading = true;
-      try {
-        const res = await fetch('/query', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            series_id: this.ask.seriesId,
-            question: this.ask.question,
-            top_k: 5,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          this.ask.error = data.detail ?? 'Query failed.';
-          return;
-        }
-        this.ask.answer = data.answer;
-        this.ask.sources = data.sources ?? [];
-        this.ask.showSources = false;
-      } catch (e) {
-        this.ask.error = 'Network error. Is the server running?';
-      } finally {
-        this.ask.loading = false;
-      }
     },
 
     // ── Progress modal ──────────────────────────────────────────
