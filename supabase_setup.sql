@@ -41,26 +41,32 @@ CREATE TABLE IF NOT EXISTS vectors (
     series_id TEXT NOT NULL,
     book_index INT NOT NULL,
     chapter_index INT NOT NULL,
+    chapter_label TEXT,
+    chunk_id TEXT,
     text TEXT NOT NULL,
-    embedding VECTOR(1536),
+    embedding VECTOR(384),
     metadata JSONB,
     FOREIGN KEY (series_id, user_id) REFERENCES series(id, user_id) ON DELETE CASCADE
 );
 
--- 3. Create Vector Search RPC (User Isolated)
+-- 3. Create Vector Search RPC (User Isolated, spoiler-safe)
+-- filter_conditions: JSONB array of {book_index, max_chapter?}
+-- e.g. [{"book_index": 0, "max_chapter": 7}, {"book_index": 1}]
+-- Omit max_chapter for completed books (all chapters allowed).
 CREATE OR REPLACE FUNCTION match_vectors (
-  query_embedding VECTOR(1536),
+  query_embedding VECTOR(384),
   match_threshold FLOAT,
   match_count INT,
   filter_user_id UUID,
   filter_series_id TEXT DEFAULT NULL,
-  filter_book_index INT DEFAULT NULL,
-  filter_chapter_index INT DEFAULT NULL
+  filter_conditions JSONB DEFAULT NULL
 )
 RETURNS TABLE (
+  chunk_id TEXT,
   text TEXT,
   book_index INT,
   chapter_index INT,
+  chapter_label TEXT,
   metadata JSONB,
   similarity FLOAT
 )
@@ -69,17 +75,28 @@ AS $$
 BEGIN
   RETURN QUERY
   SELECT
+    vectors.chunk_id,
     vectors.text,
     vectors.book_index,
     vectors.chapter_index,
+    vectors.chapter_label,
     vectors.metadata,
     1 - (vectors.embedding <=> query_embedding) AS similarity
   FROM vectors
-  WHERE 
+  WHERE
     vectors.user_id = filter_user_id
     AND (filter_series_id IS NULL OR vectors.series_id = filter_series_id)
-    AND (filter_book_index IS NULL OR vectors.book_index = filter_book_index)
-    AND (filter_chapter_index IS NULL OR vectors.chapter_index <= filter_chapter_index)
+    AND (
+      filter_conditions IS NULL
+      OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements(filter_conditions) AS fc
+        WHERE (fc->>'book_index')::int = vectors.book_index
+        AND (
+          fc->>'max_chapter' IS NULL
+          OR vectors.chapter_index <= (fc->>'max_chapter')::int
+        )
+      )
+    )
     AND 1 - (vectors.embedding <=> query_embedding) > match_threshold
   ORDER BY vectors.embedding <=> query_embedding
   LIMIT match_count;

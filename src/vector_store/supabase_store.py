@@ -86,14 +86,17 @@ class SupabaseVectorStore(VectorStore):
         # But my new match_vectors RPC takes filter_series_id, filter_book_index, filter_chapter_index.
         
         # Default to series search
+        supabase_filter = filters.get("supabase_filter")
+
         response = self._client.rpc(
             "match_vectors",
             {
                 "query_embedding": embedding,
-                "match_threshold": 0.5,
+                "match_threshold": 0.2,
                 "match_count": top_k,
                 "filter_user_id": user_id,
-                "filter_series_id": series_id
+                "filter_series_id": series_id,
+                "filter_conditions": supabase_filter,
             }
         ).execute()
 
@@ -126,7 +129,7 @@ class SupabaseVectorStore(VectorStore):
                 chunk_id=hit["chunk_id"],
                 text=hit["text"],
                 chapter_index=hit["chapter_index"],
-                chapter_label=hit["metadata"].get("chapter_label", ""),
+                chapter_label=hit.get("chapter_label") or "",
                 series_id=hit["series_id"],
                 book_index=hit["book_index"],
                 score=0.0,
@@ -144,13 +147,13 @@ class SupabaseVectorStore(VectorStore):
     ) -> list[SearchResult]:
         """Fetch chunks for a specific chapter and user."""
         response = self._client.table("vectors").select("*").filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).filter("book_index", "eq", book_index).filter("chapter_index", "eq", chapter_index).limit(limit).execute()
-        
+
         return [
             SearchResult(
                 chunk_id=hit["chunk_id"],
                 text=hit["text"],
                 chapter_index=hit["chapter_index"],
-                chapter_label=hit["metadata"].get("chapter_label", ""),
+                chapter_label=hit.get("chapter_label") or "",
                 series_id=hit["series_id"],
                 book_index=hit["book_index"],
                 score=0.0,
