@@ -61,61 +61,154 @@
       flex-direction: column;
     }
 
-    /* ── Header ───────────────────────────────────────────────── */
-    header {
-      padding: 24px 0 0;
-    }
-
+    /* ── Header (mobile wordmark) ─────────────────────────────── */
     .wordmark {
-      font-family: 'Playfair Display', serif;
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--ink);
+      font-family: var(--serif-display);
+      font-size: 1.4rem;
+      font-weight: 600;
+      font-style: italic;
+      color: var(--forest);
       letter-spacing: -0.02em;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      padding-bottom: 16px;
     }
+    .wordmark span { color: var(--brass); font-style: normal; }
 
-    .wordmark span {
-      color: var(--brass);
-    }
-
-    /* ── Tab nav ──────────────────────────────────────────────── */
-    nav {
+    /* ── App shell ───────────────────────────────────────────── */
+    .app-body {
+      flex: 1;
       display: flex;
-      gap: 0;
-      margin-top: 20px;
-      border-bottom: 1px solid var(--hairline);
+      flex-direction: column;
+      min-width: 0;
     }
 
-    .tab {
-      padding: 10px 20px;
-      font-size: 0.875rem;
+    .app-content {
+      flex: 1;
+      max-width: 680px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    /* ── Header (mobile wordmark) ─────────────────────────────── */
+    .app-header {
+      padding: 20px 20px 0;
+      max-width: 680px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* ── Sidebar (desktop only, hidden on mobile) ─────────── */
+    .app-sidebar {
+      display: none;
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--forest);
+      flex-direction: column;
+      padding: 32px 0 24px;
+      position: sticky;
+      top: 0;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .sidebar-wordmark {
+      font-family: var(--serif-display);
+      font-size: 1.4rem;
       font-weight: 600;
-      font-family: 'Manrope', sans-serif;
-      color: var(--ink-3);
+      font-style: italic;
+      color: var(--bone);
+      letter-spacing: -0.02em;
+      padding: 0 24px 28px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 20px;
+    }
+    .sidebar-wordmark em { color: var(--brass); font-style: normal; }
+
+    .sidebar-nav {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 0 12px;
+    }
+
+    .sidebar-tab {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 4px;
       background: none;
       border: none;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
       cursor: pointer;
-      transition: color var(--transition), border-color var(--transition);
-      user-select: none;
-      white-space: nowrap;
+      color: rgba(250,246,236,0.5);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: background var(--transition), color var(--transition);
+      text-align: left;
+      width: 100%;
     }
+    .sidebar-tab svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .sidebar-tab:hover { background: rgba(255,255,255,0.07); color: var(--bone); }
+    .sidebar-tab.active { background: rgba(255,255,255,0.1); color: var(--bone); }
+    .sidebar-tab.active svg { color: var(--brass); }
 
-    .tab:hover { color: var(--ink); }
-
-    .tab.active {
-      color: var(--brass);
-      border-bottom-color: var(--brass);
+    /* ── Mobile tab bar ───────────────────────────────────────── */
+    .tabbar-mobile {
+      flex-shrink: 0;
+      display: flex;
+      border-top: 1px solid var(--hairline);
+      background: var(--bone);
+      padding: 6px 0 max(12px, env(safe-area-inset-bottom));
     }
-
-    /* ── Main content ─────────────────────────────────────────── */
-    main {
+    .tabbar-mobile .tab {
       flex: 1;
-      padding: 28px 0 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 8px 4px 4px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--ink-4);
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      transition: color var(--transition);
+    }
+    .tabbar-mobile .tab svg { width: 20px; height: 20px; }
+    .tabbar-mobile .tab.active { color: var(--forest); }
+    .tabbar-mobile .tab-dot {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--forest);
+      opacity: 0;
+      transition: opacity 200ms;
+    }
+    .tabbar-mobile .tab.active .tab-dot { opacity: 1; }
+
+    /* ── Desktop breakpoint ───────────────────────────────────── */
+    @media (min-width: 768px) {
+      body { background: var(--bone-2); }
+
+      #app { flex-direction: row; }
+
+      .app-sidebar { display: flex; }
+
+      .app-body { background: var(--bone); }
+
+      .app-content { max-width: 860px; padding: 0 40px; }
+
+      .app-header { display: none; }
+
+      .tabbar-mobile { display: none; }
     }
 
     /* ── View transitions ─────────────────────────────────────── */
@@ -557,7 +650,6 @@
 
     /* ── Responsive ───────────────────────────────────────────── */
     @media (max-width: 480px) {
-      .tab { padding: 10px 14px; }
       .book-row { flex-wrap: wrap; }
       .modal-actions { flex-direction: column-reverse; }
       .modal-actions .btn { width: 100%; justify-content: center; }
@@ -567,17 +659,35 @@
 <body>
 <div id="app" x-data="app()" x-cloak>
 
-  <!-- Header -->
-  <header>
-    <div class="wordmark">📚 Book<span>Lens</span></div>
-    <nav>
-      <button class="tab" :class="{ active: view === 'library' }" @click="switchView('library')">Library</button>
-      <button class="tab" :class="{ active: view === 'upload' }"  @click="switchView('upload')">Upload</button>
-      <button class="tab" :class="{ active: view === 'ask' }"    @click="switchView('ask')">Ask</button>
+  <!-- Sidebar (desktop only) -->
+  <aside class="app-sidebar">
+    <div class="sidebar-wordmark">Book<em>Lens</em></div>
+    <nav class="sidebar-nav">
+      <button class="sidebar-tab" :class="{ active: view === 'library' }" @click="switchView('library')">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M3 3v14M6 3v14M9.5 3l1.5 14M14 3v14M17 3v14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        Library
+      </button>
+      <button class="sidebar-tab" :class="{ active: view === 'upload' }" @click="switchView('upload')">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10 13V3m0 0L6 7m4-4l4 4M3 14v2a1 1 0 001 1h12a1 1 0 001-1v-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Upload
+      </button>
+      <button class="sidebar-tab" :class="{ active: view === 'ask' }" @click="switchView('ask')">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.5a7.5 7.5 0 00-6.3 11.6L2.5 17.5l3.4-1.2A7.5 7.5 0 1010 2.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        Ask
+      </button>
     </nav>
-  </header>
+  </aside>
 
-  <main>
+  <!-- Main body -->
+  <div class="app-body">
+
+    <!-- Wordmark (mobile only) -->
+    <header class="app-header">
+      <div class="wordmark">📚 Book<span>Lens</span></div>
+    </header>
+
+    <!-- Content -->
+    <main class="app-content">
 
     <!-- ═══════════════════ LIBRARY VIEW ═══════════════════ -->
     <div x-show="view === 'library'" class="view-enter">
@@ -804,7 +914,28 @@
       </div>
     </div>
 
-  </main>
+    </main>
+
+    <!-- Tab bar (mobile only) -->
+    <nav class="tabbar-mobile">
+      <button class="tab" :class="{ active: view === 'library' }" @click="switchView('library')">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M3 3v14M6 3v14M9.5 3l1.5 14M14 3v14M17 3v14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        Library
+        <div class="tab-dot"></div>
+      </button>
+      <button class="tab" :class="{ active: view === 'upload' }" @click="switchView('upload')">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10 13V3m0 0L6 7m4-4l4 4M3 14v2a1 1 0 001 1h12a1 1 0 001-1v-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Upload
+        <div class="tab-dot"></div>
+      </button>
+      <button class="tab" :class="{ active: view === 'ask' }" @click="switchView('ask')">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.5a7.5 7.5 0 00-6.3 11.6L2.5 17.5l3.4-1.2A7.5 7.5 0 1010 2.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        Ask
+        <div class="tab-dot"></div>
+      </button>
+    </nav>
+
+  </div><!-- /.app-body -->
 
   <!-- ═══════════════════ PROGRESS MODAL ═══════════════════ -->
   <div class="modal-backdrop" x-show="modal.open" x-transition @click.self="modal.open = false">
