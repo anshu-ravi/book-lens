@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from src.config import settings
 from src.ingestion.chunker import chunk_chapter
 from src.ingestion.embedder import get_embedder
+from src.ingestion.cover_extractor import extract_cover
 from src.ingestion.epub_parser import parse_epub
 from src.ingestion.indexer import index_book
 from src.knowledge.models import KnowledgeBase
@@ -237,6 +238,15 @@ async def upload_book(
     vector_store: QdrantVectorStore = request.app.state.vector_store
     chunks_indexed = index_book(all_chunks, series_id, book_index, vector_store)
 
+    # Extract and save cover image (best-effort — failure does not abort upload)
+    has_cover = False
+    cover_result = extract_cover(epub_path)
+    if cover_result is not None:
+        cover_bytes, cover_ext = cover_result
+        cover_file = save_dir / f"cover_{book_index}{cover_ext}"
+        cover_file.write_bytes(cover_bytes)
+        has_cover = True
+
     # Update library state
     chapters = [Chapter(index=c.index, label=c.label) for c in parsed_chapters]
     book = Book(
@@ -244,6 +254,7 @@ async def upload_book(
         title=title,
         status=BookStatus.NOT_STARTED,
         chapters=chapters,
+        has_cover=has_cover,
     )
     updated = upsert_book(library, series_id, book)
     save_library(updated)
@@ -255,6 +266,28 @@ async def upload_book(
         chapter_count=len(chapters),
         chunks_indexed=chunks_indexed,
     )
+
+
+@app.get("/library/series/{series_id}/books/{book_index}/cover")
+def get_book_cover(series_id: str, book_index: int) -> FileResponse:
+    """Serve the cover image for a book.
+
+    Args:
+        series_id: Series identifier.
+        book_index: 0-based book index.
+
+    Returns:
+        Cover image file.
+
+    Raises:
+        404: If no cover image exists for this book.
+    """
+    cover_dir = settings.upload_dir / series_id
+    for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]:
+        cover_path = cover_dir / f"cover_{book_index}{ext}"
+        if cover_path.exists():
+            return FileResponse(str(cover_path))
+    raise HTTPException(status_code=404, detail="No cover image for this book.")
 
 
 @app.delete("/library/series/{series_id}", response_model=Library)
