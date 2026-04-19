@@ -240,12 +240,20 @@ async def upload_book(
 
     # Extract and save cover image (best-effort — failure does not abort upload)
     has_cover = False
-    cover_result = extract_cover(epub_path)
-    if cover_result is not None:
-        cover_bytes, cover_ext = cover_result
-        cover_file = save_dir / f"cover_{book_index}{cover_ext}"
-        cover_file.write_bytes(cover_bytes)
-        has_cover = True
+    try:
+        cover_result = extract_cover(epub_path)
+        if cover_result is not None:
+            cover_bytes, cover_ext = cover_result
+            cover_file = save_dir / f"cover_{book_index}{cover_ext}"
+            cover_file.write_bytes(cover_bytes)
+            has_cover = True
+    except Exception:
+        logger.warning(
+            "Cover extraction failed for %s book %d; continuing without cover",
+            series_id,
+            book_index,
+            exc_info=True,
+        )
 
     # Update library state
     chapters = [Chapter(index=c.index, label=c.label) for c in parsed_chapters]
