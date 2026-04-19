@@ -165,6 +165,7 @@ def update_book_status(
         status=status,
         chapters=book.chapters,
         current_chapter_index=current_chapter_index if status == BookStatus.READING else None,
+        has_cover=book.has_cover,
     )
     return upsert_book(library, series_id, updated_book)
 
