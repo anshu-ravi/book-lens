@@ -1563,7 +1563,10 @@ function app() {
       this.uploadError = '';
       if (v === 'ask') this.updateReadingSummary();
       if (v === 'ask' && !this.ask.seriesId && this.library?.series?.length) {
-        this.ask.seriesId = this.library.series[0].id;
+        const reading = this.currentlyReading();
+        this.ask.seriesId = reading.length > 0
+          ? reading[0]._series.id
+          : this.library.series[0].id;
         this.updateReadingSummary();
       }
     },
