@@ -1,10 +1,10 @@
 """BookLens FastAPI application."""
 
 import logging
-import shutil
+import re
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Annotated, AsyncGenerator, Optional, Union
+from io import BytesIO
+from typing import Annotated, AsyncGenerator, Optional
 
 import anthropic
 from fastapi import (Depends, FastAPI, Form, Header, HTTPException, Request,
@@ -38,28 +38,54 @@ from src.vector_store.supabase_store import SupabaseVectorStore
 
 logger = logging.getLogger(__name__)
 
+_KB_ONLY_QUESTION_TYPES = {QuestionType.CHARACTER, QuestionType.CHARACTER_ARC}
 
-def _parse_chunk_position(chunk_id: str) -> Optional[int]:
-    """Parse the chunk position from a chunk_id string.
+_CHAPTER_NUM_RE = re.compile(r'\bchapter\s+(\d+)\b', re.IGNORECASE)
 
-    Chunk IDs follow the format "chapter_{chapter_index}_chunk_{position}",
-    e.g. "chapter_3_chunk_2" → position 2.
 
-    Args:
-        chunk_id: Chunk identifier from ChunkRecord / SearchResult.
+def _get_chapters_in_scope(series: "Series") -> list[tuple[int, int]]:
+    """Return (book_index, chapter_index) pairs for all chapters within reading progress."""
+    result: list[tuple[int, int]] = []
+    for book in series.books:
+        if book.status == BookStatus.NOT_STARTED:
+            continue
+        for chapter in book.chapters:
+            if book.status == BookStatus.COMPLETED:
+                result.append((book.index, chapter.index))
+            elif book.status == BookStatus.READING:
+                max_ch = book.current_chapter_index if book.current_chapter_index is not None else 0
+                if chapter.index <= max_ch:
+                    result.append((book.index, chapter.index))
+    return result
 
-    Returns:
-        0-based position integer, or None if the format is unexpected.
+
+def _resolve_chapter_reference(question: str, series: "Series") -> tuple[int, int] | None:
+    """Parse a chapter number from the question and resolve it to (book_index, chapter_index).
+
+    Only returns a result if the referenced chapter is within the user's reading
+    progress. Returns None if no chapter number is found or the chapter is out
+    of scope.
     """
-    parts = chunk_id.split("_")
-    # Expected: ['chapter', '<ch_idx>', 'chunk', '<position>']
-    if len(parts) == 4 and parts[0] == "chapter" and parts[2] == "chunk":
-        try:
-            return int(parts[3])
-        except ValueError:
-            pass
-    return None
+    match = _CHAPTER_NUM_RE.search(question)
+    if not match:
+        return None
 
+    chapter_num = int(match.group(1))
+
+    for book in series.books:
+        if book.status == BookStatus.NOT_STARTED:
+            continue
+        for chapter in book.chapters:
+            label_match = re.match(r'chapter\s+(\d+)', chapter.label, re.IGNORECASE)
+            if label_match and int(label_match.group(1)) == chapter_num:
+                if book.status == BookStatus.COMPLETED:
+                    return (book.index, chapter.index)
+                # READING: only chapters up to current progress
+                max_ch = book.current_chapter_index if book.current_chapter_index is not None else 0
+                if chapter.index <= max_ch:
+                    return (book.index, chapter.index)
+
+    return None
 
 # ---------------------------------------------------------------------------
 # Auth Dependency
@@ -180,6 +206,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         url=settings.supabase_url,
         key=settings.supabase_key,
     )
+    app.state.anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     # Warm up the embedding model so the first upload isn't slow
     get_embedder()
     yield
@@ -243,7 +270,6 @@ async def upload_book(
     if not file.filename or not file.filename.endswith(".epub"):
         raise HTTPException(status_code=400, detail="File must be an .epub.")
 
-    from io import BytesIO
     book_bytes = await file.read()
     
     # Save book file to Supabase Storage - path: {user_id}/{series_id}/book_{book_index}.epub
@@ -271,12 +297,7 @@ async def upload_book(
     # Extract and save cover image to Supabase Storage
     has_cover = False
     try:
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
-            tmp.write(book_bytes)
-            tmp_path = Path(tmp.name)
-        
-        cover_result = extract_cover(tmp_path) or fetch_cover_open_library(title, tmp_path)
+        cover_result = extract_cover(book_bytes) or fetch_cover_open_library(title, book_bytes)
         if cover_result is not None:
             cover_bytes, _ = cover_result
             cover_path = f"{user_id}/{series_id}/cover_{book_index}.jpg"
@@ -286,9 +307,6 @@ async def upload_book(
                 file_options={"contentType": "image/jpeg", "upsert": "true"}
             )
             has_cover = True
-        
-        # Cleanup
-        tmp_path.unlink()
     except Exception:
         logger.warning("Cover extraction failed; continuing", exc_info=True)
 
@@ -317,12 +335,9 @@ async def get_book_cover(
     series_id: str, book_index: int, user_id: str = Depends(get_current_user)
 ) -> RedirectResponse:
     """Redirect to the book cover image in Supabase Storage."""
-    client = get_supabase_client()
-    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-        path = f"{user_id}/{series_id}/cover_{book_index}{ext}"
-        url = client.storage.from_("covers").get_public_url(path)
-        return RedirectResponse(url)
-    raise HTTPException(status_code=404, detail="No cover image for this book.")
+    path = f"{user_id}/{series_id}/cover_{book_index}.jpg"
+    url = get_supabase_client().storage.from_("covers").get_public_url(path)
+    return RedirectResponse(url)
 
 
 @app.delete("/library/series/{series_id}", response_model=Library)
@@ -335,7 +350,7 @@ async def delete_series_endpoint(
 
     # Delete Supabase Vectors
     vector_store: SupabaseVectorStore = request.app.state.vector_store
-    vector_store._client.table("vectors").delete().filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).execute()
+    vector_store.delete_series(series_id, user_id)
 
     # Delete Supabase Storage files
     client = get_supabase_client()
@@ -417,26 +432,24 @@ async def update_book_status_endpoint(
 async def extract_book_endpoint(
     series_id: str,
     book_index: int,
-    user_id: str = Depends(get_current_user)
+    request: Request,
+    user_id: str = Depends(get_current_user),
 ) -> ExtractBookResponse:
-    # Trigger knowledge extraction for a book in Supabase Storage.
+    """Trigger knowledge extraction for a book in Supabase Storage."""
     series = await get_series(series_id, user_id)
     if series is None:
         raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
 
-    client = get_supabase_client()
     book_path = f"{user_id}/{series_id}/book_{book_index}.epub"
     try:
-        book_data = client.storage.from_("books").download(book_path)
+        book_data = get_supabase_client().storage.from_("books").download(book_path)
     except Exception:
         raise HTTPException(
             status_code=404,
             detail=f"No book file found for book {book_index} in Supabase Storage.",
         )
 
-    from io import BytesIO
     parsed_chapters = parse_epub(BytesIO(book_data))
-    anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     logger.info("Starting knowledge extraction: series=%s book=%d", series_id, book_index)
     kb = await extract_book_knowledge(
@@ -444,12 +457,10 @@ async def extract_book_endpoint(
         series_id=series_id,
         book_index=book_index,
         user_id=user_id,
-        client=anthropic_client,
+        client=request.app.state.anthropic_client,
         extraction_model=settings.extraction_model,
     )
 
-    await save_knowledge(kb, user_id)
-    
     return ExtractBookResponse(
         series_id=series_id,
         book_index=book_index,
@@ -505,8 +516,8 @@ async def generate_proactive_prompt_endpoint(
         "Make it sound natural, conversational, and tailored to the events. Do not answer the question."
     )
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    message = await client.messages.create(
+    anthropic_client: anthropic.AsyncAnthropic = request.app.state.anthropic_client
+    message = await anthropic_client.messages.create(
         model=settings.llm_model,
         max_tokens=150,
         messages=[{"role": "user", "content": prompt}],
@@ -539,17 +550,44 @@ async def query_endpoint(
     # 4. Build entity context when the KB has data.
     entity_context: Optional[str] = None
     if kb_populated:
-        # build_entity_context(question_type, entity_mentions, kb)
         ctx = build_entity_context(question_type, entity_mentions, kb)
         entity_context = ctx if ctx else None
 
     # 5. Decide whether to run RAG retrieval.
-    _kb_only_types = {QuestionType.CHARACTER, QuestionType.CHARACTER_ARC, QuestionType.RECAP}
-    skip_rag = kb_populated and entity_context and question_type in _kb_only_types
+    skip_rag = kb_populated and entity_context and question_type in _KB_ONLY_QUESTION_TYPES
 
     chunks = []
-    if not skip_rag:
-        vector_store: SupabaseVectorStore = request.app.state.vector_store
+    vector_store: SupabaseVectorStore = request.app.state.vector_store
+    if question_type == QuestionType.RECAP:
+        # For recap questions, try to resolve a specific chapter reference and
+        # fetch its chunks directly — semantic search is unreliable for "recap
+        # of chapter N" because the query text has no content to match against.
+        chapter_ref = _resolve_chapter_reference(body.question, series)
+        if chapter_ref is not None:
+            book_idx, chapter_idx = chapter_ref
+            chunks = vector_store.fetch_chapter_chunks(
+                series_id=body.series_id,
+                book_index=book_idx,
+                chapter_index=chapter_idx,
+                user_id=user_id,
+                limit=30,
+            )
+        else:
+            # General recap ("what happened so far") — fetch the opening chunks
+            # from every in-scope chapter so we have full chronological coverage.
+            # Semantic search is useless here: "what happened so far" has no
+            # content to match against specific passages.
+            chunks = []
+            for book_idx, chapter_idx in _get_chapters_in_scope(series):
+                chapter_chunks = vector_store.fetch_by_positions(
+                    series_id=body.series_id,
+                    book_index=book_idx,
+                    chapter_index=chapter_idx,
+                    user_id=user_id,
+                    positions=[0, 1, 2],
+                )
+                chunks.extend(chapter_chunks)
+    elif not skip_rag:
         chunks = retrieve_chunks(body.question, series, vector_store, user_id, body.top_k)
 
     if not chunks and not entity_context:
@@ -572,8 +610,8 @@ async def query_endpoint(
 
     history = body.conversation_history[-6:] if body.conversation_history else []
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    message = await client.messages.create(
+    anthropic_client: anthropic.AsyncAnthropic = request.app.state.anthropic_client
+    message = await anthropic_client.messages.create(
         model=settings.llm_model,
         max_tokens=1024,
         messages=[

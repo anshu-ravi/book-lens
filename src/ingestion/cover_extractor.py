@@ -1,6 +1,8 @@
 """Extract cover image from an epub file, with Open Library fallback."""
 
+from io import BytesIO
 from pathlib import Path
+from typing import Union
 
 import ebooklib
 import requests
@@ -9,8 +11,17 @@ from ebooklib import epub
 _OL_SEARCH_URL = "https://openlibrary.org/search.json"
 _OL_COVER_URL = "https://covers.openlibrary.org/b"
 
+EpubSource = Union[Path, bytes]
 
-def extract_cover(epub_path: Path) -> tuple[bytes, str] | None:
+
+def _open_epub(source: EpubSource) -> epub.EpubBook:
+    """Open an epub from a file path or raw bytes."""
+    if isinstance(source, bytes):
+        return epub.read_epub(BytesIO(source), options={"ignore_ncx": True})
+    return epub.read_epub(str(source), options={"ignore_ncx": True})
+
+
+def extract_cover(epub_source: EpubSource) -> tuple[bytes, str] | None:
     """Extract the cover image from an epub file.
 
     Tries four strategies in order:
@@ -20,14 +31,14 @@ def extract_cover(epub_path: Path) -> tuple[bytes, str] | None:
     4. First image item with "cover" in the filename
 
     Args:
-        epub_path: Path to the epub file.
+        epub_source: Path to the epub file, or raw epub bytes.
 
     Returns:
         Tuple of (image_bytes, extension) or None if no cover found.
         Extension includes the dot, e.g. ".jpg", ".png". Defaults to ".jpg"
         when the epub item has no file extension.
     """
-    book = epub.read_epub(str(epub_path), options={"ignore_ncx": True})
+    book = _open_epub(epub_source)
 
     # Strategy 1: ebooklib ITEM_COVER type
     for item in book.get_items():
@@ -64,22 +75,22 @@ def extract_cover(epub_path: Path) -> tuple[bytes, str] | None:
     return None
 
 
-def fetch_cover_open_library(title: str, epub_path: Path | None = None) -> tuple[bytes, str] | None:
+def fetch_cover_open_library(title: str, epub_source: EpubSource | None = None) -> tuple[bytes, str] | None:
     """Fetch a cover image from Open Library.
 
-    Tries ISBN lookup first (if epub_path is provided and contains an ISBN),
+    Tries ISBN lookup first (if epub_source is provided and contains an ISBN),
     then falls back to a title search.
 
     Args:
         title: Book title used for the search fallback.
-        epub_path: Optional path to the epub file for ISBN extraction.
+        epub_source: Optional epub path or bytes for ISBN extraction.
 
     Returns:
         Tuple of (image_bytes, ".jpg") or None if no cover found.
     """
     # Try ISBN from epub metadata
-    if epub_path is not None:
-        isbn = _extract_isbn(epub_path)
+    if epub_source is not None:
+        isbn = _extract_isbn(epub_source)
         if isbn:
             result = _fetch_ol_cover("isbn", isbn)
             if result:
@@ -89,16 +100,16 @@ def fetch_cover_open_library(title: str, epub_path: Path | None = None) -> tuple
     return _fetch_by_title(title)
 
 
-def _extract_isbn(epub_path: Path) -> str | None:
+def _extract_isbn(epub_source: EpubSource) -> str | None:
     """Extract ISBN-13 or ISBN-10 from epub DC metadata.
 
     Args:
-        epub_path: Path to the epub file.
+        epub_source: Path to the epub file, or raw epub bytes.
 
     Returns:
         ISBN string (digits only) or None if not found.
     """
-    book = epub.read_epub(str(epub_path), options={"ignore_ncx": True})
+    book = _open_epub(epub_source)
     dc_meta = book.metadata.get("http://purl.org/dc/elements/1.1/", {})
     for value, attrs in dc_meta.get("identifier", []):
         scheme = attrs.get("{http://www.idpf.org/2007/opf}scheme", "").lower()
