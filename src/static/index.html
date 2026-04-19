@@ -893,6 +893,175 @@
       .series-scroll { margin: 0; padding: 0; }
       .view-title-display { font-size: 52px; }
     }
+
+    /* ── Ask view (chat thread) ────────────────────────── */
+    .ask-view-layout {
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      min-height: calc(100dvh - 120px);
+    }
+    .ask-view-header { padding: 28px 0 16px; flex-shrink: 0; }
+    .ask-thread {
+      flex: 1;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--bone-3) transparent;
+      padding: 8px 0 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-height: 200px;
+    }
+    .ask-thread::-webkit-scrollbar { width: 4px; }
+    .ask-thread::-webkit-scrollbar-track { background: transparent; }
+    .ask-thread::-webkit-scrollbar-thumb { background: var(--bone-3); border-radius: 2px; }
+
+    .ask-empty { text-align: center; padding: 40px 20px; }
+    .ask-empty-icon {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      background: rgba(122,131,118,0.1);
+      color: var(--forest);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .ask-empty-text {
+      font-family: var(--serif-body);
+      font-size: 15px;
+      line-height: 1.55;
+      color: var(--ink-2);
+      font-style: italic;
+      max-width: 32ch;
+      margin: 0 auto 20px;
+    }
+
+    .msg { display: flex; flex-direction: column; }
+    .msg-user { align-items: flex-end; gap: 4px; }
+    .msg-bubble-user {
+      max-width: 82%;
+      padding: 12px 16px;
+      background: var(--forest);
+      color: var(--bone);
+      border-radius: 14px 14px 2px 14px;
+      font-family: var(--serif-body);
+      font-size: 15px;
+      line-height: 1.4;
+    }
+    .msg-scope-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--mono);
+      font-size: 9.5px;
+      color: var(--ink-3);
+      letter-spacing: 0.04em;
+      padding-right: 4px;
+    }
+    .msg-assistant { align-items: flex-start; gap: 8px; }
+    .scope-banner {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 9.5px;
+      color: var(--forest);
+      letter-spacing: 0.02em;
+      padding: 4px 10px;
+      background: rgba(122,131,118,0.1);
+      border-radius: 100px;
+    }
+    .scope-banner em { font-family: var(--serif-body); font-style: italic; font-size: 11px; letter-spacing: 0; }
+    .msg-bubble-ai {
+      max-width: 92%;
+      padding: 16px 18px;
+      background: var(--bone-2);
+      border: 1px solid var(--hairline);
+      border-radius: 2px 14px 14px 14px;
+      font-family: var(--serif-body);
+      font-size: 15px;
+      line-height: 1.55;
+      color: var(--ink);
+      white-space: pre-wrap;
+    }
+    .sources-section {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--hairline);
+    }
+    .sources-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+      margin-bottom: 8px;
+    }
+    .source-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 10px;
+      background: var(--bone);
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-sm);
+      margin-bottom: 4px;
+    }
+    .source-loc { font-family: var(--mono); font-size: 10px; color: var(--ink-3); white-space: nowrap; flex-shrink: 0; }
+    .source-score { font-family: var(--mono); font-size: 10px; color: var(--ink-4); flex-shrink: 0; }
+
+    .ask-composer {
+      flex-shrink: 0;
+      padding: 12px 0 8px;
+      border-top: 1px solid var(--hairline);
+      background: var(--bone);
+    }
+    .composer-series-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .composer-series-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+    }
+    .composer-row { display: flex; gap: 8px; align-items: center; }
+    .composer-input {
+      flex: 1;
+      padding: 12px 16px;
+      background: var(--bone-2);
+      border: 1px solid var(--hairline);
+      border-radius: 24px;
+      font-family: var(--serif-body);
+      font-size: 15px;
+      color: var(--ink);
+      outline: none;
+      transition: border-color var(--transition);
+    }
+    .composer-input:focus { border-color: var(--forest-2); background: var(--bone); }
+    .composer-input::placeholder { color: var(--ink-4); font-style: italic; }
+    .composer-send {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--forest);
+      border: none;
+      color: var(--bone);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all var(--transition);
+    }
+    .composer-send:disabled { background: var(--bone-3); color: var(--ink-4); cursor: not-allowed; }
+    .composer-send:not(:disabled):hover { background: var(--forest-2); }
   </style>
 </head>
 <body>
@@ -1174,66 +1343,122 @@
     </div>
 
     <!-- ═══════════════════ ASK VIEW ═══════════════════════ -->
-    <div x-show="view === 'ask'" class="view-enter">
+    <div x-show="view === 'ask'" class="view-enter ask-view-layout">
 
-      <div class="section-header">
-        <h1 class="section-title">Ask a Question</h1>
+      <!-- Header -->
+      <header class="ask-view-header">
+        <div class="view-eyebrow">Ask</div>
+        <h1 class="view-title-display" style="font-size:36px;margin-bottom:12px;">No spoilers,<br>by construction.</h1>
+      </header>
+
+      <!-- Thread -->
+      <div class="ask-thread" id="ask-thread">
+
+        <!-- Empty state -->
+        <div x-show="thread.length === 0 && !ask.loading" class="ask-empty">
+          <div class="ask-empty-icon">
+            <svg width="22" height="22" viewBox="0 0 14 14" fill="none">
+              <path d="M7 1l5 2v4c0 3-2 5.5-5 6-3-.5-5-3-5-6V3l5-2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+              <path d="M5 7l1.5 1.5L9 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <p class="ask-empty-text" x-show="ask.seriesId && ask.summary">
+            Ask anything. Answers stay within your reading bookmark.
+          </p>
+          <p class="ask-empty-text" x-show="ask.seriesId && !ask.summary" style="color:var(--red);">
+            No reading progress set. Update progress in the Library tab first.
+          </p>
+          <p class="ask-empty-text" x-show="!ask.seriesId">Select a series below to get started.</p>
+        </div>
+
+        <!-- Messages -->
+        <template x-for="(msg, i) in thread" :key="i">
+          <div :class="msg.role === 'user' ? 'msg msg-user' : (msg.role === 'error' ? 'msg' : 'msg msg-assistant')">
+
+            <template x-if="msg.role === 'user'">
+              <div>
+                <div class="msg-bubble-user" x-text="msg.text"></div>
+                <div class="msg-scope-label" style="margin-top:4px;">
+                  <svg width="10" height="10" viewBox="0 0 14 14" fill="none"><path d="M2 2h5a2 2 0 012 2v8a2 2 0 00-2-2H2V2zM12 2H7a2 2 0 00-2 2v8a2 2 0 012-2h5V2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+                  <span x-text="msg.seriesName + (msg.summary ? ' · ' + msg.summary : '')"></span>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="msg.role === 'assistant'">
+              <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;width:100%;">
+                <div class="scope-banner">
+                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M7 1l5 2v4c0 3-2 5.5-5 6-3-.5-5-3-5-6V3l5-2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 7l1.5 1.5L9 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  Answering from <em x-text="msg.seriesName"></em>
+                  <span x-show="msg.summary"> · <span x-text="msg.summary"></span></span>
+                </div>
+                <div class="msg-bubble-ai">
+                  <span x-text="msg.text"></span>
+                  <div x-show="msg.sources && msg.sources.length > 0" class="sources-section">
+                    <div class="sources-label">Sources</div>
+                    <template x-for="(src, j) in (msg.sources ?? [])" :key="j">
+                      <div class="source-row">
+                        <span class="source-loc" x-text="'Book ' + (src.book_index + 1) + ' · ' + src.chapter_label"></span>
+                        <span class="source-score" x-text="src.score ? (src.score * 100).toFixed(0) + '%' : ''"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="msg.role === 'error'">
+              <div class="alert alert-error" x-text="msg.text"></div>
+            </template>
+
+          </div>
+        </template>
+
+        <!-- Loading -->
+        <div x-show="ask.loading" class="msg msg-assistant" style="align-items:flex-start;gap:8px;">
+          <div class="scope-banner">Thinking…</div>
+          <div class="msg-bubble-ai" style="display:flex;align-items:center;gap:10px;padding:14px 16px;">
+            <span class="spinner" style="width:16px;height:16px;border-top-color:var(--forest);border-color:var(--bone-3);border-top-color:var(--forest);"></span>
+            <span style="font-style:italic;color:var(--ink-3);font-size:14px;">Searching within your reading progress…</span>
+          </div>
+        </div>
+
       </div>
 
-      <div class="card">
-        <div class="form-group">
-          <label>Series</label>
-          <select x-model="ask.seriesId" @change="updateReadingSummary()">
+      <!-- Composer -->
+      <div class="ask-composer">
+        <div class="composer-series-row">
+          <span class="composer-series-label">Series:</span>
+          <select x-model="ask.seriesId" @change="updateReadingSummary(); clearThread();"
+            style="font-family:var(--mono);font-size:11px;padding:5px 32px 5px 10px;background:var(--bone-2);border:1px solid var(--hairline);border-radius:4px;color:var(--ink);outline:none;appearance:none;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8864a' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 10px center;">
             <option value="" disabled>Select a series…</option>
             <template x-for="s in (library?.series ?? [])" :key="s.id">
               <option :value="s.id" x-text="s.name"></option>
             </template>
           </select>
+          <span x-show="ask.summary" style="font-family:var(--mono);font-size:9px;color:var(--moss);letter-spacing:0.04em;" x-text="ask.summary"></span>
         </div>
-
-        <!-- Reading progress summary -->
-        <div x-show="ask.seriesId && ask.summary" class="progress-summary" x-transition>
-          <strong>Reading progress:</strong> <span x-text="ask.summary"></span>
+        <div class="composer-row">
+          <input
+            class="composer-input"
+            type="text"
+            placeholder="Ask about this book…"
+            x-model="ask.question"
+            @keydown.enter="sendMessage()"
+            :disabled="!ask.seriesId || ask.loading"
+          />
+          <button class="composer-send"
+            @click="sendMessage()"
+            :disabled="!ask.seriesId || !ask.question.trim() || ask.loading"
+            aria-label="Send question">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M9 15V3m0 0L4 8m5-5l5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
         </div>
-        <div x-show="ask.seriesId && !ask.summary" class="progress-summary" style="color:var(--red)" x-transition>
-          No books started in this series. Update your progress in the Library tab first.
-        </div>
-
-        <div class="form-group">
-          <label>Your Question</label>
-          <textarea x-model="ask.question" placeholder="What do you want to know? (spoiler-safe answers only)"></textarea>
-        </div>
-
-        <div x-show="ask.error" class="alert alert-error" x-text="ask.error"></div>
-
-        <button class="btn btn-primary" style="width:100%;"
-          @click="askQuestion()"
-          :disabled="ask.loading || !ask.seriesId || !ask.question.trim()">
-          <span x-show="ask.loading" class="spinner"></span>
-          <span x-text="ask.loading ? 'Thinking…' : 'Ask'"></span>
-        </button>
+        <div x-show="ask.error" class="alert alert-error" style="margin-top:8px;margin-bottom:0;" x-text="ask.error"></div>
       </div>
 
-      <!-- Answer -->
-      <div x-show="ask.answer" class="answer-card" x-transition>
-        <div class="answer-text" x-text="ask.answer"></div>
-
-        <div x-show="ask.sources && ask.sources.length > 0">
-          <div class="sources-toggle" @click="ask.showSources = !ask.showSources">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" :style="ask.showSources ? 'transform:rotate(90deg)' : ''"><path d="M9 18l6-6-6-6"/></svg>
-            <span x-text="ask.showSources ? 'Hide sources' : 'Show ' + ask.sources.length + ' source' + (ask.sources.length > 1 ? 's' : '')"></span>
-          </div>
-          <div x-show="ask.showSources" x-transition style="margin-top:10px;">
-            <template x-for="(src, i) in ask.sources" :key="i">
-              <span class="source-chip">
-                <span x-text="'Book ' + (src.book_index + 1)"></span>
-                · <span x-text="src.chapter_label"></span>
-                · <span x-text="(src.score * 100).toFixed(0) + '%'"></span>
-              </span>
-            </template>
-          </div>
-        </div>
-      </div>
     </div>
 
     </main>
@@ -1313,6 +1538,7 @@ function app() {
     error: null,
     showNewSeriesForm: false,
     newSeries: { id: '', name: '' },
+    thread: [],
 
     upload: {
       seriesId: '',
@@ -1371,6 +1597,10 @@ function app() {
       this.uploadSuccess = '';
       this.uploadError = '';
       if (v === 'ask') this.updateReadingSummary();
+      if (v === 'ask' && !this.ask.seriesId && this.library?.series?.length) {
+        this.ask.seriesId = this.library.series[0].id;
+        this.updateReadingSummary();
+      }
     },
 
     sortedBooks(books) {
@@ -1542,6 +1772,66 @@ function app() {
         });
 
       this.ask.summary = parts.length ? parts.join(', ') : '';
+    },
+
+    // ── Ask: send message (chat thread) ────────────────────────
+    async sendMessage() {
+      const q = this.ask.question.trim();
+      if (!q || this.ask.loading || !this.ask.seriesId) return;
+
+      const series = this.library?.series?.find(s => s.id === this.ask.seriesId);
+      const seriesName = series?.name ?? this.ask.seriesId;
+
+      // Add user message to thread
+      this.thread.push({ role: 'user', text: q, seriesName, summary: this.ask.summary });
+      this.ask.question = '';
+      this.ask.loading = true;
+      this.ask.error = '';
+
+      // Build history from thread (last 6 turns, excluding the message just pushed)
+      const history = this.thread
+        .slice(-7, -1)
+        .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }));
+
+      try {
+        const res = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            series_id: this.ask.seriesId,
+            question: q,
+            top_k: 5,
+            conversation_history: history,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          this.thread.push({ role: 'error', text: data.detail ?? 'Query failed.' });
+        } else {
+          this.thread.push({
+            role: 'assistant',
+            text: data.answer,
+            sources: data.sources ?? [],
+            seriesName,
+            summary: this.ask.summary,
+          });
+        }
+      } catch (e) {
+        this.thread.push({ role: 'error', text: 'Network error. Is the server running?' });
+      } finally {
+        this.ask.loading = false;
+        this.$nextTick(() => {
+          const el = document.getElementById('ask-thread');
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+      }
+    },
+
+    clearThread() {
+      this.thread = [];
+      this.ask.answer = '';
+      this.ask.sources = [];
+      this.ask.error = '';
     },
 
     // ── Ask: submit question ────────────────────────────────────
