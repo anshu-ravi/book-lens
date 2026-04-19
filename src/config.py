@@ -1,6 +1,5 @@
 """Application configuration and settings."""
 
-from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings
@@ -13,14 +12,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     supabase_url: str
     supabase_key: str  # This can be the service_role key for backend bypass
-    supabase_anon_key: Optional[str] = None # Public key for frontend
-    qdrant_url: Optional[str] = None
-    qdrant_api_key: Optional[str] = None
-
-    # Application Paths (Fallback for local dev)
-    library_path: Path = Path("./library.json")
-    upload_dir: Path = Path("./uploads")
-    knowledge_dir: Path = Path("./knowledge")
+    supabase_anon_key: Optional[str] = None  # Public key for frontend
 
     # Model Configuration
     embedding_model: str = "all-MiniLM-L6-v2"
