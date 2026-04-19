@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from src.config import settings
 from src.ingestion.chunker import chunk_chapter
 from src.ingestion.embedder import get_embedder
-from src.ingestion.cover_extractor import extract_cover
+from src.ingestion.cover_extractor import extract_cover, fetch_cover_open_library
 from src.ingestion.epub_parser import parse_epub
 from src.ingestion.indexer import index_book
 from src.knowledge.models import KnowledgeBase
@@ -241,7 +241,7 @@ async def upload_book(
     # Extract and save cover image (best-effort — failure does not abort upload)
     has_cover = False
     try:
-        cover_result = extract_cover(epub_path)
+        cover_result = extract_cover(epub_path) or fetch_cover_open_library(title, epub_path)
         if cover_result is not None:
             cover_bytes, cover_ext = cover_result
             cover_file = save_dir / f"cover_{book_index}{cover_ext}"
