@@ -10,7 +10,9 @@ class Settings(BaseSettings):
 
     # API Keys
     anthropic_api_key: str
+    google_api_key: Optional[str] = None
     supabase_url: str
+
     supabase_key: str  # This can be the service_role key for backend bypass
     supabase_anon_key: Optional[str] = None  # Public key for frontend
 
