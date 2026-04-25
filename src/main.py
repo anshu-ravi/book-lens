@@ -7,13 +7,15 @@ from io import BytesIO
 from typing import Annotated, AsyncGenerator, Optional
 
 import anthropic
-from fastapi import (Depends, FastAPI, Form, Header, HTTPException, Request,
-                     UploadFile)
+from fastapi import (BackgroundTasks, Depends, FastAPI, Form, Header,
+                     HTTPException, Request, UploadFile)
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from src.config import settings
+from src.graph.builder import build_graph_payload
+from src.graph.digest import generate_digest
 from src.ingestion.chunker import chunk_chapter
 from src.ingestion.cover_extractor import (extract_cover,
                                            fetch_cover_open_library)
@@ -207,6 +209,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         key=settings.supabase_key,
     )
     app.state.anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    # Track which books are currently being extracted to prevent duplicates.
+    app.state.extracting_books = set()
     # Warm up the embedding model so the first upload isn't slow
     get_embedder()
     yield
@@ -254,10 +258,43 @@ async def add_series(
     return await load_library(user_id)
 
 
+async def _run_extraction_background(
+    series_id: str,
+    book_index: int,
+    user_id: str,
+    parsed_chapters: list,
+    anthropic_client: anthropic.AsyncAnthropic,
+    extracting_books: set,
+) -> None:
+    """Background task: extract knowledge for a book after upload."""
+    key = (series_id, book_index, user_id)
+    if key in extracting_books:
+        logger.info("Extraction already in progress for %s, skipping.", key)
+        return
+    
+    extracting_books.add(key)
+    try:
+        logger.info("Background extraction started: series=%s book=%d", series_id, book_index)
+        await extract_book_knowledge(
+            chapters=parsed_chapters,
+            series_id=series_id,
+            book_index=book_index,
+            user_id=user_id,
+            client=anthropic_client,
+            extraction_model=settings.extraction_model,
+        )
+        logger.info("Background extraction complete: series=%s book=%d", series_id, book_index)
+    except Exception:
+        logger.error("Background extraction failed: series=%s book=%d", series_id, book_index, exc_info=True)
+    finally:
+        extracting_books.remove(key)
+
+
 @app.post("/library/series/{series_id}/books", response_model=UploadBookResponse)
 async def upload_book(
     series_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     title: Annotated[str, Form()],
     book_index: Annotated[int, Form()],
     file: UploadFile,
@@ -320,6 +357,17 @@ async def upload_book(
         has_cover=has_cover,
     )
     await upsert_book(series_id, book, user_id)
+
+    # Kick off knowledge extraction in the background.
+    background_tasks.add_task(
+        _run_extraction_background,
+        series_id,
+        book_index,
+        user_id,
+        parsed_chapters,
+        request.app.state.anthropic_client,
+        request.app.state.extracting_books,
+    )
 
     return UploadBookResponse(
         series_id=series_id,
@@ -427,14 +475,14 @@ async def update_book_status_endpoint(
 
 @app.post(
     "/library/series/{series_id}/books/{book_index}/extract",
-    response_model=ExtractBookResponse,
 )
 async def extract_book_endpoint(
     series_id: str,
     book_index: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user),
-) -> ExtractBookResponse:
+):
     """Trigger knowledge extraction for a book in Supabase Storage."""
     series = await get_series(series_id, user_id)
     if series is None:
@@ -451,23 +499,23 @@ async def extract_book_endpoint(
 
     parsed_chapters = parse_epub(BytesIO(book_data))
 
-    logger.info("Starting knowledge extraction: series=%s book=%d", series_id, book_index)
-    kb = await extract_book_knowledge(
-        chapters=parsed_chapters,
-        series_id=series_id,
-        book_index=book_index,
-        user_id=user_id,
-        client=request.app.state.anthropic_client,
-        extraction_model=settings.extraction_model,
+    key = (series_id, book_index, user_id)
+    if key in request.app.state.extracting_books:
+        return {"message": "Extraction already in progress"}
+
+    logger.info("Enqueuing knowledge extraction: series=%s book=%d", series_id, book_index)
+    background_tasks.add_task(
+        _run_extraction_background,
+        series_id,
+        book_index,
+        user_id,
+        parsed_chapters,
+        request.app.state.anthropic_client,
+        request.app.state.extracting_books,
     )
 
-    return ExtractBookResponse(
-        series_id=series_id,
-        book_index=book_index,
-        characters_found=len(kb.characters),
-        summaries_generated=len(kb.summaries),
-        relationships_found=len(kb.relationships),
-    )
+    return {"message": "Extraction started"}
+
 
 
 @app.get("/library/series/{series_id}/knowledge", response_model=KnowledgeBase)
@@ -481,6 +529,127 @@ async def get_knowledge_endpoint(
 
     kb = await load_knowledge(series_id, user_id)
     return filter_to_progress(kb, series)
+
+
+def _get_reading_ceiling(series: "Series") -> tuple[int, int] | None:
+    """Return (book_index, chapter_index) ceiling for the series reading position."""
+    ceiling: tuple[int, int] | None = None
+    for book in series.books:
+        if book.status == BookStatus.NOT_STARTED:
+            continue
+        if book.status == BookStatus.COMPLETED:
+            last_chapter = max((c.index for c in book.chapters), default=0)
+            candidate = (book.index, last_chapter)
+        else:  # READING
+            ch = book.current_chapter_index if book.current_chapter_index is not None else 0
+            candidate = (book.index, ch)
+        if ceiling is None or candidate > ceiling:
+            ceiling = candidate
+    return ceiling
+
+
+@app.get("/library/series/{series_id}/knowledge-summary")
+async def get_knowledge_summary_endpoint(
+    series_id: str, user_id: str = Depends(get_current_user)
+) -> dict:
+    """Return extraction progress per book: how many chapters have been extracted vs total.
+
+    Used by the frontend to show the extraction badge on book covers without
+    loading the full knowledge base.
+    """
+    series = await get_series(series_id, user_id)
+    if series is None:
+        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
+
+    kb = await load_knowledge(series_id, user_id)
+
+    # Count extracted chapters per book_index.
+    extracted_per_book: dict[int, int] = {}
+    for ref in kb.extracted_chapters:
+        extracted_per_book[ref.book_index] = extracted_per_book.get(ref.book_index, 0) + 1
+
+    books_summary = [
+        {
+            "index": book.index,
+            "extracted": extracted_per_book.get(book.index, 0),
+            "total": len(book.chapters),
+        }
+        for book in series.books
+    ]
+    return {"books": books_summary}
+
+
+@app.get("/library/series/{series_id}/graph")
+async def get_graph_endpoint(
+    series_id: str,
+    from_book: int = 0,
+    from_chapter: int = 0,
+    to_book: int = 0,
+    to_chapter: int = 0,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Return graph-ready nodes, edges, and scrubber markers for the Reading Compass.
+
+    The window (from_book/from_chapter → to_book/to_chapter) is capped at the
+    user's actual reading position to enforce spoiler safety.
+    """
+    series = await get_series(series_id, user_id)
+    if series is None:
+        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
+
+    ceiling = _get_reading_ceiling(series)
+    if ceiling is None:
+        return {"nodes": [], "edges": [], "scrubber_markers": []}
+
+    # Cap the requested window at the reading ceiling.
+    to_book = min(to_book, ceiling[0])
+    if to_book == ceiling[0]:
+        to_chapter = min(to_chapter, ceiling[1])
+
+    raw_kb = await load_knowledge(series_id, user_id)
+    kb = filter_to_progress(raw_kb, series)
+
+    return build_graph_payload(kb, from_book, from_chapter, to_book, to_chapter)
+
+
+@app.get("/library/series/{series_id}/graph/digest")
+async def get_graph_digest_endpoint(
+    series_id: str,
+    request: Request,
+    from_book: int = 0,
+    from_chapter: int = 0,
+    to_book: int = 0,
+    to_chapter: int = 0,
+    user_id: str = Depends(get_current_user),
+) -> dict:
+    """Generate a narrative story digest for the given reading window.
+
+    This endpoint makes a Claude API call; call it in parallel with /graph
+    so the graph renders immediately while the digest loads.
+    """
+    series = await get_series(series_id, user_id)
+    if series is None:
+        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
+
+    ceiling = _get_reading_ceiling(series)
+    if ceiling is None:
+        return {"digest": "No reading progress found."}
+
+    # Cap to reading ceiling.
+    to_book = min(to_book, ceiling[0])
+    if to_book == ceiling[0]:
+        to_chapter = min(to_chapter, ceiling[1])
+
+    raw_kb = await load_knowledge(series_id, user_id)
+    kb = filter_to_progress(raw_kb, series)
+
+    anthropic_client: anthropic.AsyncAnthropic = request.app.state.anthropic_client
+    digest = await generate_digest(
+        kb, from_book, from_chapter, to_book, to_chapter,
+        client=anthropic_client,
+        model=settings.llm_model,
+    )
+    return {"digest": digest}
 
 
 @app.post("/query/prompts", response_model=ProactivePromptResponse)

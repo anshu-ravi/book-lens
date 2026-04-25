@@ -12,6 +12,8 @@
     rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.29.2/dist/cytoscape.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
     /* ── Reset & base ─────────────────────────────────────────── */
@@ -1023,6 +1025,132 @@
       flex-shrink: 0;
     }
 
+    .cover-extracting-badge {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(138, 96, 32, 0.88);
+      color: #fef3d0;
+      font-family: var(--mono);
+      font-size: 7px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      padding: 3px 8px;
+      border-radius: 100px;
+      backdrop-filter: blur(4px);
+      white-space: nowrap;
+      z-index: 3;
+      animation: extractingPulse 2s ease-in-out infinite;
+    }
+
+    .cover-extraction-bar {
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 5px;
+      height: 2px;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 1px;
+      overflow: hidden;
+      z-index: 3;
+    }
+
+    .cover-extraction-fill {
+      height: 100%;
+      border-radius: 1px;
+      background: rgba(255, 200, 80, 0.7);
+      transition: width 0.5s ease;
+    }
+
+    @keyframes extractingPulse {
+      0%, 100% { opacity: 0.85; }
+      50% { opacity: 1; }
+    }
+
+    /* ── Knowledge panel ──────────────────────────────────────── */
+    .knowledge-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+      padding: 8px 0 4px;
+      transition: color var(--transition);
+    }
+
+    .knowledge-toggle:hover { color: var(--ink-2); }
+
+    .knowledge-toggle svg {
+      width: 10px;
+      height: 10px;
+      transition: transform 0.2s ease;
+    }
+
+    .knowledge-toggle.open svg { transform: rotate(90deg); }
+
+    .knowledge-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 0 4px;
+    }
+
+    .knowledge-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .knowledge-row-label {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--ink-3);
+      width: 130px;
+      flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .knowledge-bar-track {
+      flex: 1;
+      height: 3px;
+      background: var(--bone-3);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .knowledge-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.4s ease;
+    }
+
+    .knowledge-bar-fill.complete { background: var(--green); }
+    .knowledge-bar-fill.partial { background: var(--amber); }
+    .knowledge-bar-fill.none { background: var(--bone-3); width: 0 !important; }
+
+    .knowledge-row-count {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--ink-4);
+      width: 52px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .knowledge-row-count.complete { color: var(--green); }
+
     .cover-unread-tag {
       position: absolute;
       top: 8px;
@@ -1626,6 +1754,404 @@
     .composer-send:not(:disabled):hover {
       background: var(--forest-2);
     }
+
+    /* ── Explore view ─────────────────────────────────────────── */
+    /* Break out of app-content max-width constraints */
+    .app-content.explore-active {
+      max-width: 100%;
+      padding: 0;
+      width: 100%;
+    }
+
+    .explore-layout {
+      display: flex;
+      flex-direction: column;
+      height: calc(100dvh - 60px); /* subtract mobile tabbar */
+      width: 100%;
+      overflow: hidden;
+    }
+
+    @media (min-width: 768px) {
+      .explore-layout {
+        height: 100dvh;
+      }
+    }
+
+    .explore-header {
+      padding: 20px 24px 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .explore-header .view-eyebrow {
+      margin-bottom: 2px;
+    }
+
+    .explore-series-select {
+      margin-left: auto;
+      padding: 6px 10px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-sm);
+      background: var(--bone);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--ink-2);
+      cursor: pointer;
+    }
+
+    .explore-canvas {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .explore-main {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    .explore-graph {
+      flex: 1;
+      min-width: 0;
+      background: var(--bone-2);
+      position: relative;
+    }
+
+    #cy {
+      position: absolute;
+      inset: 0;
+    }
+
+    .explore-graph-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--ink-4);
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .explore-panel {
+      width: 300px;
+      flex-shrink: 0;
+      border-left: 1px solid var(--hairline);
+      background: var(--bone);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .explore-panel-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .explore-panel-loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      height: 120px;
+      color: var(--ink-3);
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+    }
+
+    .explore-panel-title {
+      font-family: var(--serif-display);
+      font-size: 1.1rem;
+      font-weight: 600;
+      font-style: italic;
+      color: var(--forest);
+      margin-bottom: 4px;
+    }
+
+    .explore-panel-sub {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--ink-4);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .explore-panel-digest {
+      font-size: 0.9rem;
+      line-height: 1.7;
+      color: var(--ink-2);
+    }
+
+    .explore-panel-digest p { margin-bottom: 12px; }
+    .explore-panel-digest strong { color: var(--ink); }
+
+    .explore-roll-call {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .explore-char-chip {
+      padding: 4px 10px;
+      border-radius: 99px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      border: 1px solid var(--hairline);
+      background: var(--bone-2);
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition);
+    }
+
+    .explore-char-chip:hover {
+      background: var(--bone-3);
+      border-color: var(--ink-4);
+    }
+
+    .explore-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin-top: 4px;
+    }
+
+    .explore-timeline-item {
+      display: flex;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .explore-timeline-item:last-child {
+      border-bottom: none;
+    }
+
+    .explore-timeline-marker {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--brass);
+      flex-shrink: 0;
+      margin-top: 6px;
+    }
+
+    .explore-timeline-marker.turning-point {
+      background: var(--ribbon);
+    }
+
+    .explore-timeline-label {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--ink-4);
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+
+    .explore-timeline-text {
+      font-size: 0.85rem;
+      color: var(--ink-2);
+      line-height: 1.5;
+    }
+
+    .explore-connections {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .explore-conn-chip {
+      padding: 3px 9px;
+      border-radius: 99px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.04em;
+      border: 1px solid;
+      cursor: pointer;
+      transition: opacity var(--transition);
+    }
+
+    .explore-conn-chip:hover { opacity: 0.75; }
+
+    .explore-back-btn {
+      background: none;
+      border: none;
+      color: var(--ink-4);
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 14px;
+      padding: 0;
+      transition: color var(--transition);
+    }
+
+    .explore-back-btn:hover { color: var(--ink); }
+
+    .explore-rel-type {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.04em;
+      border: 1px solid;
+      margin-bottom: 14px;
+    }
+
+    /* ── Scrubber bar ─────────────────────────────────────────── */
+    .explore-scrubber {
+      flex-shrink: 0;
+      border-top: 1px solid var(--hairline);
+      background: var(--bone);
+      padding: 12px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .scrubber-presets {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .scrubber-preset {
+      padding: 5px 12px;
+      border-radius: 99px;
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+      border: 1px solid var(--hairline);
+      background: var(--bone-2);
+      cursor: pointer;
+      transition: background var(--transition), border-color var(--transition), color var(--transition);
+    }
+
+    .scrubber-preset:hover {
+      background: var(--bone-3);
+      border-color: var(--ink-4);
+    }
+
+    .scrubber-preset.active {
+      background: var(--forest);
+      color: var(--bone);
+      border-color: var(--forest);
+    }
+
+    .scrubber-custom {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .scrubber-book-select {
+      padding: 5px 8px;
+      border: 1px solid var(--hairline);
+      border-radius: var(--radius-sm);
+      background: var(--bone);
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      color: var(--ink-2);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .scrubber-track-wrap {
+      flex: 1;
+      position: relative;
+      height: 28px;
+      display: flex;
+      align-items: center;
+    }
+
+    .scrubber-track {
+      width: 100%;
+      height: 4px;
+      background: var(--bone-3);
+      border-radius: 2px;
+      position: relative;
+    }
+
+    .scrubber-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      background: var(--forest);
+      border-radius: 2px;
+      pointer-events: none;
+      transition: width 0.2s ease;
+    }
+
+    .scrubber-thumb {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--forest);
+      border: 2px solid var(--bone);
+      box-shadow: 0 0 0 1px var(--forest);
+      cursor: grab;
+      z-index: 2;
+      transition: left 0.15s ease;
+    }
+
+    .scrubber-markers-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .scrubber-marker-dot {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      border: 1.5px solid var(--bone);
+      pointer-events: all;
+      cursor: pointer;
+      z-index: 3;
+    }
+
+    .scrubber-marker-dot[data-type="relationship"] { background: #5a9e94; }
+    .scrubber-marker-dot[data-type="turning_point"] { background: var(--ribbon); }
+    .scrubber-marker-dot[data-type="first_appearance"] { background: var(--bone-3); border-color: var(--ink-4); }
+
+    .scrubber-chapter-label {
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      color: var(--ink-4);
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
   </style>
 </head>
 
@@ -1713,6 +2239,21 @@
           </svg>
           Ask
         </button>
+        <button class="sidebar-tab" :class="{ active: view === 'explore' }" @click="switchView('explore')">
+          <svg viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/>
+            <circle cx="10" cy="10" r="2.5" fill="currentColor"/>
+            <path d="M10 3v1.5M10 15.5V17M3 10h1.5M15.5 10H17" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          Explore
+        </button>
+        <button class="sidebar-tab" :class="{ active: view === 'help' }" @click="switchView('help')">
+          <svg viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4" />
+            <path d="M10 13.5v-.5m0-1.5a2.5 2.5 0 10-2.5-2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+          Help
+        </button>
       </nav>
       <button class="sidebar-signout" @click="logOut()">
         <svg viewBox="0 0 20 20" fill="none">
@@ -1731,7 +2272,7 @@
       </header>
 
       <!-- Content -->
-      <main class="app-content">
+      <main class="app-content" :class="{'explore-active': view === 'explore'}">
 
         <!-- ═══════════════════ LIBRARY VIEW ═══════════════════ -->
         <div x-show="view === 'library'" class="view-enter" style="padding: 28px 0 48px;">
@@ -1891,7 +2432,7 @@
                             </div>
                           </div>
                           <div class="cover-progress-bar"
-                            x-show="book.status === 'reading' && book.chapters && book.chapters.length">
+                            x-show="book.status === 'reading' && book.chapters && book.chapters.length && !isExtracting(series.id, book.index)">
                             <div class="cover-progress-fill" :style="'width:' + chapterProgress(book) + '%'"></div>
                           </div>
                           <div class="cover-badge" x-show="book.status === 'completed'">
@@ -1901,7 +2442,11 @@
                             </svg>
                             READ
                           </div>
-                          <div class="cover-unread-tag" x-show="book.status === 'not_started'">UNREAD</div>
+                          <div class="cover-unread-tag" x-show="book.status === 'not_started' && !isExtracting(series.id, book.index)">UNREAD</div>
+                          <div class="cover-extracting-badge" x-show="isExtracting(series.id, book.index)">EXTRACTING</div>
+                          <div class="cover-extraction-bar" x-show="isExtracting(series.id, book.index)">
+                            <div class="cover-extraction-fill" :style="'width:' + extractionPct(series.id, book.index) + '%'"></div>
+                          </div>
                           <div class="cover-sheen" x-show="!book.has_cover"></div>
                         </button>
                         <!-- Actions below cover -->
@@ -1915,6 +2460,47 @@
                       </div>
                     </template>
                   </div>
+
+                  <!-- Knowledge extraction toggle -->
+                  <button class="knowledge-toggle" :class="{ open: knowledgeOpen[series.id] }" @click="knowledgeOpen = { ...knowledgeOpen, [series.id]: !knowledgeOpen[series.id] }"
+                    x-show="knowledgeSummary[series.id]">
+                    <svg viewBox="0 0 10 10" fill="none">
+                      <path d="M3 2l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    Knowledge
+                  </button>
+
+                  <div class="knowledge-panel" x-show="knowledgeOpen[series.id]" x-transition>
+                    <template x-for="book in sortedBooks(series.books)" :key="book.index">
+                      <div class="knowledge-row">
+                        <div class="knowledge-row-label" x-text="book.title"></div>
+                        <div class="knowledge-bar-track">
+                          <div class="knowledge-bar-fill"
+                            :class="extractionPct(series.id, book.index) === 100 ? 'complete' : extractionPct(series.id, book.index) > 0 ? 'partial' : 'none'"
+                            :style="'width:' + extractionPct(series.id, book.index) + '%'">
+                          </div>
+                        </div>
+                        <div class="knowledge-row-count"
+                          :class="{ complete: extractionPct(series.id, book.index) === 100 }"
+                          x-text="(knowledgeSummary[series.id]?.[book.index]?.extracted ?? 0) + '/' + (knowledgeSummary[series.id]?.[book.index]?.total ?? book.chapters?.length ?? '?')">
+                        </div>
+                        <button
+                          x-show="extractionPct(series.id, book.index) < 100"
+                          @click="triggerExtraction(series.id, book.index)"
+                          :disabled="extractingNow[series.id + '_' + book.index]"
+                          style="flex-shrink:0;background:none;border:1px solid var(--hairline);border-radius:var(--radius-sm);padding:2px 7px;font-family:var(--mono);font-size:0.62rem;letter-spacing:0.06em;color:var(--ink-4);cursor:pointer;transition:color var(--transition),border-color var(--transition);"
+                          @mouseover="$el.style.color='var(--ink)';$el.style.borderColor='var(--ink-3)'"
+                          @mouseleave="$el.style.color='var(--ink-4)';$el.style.borderColor='var(--hairline)'"
+                          x-text="extractingNow[series.id + '_' + book.index] ? 'Running…' : 'Extract'">
+                        </button>
+                      </div>
+                      <div x-show="extractionErrors[series.id + '_' + book.index]"
+                        x-text="extractionErrors[series.id + '_' + book.index]"
+                        style="font-size:0.7rem;color:var(--red);margin-top:4px;line-height:1.4;">
+                      </div>
+                    </template>
+                  </div>
+
                 </div>
 
               </section>
@@ -1949,7 +2535,7 @@
                               <div class="cover-title" style="font-size:13px;padding-top:12px;" x-text="book.title"></div>
                             </div>
                             <div class="cover-progress-bar"
-                              x-show="book.status === 'reading' && book.chapters && book.chapters.length">
+                              x-show="book.status === 'reading' && book.chapters && book.chapters.length && !isExtracting(series.id, book.index)">
                               <div class="cover-progress-fill" :style="'width:' + chapterProgress(book) + '%'"></div>
                             </div>
                             <div class="cover-badge" x-show="book.status === 'completed'">
@@ -1959,7 +2545,11 @@
                               </svg>
                               READ
                             </div>
-                            <div class="cover-unread-tag" x-show="book.status === 'not_started'">UNREAD</div>
+                            <div class="cover-unread-tag" x-show="book.status === 'not_started' && !isExtracting(series.id, book.index)">UNREAD</div>
+                            <div class="cover-extracting-badge" x-show="isExtracting(series.id, book.index)">EXTRACTING</div>
+                            <div class="cover-extraction-bar" x-show="isExtracting(series.id, book.index)">
+                              <div class="cover-extraction-fill" :style="'width:' + extractionPct(series.id, book.index) + '%'"></div>
+                            </div>
                             <div class="cover-sheen" x-show="!book.has_cover"></div>
                           </button>
                           <button class="btn-icon" :title="'Delete ' + book.title" :aria-label="'Delete ' + book.title"
@@ -2245,6 +2835,223 @@
 
         </div>
 
+        <!-- ═══════════════════ EXPLORE VIEW ═══════════════════ -->
+        <div x-show="view === 'explore'" class="explore-layout" x-data="exploreTab()">
+
+          <!-- Header -->
+          <div class="explore-header">
+            <div>
+              <div class="view-eyebrow">Explore</div>
+              <div style="font-family:var(--serif-display);font-size:1.1rem;font-style:italic;color:var(--forest);">Reading Compass</div>
+            </div>
+            <select class="explore-series-select" x-model="seriesId" @change="onSeriesChange()">
+              <template x-for="s in library?.series ?? []" :key="s.id">
+                <option :value="s.id" x-text="s.name"></option>
+              </template>
+            </select>
+          </div>
+
+          <!-- Main canvas: graph + panel -->
+          <div class="explore-canvas">
+            <div class="explore-main">
+
+              <!-- Cytoscape graph -->
+              <div class="explore-graph">
+                <div id="cy" x-ref="cyContainer"></div>
+                <div class="explore-graph-empty" x-show="!graphData || !graphData.nodes.length">
+                  <svg width="28" height="28" viewBox="0 0 20 20" fill="none">
+                    <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.2"/>
+                    <circle cx="10" cy="10" r="2.5" fill="currentColor" opacity="0.3"/>
+                    <path d="M10 3v1.5M10 15.5V17M3 10h1.5M15.5 10H17" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  </svg>
+                  <span x-show="!seriesId">Select a series to begin</span>
+                  <span x-show="seriesId && !graphLoading">No character data yet — run knowledge extraction first</span>
+                  <div class="spinner" x-show="graphLoading" style="width:20px;height:20px;"></div>
+                </div>
+              </div>
+
+              <!-- Recap panel -->
+              <div class="explore-panel">
+                <div class="explore-panel-content">
+
+                  <!-- Loading state for digest -->
+                  <div class="explore-panel-loading" x-show="digestLoading && panelState === 'recap'">
+                    <div class="spinner" style="width:16px;height:16px;"></div>
+                    <span>Generating recap…</span>
+                  </div>
+
+                  <!-- State 1: Full Recap -->
+                  <div x-show="panelState === 'recap' && !digestLoading">
+                    <div class="explore-panel-title">Story so far</div>
+                    <div class="explore-panel-sub" x-text="windowLabel"></div>
+                    <div class="explore-panel-digest prose" x-html="marked.parse(digest || '_No recap available yet._')"></div>
+                    <div class="explore-roll-call" x-show="graphData && graphData.nodes.filter(n => !n.ghost).length">
+                      <template x-for="node in (graphData?.nodes ?? []).filter(n => !n.ghost).slice(0, 20)" :key="node.id">
+                        <button
+                          class="explore-char-chip"
+                          :style="`border-color: ${factionColor(node.faction)}44; color: ${factionColor(node.faction)}`"
+                          @click="selectCharacter(node)"
+                          x-text="node.label">
+                        </button>
+                      </template>
+                    </div>
+                  </div>
+
+                  <!-- State 2: Character Arc -->
+                  <div x-show="panelState === 'character' && selectedNode">
+                    <button class="explore-back-btn" @click="panelState = 'recap'">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M6 2L3 5l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      Back
+                    </button>
+                    <div class="explore-panel-title" x-text="selectedNode?.label"></div>
+                    <div class="explore-panel-sub">
+                      <span x-text="selectedNode?.faction || ''"></span>
+                      <span x-show="selectedNode?.role"> · <span x-text="selectedNode?.role"></span></span>
+                    </div>
+                    <div class="explore-timeline">
+                      <template x-for="(evt, i) in (selectedNode?.key_events ?? [])" :key="i">
+                        <div class="explore-timeline-item">
+                          <div class="explore-timeline-marker"></div>
+                          <div>
+                            <div class="explore-timeline-label" x-text="`Book ${evt.book + 1} · Ch ${evt.chapter + 1}`"></div>
+                            <div class="explore-timeline-text" x-text="evt.description"></div>
+                          </div>
+                        </div>
+                      </template>
+                      <div x-show="!selectedNode?.key_events?.length" style="color:var(--ink-4);font-size:0.85rem;">No events in this window.</div>
+                    </div>
+                    <!-- Connections -->
+                    <div x-show="characterConnections(selectedNode?.id).length" style="margin-top:16px;">
+                      <div class="explore-panel-sub" style="margin-bottom:8px;">Connections</div>
+                      <div class="explore-connections">
+                        <template x-for="edge in characterConnections(selectedNode?.id)" :key="edge.source + edge.target">
+                          <button
+                            class="explore-conn-chip"
+                            :style="`border-color:${relColor(edge.type)}66;color:${relColor(edge.type)};background:${relColor(edge.type)}11`"
+                            @click="selectEdge(edge)"
+                            x-text="(edge.source === selectedNode.id ? edge.target : edge.source) + ' · ' + edge.type">
+                          </button>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- State 3: Relationship History -->
+                  <div x-show="panelState === 'relationship' && selectedEdge">
+                    <button class="explore-back-btn" @click="panelState = selectedNode ? 'character' : 'recap'">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                        <path d="M6 2L3 5l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                      Back
+                    </button>
+                    <div class="explore-panel-title" x-text="(selectedEdge?.source ?? '') + ' & ' + (selectedEdge?.target ?? '')"></div>
+                    <div
+                      class="explore-rel-type"
+                      :style="`border-color:${relColor(selectedEdge?.type)}66;color:${relColor(selectedEdge?.type)};background:${relColor(selectedEdge?.type)}11`"
+                      x-text="selectedEdge?.type || ''">
+                    </div>
+                    <div class="explore-timeline">
+                      <template x-for="(moment, i) in (selectedEdge?.moments ?? [])" :key="i">
+                        <div class="explore-timeline-item">
+                          <div class="explore-timeline-marker" :class="{'turning-point': selectedEdge?.has_turning_point && i > 0}"></div>
+                          <div>
+                            <div class="explore-timeline-label" x-text="`Book ${moment.book + 1} · Ch ${moment.chapter + 1}`"></div>
+                            <div class="explore-timeline-text" x-text="moment.description"></div>
+                          </div>
+                        </div>
+                      </template>
+                      <div x-show="!selectedEdge?.moments?.length" style="color:var(--ink-4);font-size:0.85rem;">No moments in this window.</div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+
+            <!-- Scrubber bar -->
+            <div class="explore-scrubber">
+              <div class="scrubber-presets">
+                <button class="scrubber-preset" :class="{active: activePreset === 'last10'}" @click="applyPreset('last10')">Last 10 chapters</button>
+                <button class="scrubber-preset" :class="{active: activePreset === 'book'}" @click="applyPreset('book')">This book</button>
+                <button class="scrubber-preset" :class="{active: activePreset === 'series'}" @click="applyPreset('series')">Full series</button>
+                <button class="scrubber-preset" :class="{active: activePreset === 'custom'}" @click="activePreset = 'custom'">Custom ↓</button>
+              </div>
+              <div class="scrubber-custom" x-show="activePreset === 'custom'">
+                <select class="scrubber-book-select" x-model.number="scrubber.bookIndex" @change="onScrubberBookChange()">
+                  <template x-for="(b, i) in availableBooksForScrubber()" :key="i">
+                    <option :value="b.index" x-text="b.title || ('Book ' + (b.index + 1))"></option>
+                  </template>
+                </select>
+                <div class="scrubber-track-wrap">
+                  <div class="scrubber-track">
+                    <div class="scrubber-fill" :style="`width: ${scrubberFillPct()}%`"></div>
+                    <!-- Marker dots -->
+                    <div class="scrubber-markers-layer">
+                      <template x-for="(marker, i) in scrubberMarkersForBook()" :key="i">
+                        <div
+                          class="scrubber-marker-dot"
+                          :data-type="marker.type"
+                          :style="`left: ${markerPct(marker)}%`"
+                          :title="marker.label"
+                          @click="jumpToMarker(marker)">
+                        </div>
+                      </template>
+                    </div>
+                    <!-- Thumb -->
+                    <div class="scrubber-thumb"
+                      :style="`left: ${scrubberFillPct()}%`"
+                      @mousedown="startScrub($event)"
+                      @touchstart.prevent="startScrub($event)">
+                    </div>
+                  </div>
+                </div>
+                <div class="scrubber-chapter-label" x-text="scrubberChapterLabel()"></div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /.explore view -->
+
+        <!-- Help view -->
+        <div x-show="view === 'help'" class="view-enter" style="padding: 28px 0 48px;">
+          <div style="max-width: 560px;">
+            <div class="view-eyebrow">How it works</div>
+            <h1 class="view-title-display" style="margin-bottom: 28px;">Getting started</h1>
+
+            <div style="display: flex; flex-direction: column; gap: 28px;">
+
+              <div>
+                <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--moss); margin-bottom: 6px;">Step 1 — Library</div>
+                <div style="font-family: var(--serif-display); font-size: 18px; font-weight: 500; font-style: italic; color: var(--forest); margin-bottom: 6px;">Create a series</div>
+                <p style="color: var(--ink-2); line-height: 1.65;">Every book lives inside a series. For standalone novels, use the same name for both the series and the book. Tap <strong>+ New Series</strong> in the Library tab to begin.</p>
+              </div>
+
+              <div>
+                <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--moss); margin-bottom: 6px;">Step 2 — Upload</div>
+                <div style="font-family: var(--serif-display); font-size: 18px; font-weight: 500; font-style: italic; color: var(--forest); margin-bottom: 6px;">Add your books</div>
+                <p style="color: var(--ink-2); line-height: 1.65;">Go to the Upload tab, select your series, enter the book's position in the series, then drop in your EPUB file. Indexing takes about a minute. You can upload books in any order.</p>
+              </div>
+
+              <div>
+                <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--moss); margin-bottom: 6px;">Step 3 — Ask</div>
+                <div style="font-family: var(--serif-display); font-size: 18px; font-weight: 500; font-style: italic; color: var(--forest); margin-bottom: 6px;">Ask anything</div>
+                <p style="color: var(--ink-2); line-height: 1.65;">Once a book is indexed, head to the Ask tab. Select your series and ask about characters, plot details, themes, or relationships.</p>
+              </div>
+
+              <div style="border-top: 1px solid var(--hairline); padding-top: 24px;">
+                <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--moss); margin-bottom: 12px;">Good to know</div>
+                <ul style="list-style: none; display: flex; flex-direction: column; gap: 12px; color: var(--ink-2); line-height: 1.65;">
+                  <li>BookLens is spoiler-safe — it only draws on content up to where you've read. Mark a book as <strong>Reading</strong> or <strong>Completed</strong> in the Library to enable this.</li>
+                  <li>Keep your chapter progress up to date in the Library. The spoiler filter uses it across the whole app.</li>
+                  <li>Only EPUB files are supported.</li>
+                </ul>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
       </main>
 
       <!-- Tab bar (mobile only) -->
@@ -2271,6 +3078,23 @@
               stroke-width="1.4" stroke-linejoin="round" />
           </svg>
           Ask
+          <div class="tab-dot"></div>
+        </button>
+        <button class="tab" :class="{ active: view === 'help' }" @click="switchView('help')">
+          <svg viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4" />
+            <path d="M10 13.5v-.5m0-1.5a2.5 2.5 0 10-2.5-2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+          Help
+          <div class="tab-dot"></div>
+        </button>
+        <button class="tab" :class="{ active: view === 'explore' }" @click="switchView('explore')">
+          <svg viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/>
+            <circle cx="10" cy="10" r="2.5" fill="currentColor"/>
+            <path d="M10 3v1.5M10 15.5V17M3 10h1.5M15.5 10H17" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+          Explore
           <div class="tab-dot"></div>
         </button>
         <button class="tab" @click="logOut()">
@@ -2347,6 +3171,10 @@
         },
         view: 'library',
         library: null,
+        knowledgeSummary: {},   // { seriesId: { bookIndex: { extracted, total } } }
+        extractingNow: {},      // { 'seriesId_bookIndex': true } while POST in flight
+        extractionErrors: {},   // { 'seriesId_bookIndex': 'error message' }
+        knowledgeOpen: {},      // { seriesId: bool }
         saving: false,
         error: null,
         showNewSeriesForm: false,
@@ -2490,9 +3318,77 @@
             if (!res.ok) throw new Error("Failed to load library");
             this.library = await res.json();
             this.updateReadingSummary();
+            this.refreshKnowledgeSummary();
           } catch (e) {
             this.error = "Failed to connect to library.";
           }
+        },
+
+        async refreshKnowledgeSummary() {
+          if (!this.library?.series?.length) return;
+          await Promise.allSettled(
+            this.library.series.map(async (series) => {
+              if (!series.books.length) return;
+              try {
+                const res = await this.secureFetch(`/library/series/${series.id}/knowledge-summary`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const byIndex = {};
+                for (const b of data.books) byIndex[b.index] = { extracted: b.extracted, total: b.total };
+                this.knowledgeSummary = { ...this.knowledgeSummary, [series.id]: byIndex };
+              } catch (e) { /* non-fatal */ }
+            })
+          );
+        },
+
+        async triggerExtraction(seriesId, bookIndex) {
+          const key = seriesId + '_' + bookIndex;
+          this.extractingNow = { ...this.extractingNow, [key]: true };
+          this.extractionErrors = { ...this.extractionErrors, [key]: null };
+          try {
+            const res = await this.secureFetch(`/library/series/${seriesId}/books/${bookIndex}/extract`, { method: 'POST' });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              this.extractionErrors = { ...this.extractionErrors, [key]: body.detail || `Extraction failed (${res.status})` };
+            } else {
+              // Extraction started in background. Start polling for results
+              this.startPolling(seriesId, bookIndex);
+            }
+          } catch (e) {
+            this.extractionErrors = { ...this.extractionErrors, [key]: 'Could not reach the server.' };
+          } finally {
+            const updated = { ...this.extractingNow };
+            delete updated[key];
+            this.extractingNow = updated;
+          }
+        },
+
+        startPolling(seriesId, bookIndex) {
+          // Poll every 5 seconds until extraction is complete
+          const pollId = setInterval(async () => {
+            // Only poll if we are still on the library view or something that needs this
+            await this.refreshKnowledgeSummary();
+            if (!this.isExtracting(seriesId, bookIndex)) {
+              clearInterval(pollId);
+            }
+          }, 5000);
+        },
+
+
+        isExtracting(seriesId, bookIndex) {
+          const s = this.knowledgeSummary[seriesId];
+          if (!s) return false;
+          const b = s[bookIndex];
+          if (!b || b.total === 0) return false;
+          return b.extracted < b.total;
+        },
+
+        extractionPct(seriesId, bookIndex) {
+          const s = this.knowledgeSummary[seriesId];
+          if (!s) return 0;
+          const b = s[bookIndex];
+          if (!b || b.total === 0) return 0;
+          return Math.round((b.extracted / b.total) * 100);
         },
 
         switchView(v) {
@@ -2805,6 +3701,328 @@
           return Math.round((series.books.filter(b => b.status === 'completed').length / series.books.length) * 100);
         },
 
+      };
+    }
+
+    // ── Reading Compass Explore Tab ─────────────────────────────────
+    function exploreTab() {
+      let cyInstance = null;
+      return {
+        seriesId: '',
+        graphData: null,
+        graphLoading: false,
+        digest: '',
+        digestLoading: false,
+        panelState: 'recap',       // 'recap' | 'character' | 'relationship'
+        selectedNode: null,
+        selectedEdge: null,
+        activePreset: 'book',
+        windowLabel: '',
+        scrubber: { bookIndex: 0, chapterIndex: 0 },
+        scrubber: { bookIndex: 0, chapterIndex: 0 },
+        _scrubMaxChapter: 0,
+
+        relColor(type) {
+          const map = { ally:'#2a7a3a', enemy:'#8a3030', rival:'#8a3030', family:'#2a4a7a', romance:'#8a3a5a', mentor:'#5a2a8a', other:'#6e7268' };
+          return map[type] || '#6e7268';
+        },
+
+        factionColor(faction) {
+          if (!faction) return '#6e7268';
+          let hash = 0;
+          for (let i = 0; i < faction.length; i++) hash = faction.charCodeAt(i) + ((hash << 5) - hash);
+          return `hsl(${Math.abs(hash) % 360}, 38%, 38%)`;
+        },
+
+        init() {
+          this.$watch('library', (lib) => { if (lib && !this.seriesId) this._autoSelectSeries(lib); });
+          if (this.library) this._autoSelectSeries(this.library);
+
+          this.$watch('view', v => {
+            if (v === 'explore') {
+              this.$nextTick(() => {
+                if (cyInstance) {
+                  cyInstance.resize();
+                  cyInstance.fit();
+                } else if (this.graphData && this.graphData.nodes?.length) {
+                  this._renderGraph(this.graphData);
+                }
+              });
+            }
+          });
+        },
+
+        _autoSelectSeries(lib) {
+          if (!lib?.series?.length) return;
+          const reading = lib.series.find(s => s.books.some(b => b.status === 'reading'));
+          this.seriesId = reading ? reading.id : lib.series[0].id;
+          this.onSeriesChange();
+        },
+
+        onSeriesChange() {
+          if (!this.seriesId) return;
+          this.panelState = 'recap'; this.selectedNode = null; this.selectedEdge = null;
+          this.activePreset = 'book';
+          this._initScrubberForCurrentBook();
+          this._loadGraph();
+        },
+
+        _currentReadingBook() {
+          const series = this.library?.series?.find(s => s.id === this.seriesId);
+          if (!series) return null;
+          return series.books.find(b => b.status === 'reading')
+            || series.books.filter(b => b.status !== 'not_started').slice(-1)[0]
+            || series.books[0];
+        },
+
+        _readingCeiling() {
+          const series = this.library?.series?.find(s => s.id === this.seriesId);
+          if (!series) return { book: 0, chapter: 0 };
+          let maxBook = 0, maxChapter = 0;
+          for (const b of series.books) {
+            if (b.status === 'not_started') continue;
+            const lastCh = b.status === 'completed'
+              ? (b.chapters?.length ? b.chapters[b.chapters.length - 1].index : 0)
+              : (b.current_chapter_index ?? 0);
+            if (b.index > maxBook || (b.index === maxBook && lastCh > maxChapter)) { maxBook = b.index; maxChapter = lastCh; }
+          }
+          return { book: maxBook, chapter: maxChapter };
+        },
+
+        _initScrubberForCurrentBook() {
+          const book = this._currentReadingBook();
+          if (!book) return;
+          this.scrubber.bookIndex = book.index;
+          const ch = book.status === 'reading'
+            ? (book.current_chapter_index ?? 0)
+            : (book.chapters?.length ? book.chapters[book.chapters.length - 1].index : 0);
+          this.scrubber.chapterIndex = ch;
+          this._scrubMaxChapter = ch;
+        },
+
+        onScrubberBookChange() {
+          const series = this.library?.series?.find(s => s.id === this.seriesId);
+          if (!series) return;
+          const book = series.books.find(b => b.index === this.scrubber.bookIndex);
+          if (!book) return;
+          const ceiling = this._readingCeiling();
+          const maxCh = book.status === 'completed'
+            ? (book.chapters?.length ? book.chapters[book.chapters.length - 1].index : 0)
+            : (book.current_chapter_index ?? 0);
+          this._scrubMaxChapter = book.index === ceiling.book ? ceiling.chapter : maxCh;
+          this.scrubber.chapterIndex = this._scrubMaxChapter;
+          this._loadGraph();
+        },
+
+        availableBooksForScrubber() {
+          const series = this.library?.series?.find(s => s.id === this.seriesId);
+          return series ? series.books.filter(b => b.status !== 'not_started') : [];
+        },
+
+        scrubberFillPct() {
+          if (!this._scrubMaxChapter) return 100;
+          return Math.round((this.scrubber.chapterIndex / this._scrubMaxChapter) * 100);
+        },
+
+        scrubberMarkersForBook() {
+          if (!this.graphData?.scrubber_markers) return [];
+          return this.graphData.scrubber_markers.filter(m => m.book === this.scrubber.bookIndex);
+        },
+
+        markerPct(marker) {
+          if (!this._scrubMaxChapter) return 0;
+          return Math.round((marker.chapter / this._scrubMaxChapter) * 100);
+        },
+
+        scrubberChapterLabel() {
+          const series = this.library?.series?.find(s => s.id === this.seriesId);
+          if (!series) return '';
+          const book = series.books.find(b => b.index === this.scrubber.bookIndex);
+          if (!book) return '';
+          const ch = book.chapters?.find(c => c.index === this.scrubber.chapterIndex);
+          return ch ? ch.label : `Ch ${this.scrubber.chapterIndex + 1}`;
+        },
+
+        startScrub(e) {
+          const track = e.currentTarget.parentElement;
+          const move = (ev) => {
+            const rect = track.getBoundingClientRect();
+            const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+            const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            this.scrubber.chapterIndex = Math.round(pct * this._scrubMaxChapter);
+          };
+          const up = () => {
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+            document.removeEventListener('touchmove', move);
+            document.removeEventListener('touchend', up);
+            this._loadGraph();
+          };
+          document.addEventListener('mousemove', move);
+          document.addEventListener('mouseup', up);
+          document.addEventListener('touchmove', move, { passive: true });
+          document.addEventListener('touchend', up);
+        },
+
+        jumpToMarker(marker) {
+          this.scrubber.bookIndex = marker.book;
+          this.scrubber.chapterIndex = marker.chapter;
+          this.activePreset = 'custom';
+          this._loadGraph();
+        },
+
+        applyPreset(preset) {
+          this.activePreset = preset;
+          this._loadGraph();
+        },
+
+        _windowFromPreset() {
+          const ceiling = this._readingCeiling();
+          const toBook = ceiling.book, toChapter = ceiling.chapter;
+          const series = this.library?.series?.find(s => s.id === this.seriesId);
+
+          if (this.activePreset === 'series') return { from_book: 0, from_chapter: 0, to_book: toBook, to_chapter: toChapter };
+          if (this.activePreset === 'book') {
+            const book = this._currentReadingBook();
+            return { from_book: book?.index ?? 0, from_chapter: 0, to_book: toBook, to_chapter: toChapter };
+          }
+          if (this.activePreset === 'last10') {
+            let remaining = 10, book = toBook, chapter = toChapter;
+            while (remaining > 0 && series) {
+              chapter--; remaining--;
+              if (chapter < 0) {
+                book--;
+                if (book < 0) { book = 0; chapter = 0; break; }
+                const pb = series.books.find(b => b.index === book);
+                chapter = pb?.chapters?.length ? pb.chapters[pb.chapters.length - 1].index : 0;
+              }
+            }
+            return { from_book: book, from_chapter: chapter, to_book: toBook, to_chapter: toChapter };
+          }
+          return { from_book: this.scrubber.bookIndex, from_chapter: 0, to_book: toBook, to_chapter: this.scrubber.chapterIndex };
+        },
+
+        _buildWindowLabel(w) {
+          const series = this.library?.series?.find(s => s.id === this.seriesId);
+          if (!series) return '';
+          const fromBook = series.books.find(b => b.index === w.from_book);
+          const toBook = series.books.find(b => b.index === w.to_book);
+          const fromLabel = fromBook?.title || `Book ${w.from_book + 1}`;
+          const toChLabel = toBook?.chapters?.find(c => c.index === w.to_chapter)?.label ?? `Ch ${w.to_chapter + 1}`;
+          if (w.from_book === w.to_book) return `${fromLabel} · through ${toChLabel}`;
+          return `${fromLabel} through ${toChLabel}`;
+        },
+
+        async _loadGraph() {
+          if (!this.seriesId) return;
+          const w = this._windowFromPreset();
+          this.windowLabel = this._buildWindowLabel(w);
+          const params = new URLSearchParams({ from_book: w.from_book, from_chapter: w.from_chapter, to_book: w.to_book, to_chapter: w.to_chapter });
+
+          this.graphLoading = true; this.digestLoading = true; this.digest = '';
+
+          const [graphRes, digestRes] = await Promise.allSettled([
+            this.secureFetch(`/library/series/${this.seriesId}/graph?${params}`),
+            this.secureFetch(`/library/series/${this.seriesId}/graph/digest?${params}`),
+          ]);
+
+          this.graphLoading = false;
+          if (graphRes.status === 'fulfilled' && graphRes.value.ok) {
+            this.graphData = await graphRes.value.json();
+            this._renderGraph(this.graphData);
+          }
+
+          this.digestLoading = false;
+          if (digestRes.status === 'fulfilled' && digestRes.value.ok) {
+            const d = await digestRes.value.json();
+            this.digest = d.digest || '';
+          }
+        },
+
+        _renderGraph(data) {
+          if (!data?.nodes?.length) return;
+          if (this.view !== 'explore') return;
+
+          const self = this;
+          const elements = [
+            ...data.nodes.map(n => ({ data: { id: n.id, label: n.label, faction: n.faction, ghost: n.ghost, prominence: Math.min(1 + (n.key_events?.length ?? 0) * 0.15, 2.5), nodeData: n } })),
+            ...data.edges.map(e => ({ data: { id: e.source + '__' + e.target, source: e.source, target: e.target, type: e.type, weight: Math.min(1 + (e.moments?.length ?? 0) * 0.4, 4), hasTurningPoint: e.has_turning_point, edgeData: e } })),
+          ];
+
+          if (cyInstance) {
+            const existingIds = new Set(cyInstance.elements().map(el => el.id()));
+            const newEls = elements.filter(el => !existingIds.has(el.data.id));
+            if (newEls.length) { cyInstance.add(newEls); cyInstance.layout({ name: 'cose', animate: true, animationDuration: 400, fit: true, padding: 40 }).run(); }
+            cyInstance.nodes().forEach(node => {
+              const nd = data.nodes.find(n => n.id === node.id());
+              if (nd) node.animate({ style: { opacity: nd.ghost ? 0.3 : 1 } }, { duration: 400 });
+            });
+            cyInstance.edges().forEach(edge => {
+              const ed = data.edges.find(e => e.source + '__' + e.target === edge.id() || e.target + '__' + e.source === edge.id());
+              if (ed) edge.animate({ style: { 'line-color': self.relColor(ed.type), 'target-arrow-color': self.relColor(ed.type) } }, { duration: 300 });
+            });
+            return;
+          }
+
+          this.$nextTick(() => {
+            const container = this.$refs.cyContainer;
+            if (!container) return;
+            cyInstance = cytoscape({
+              container, elements,
+              style: [
+                { selector: 'node', style: {
+                  'background-color': el => self.factionColor(el.data('faction')),
+                  'width': el => `${28 * el.data('prominence')}px`,
+                  'height': el => `${28 * el.data('prominence')}px`,
+                  'label': 'data(label)',
+                  'font-family': 'JetBrains Mono, monospace',
+                  'font-size': '10px',
+                  'color': '#1f2420',
+                  'text-valign': 'bottom',
+                  'text-margin-y': '6px',
+                  'text-outline-width': '2px',
+                  'text-outline-color': '#faf6ec',
+                  'opacity': el => el.data('ghost') ? 0.3 : 1,
+                  'border-width': '2px',
+                  'border-color': '#faf6ec',
+                }},
+                { selector: 'node:selected', style: { 'border-color': '#a8864a', 'border-width': '3px' }},
+                { selector: 'edge', style: {
+                  'line-color': el => self.relColor(el.data('type')),
+                  'width': 'data(weight)',
+                  'target-arrow-color': el => self.relColor(el.data('type')),
+                  'curve-style': 'bezier',
+                  'opacity': 0.7,
+                }},
+                { selector: 'edge:selected', style: { 'opacity': 1, 'width': el => el.data('weight') + 2 }},
+              ],
+              layout: { name: 'cose', animate: true, animationDuration: 600, nodeRepulsion: 8000, idealEdgeLength: 100, fit: true, padding: 40 },
+            });
+
+            cyInstance.on('tap', 'node', evt => { const nd = evt.target.data('nodeData'); if (nd) self.selectCharacter(nd); });
+            cyInstance.on('tap', 'edge', evt => { const ed = evt.target.data('edgeData'); if (ed) self.selectEdge(ed); });
+            cyInstance.on('tap', evt => { if (evt.target === cyInstance) { self.panelState = 'recap'; self.selectedNode = null; self.selectedEdge = null; } });
+          });
+        },
+
+        selectCharacter(node) {
+          this.selectedNode = node; this.panelState = 'character';
+          if (cyInstance) cyInstance.$(`#${CSS.escape(node.id)}`).select();
+        },
+
+        selectEdge(edge) {
+          this.selectedEdge = edge; this.panelState = 'relationship';
+          if (cyInstance) {
+            const id = edge.source + '__' + edge.target;
+            const altId = edge.target + '__' + edge.source;
+            (cyInstance.$(`#${CSS.escape(id)}`).length ? cyInstance.$(`#${CSS.escape(id)}`) : cyInstance.$(`#${CSS.escape(altId)}`)).select();
+          }
+        },
+
+        characterConnections(charId) {
+          if (!charId || !this.graphData?.edges) return [];
+          return this.graphData.edges.filter(e => e.source === charId || e.target === charId);
+        },
       };
     }
   </script>
