@@ -1,3 +1,12 @@
+---
+title: BookLens
+emoji: 📚
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # BookLens 📚
 
 A single-user, spoiler-safe reading companion web app. Upload epubs, track reading progress by chapter, and ask natural language questions—the system only answers using content from chapters you've already read.
