@@ -6,13 +6,14 @@ from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Annotated, AsyncGenerator, Optional
 
-import anthropic
-from fastapi import (BackgroundTasks, Depends, FastAPI, Form, Header,
+from src.llm import LLMClient, create_llm_client
+from fastapi import (BackgroundTasks, Depends, FastAPI, File, Form, Header,
                      HTTPException, Request, UploadFile)
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from src.books.open_library import search_books, OLBookResult
 from src.config import settings
 from src.graph.builder import build_graph_payload
 from src.graph.digest import generate_digest
@@ -27,10 +28,21 @@ from src.knowledge.pipeline import extract_book_knowledge
 from src.knowledge.store import (delete_book_knowledge,
                                  delete_series_knowledge, filter_to_progress,
                                  load_knowledge)
-from src.library.manager import (create_series, get_series, load_library,
-                                 remove_book, remove_series,
-                                 update_book_status, upsert_book)
-from src.models import Book, BookStatus, Chapter, Library
+from src.library.manager import (
+    get_book_by_canonical_id,
+    get_series_by_canonical_id,
+    load_library,
+    other_users_have_book,
+    other_users_have_series,
+    remove_user_book,
+    remove_user_series,
+    set_user_book_cover,
+    update_canonical_book_series,
+    update_user_book_status,
+    upsert_canonical_book,
+    upsert_user_book,
+)
+from src.models import Book, BookStatus, CanonicalBook, Chapter, Library, UserBook
 from src.query.classifier import classify_question, extract_entity_mentions
 from src.query.context_builder import build_entity_context
 from src.query.prompt_builder import QuestionType, build_prompt
@@ -96,17 +108,17 @@ def _resolve_chapter_reference(question: str, series: "Series") -> tuple[int, in
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> str:
     """Dependency to get the current authenticated user ID.
-    
+
     In development mode (no JWT), it can fall back to a dummy ID if configured.
     """
     # For local testing, if no auth header is provided, use a dummy ID.
     if not authorization:
         # Check if we are in a testing/local context
         return "00000000-0000-0000-0000-000000000000"
-        
+
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header.")
-        
+
     token = authorization.split(" ")[1]
     client = get_supabase_client()
     try:
@@ -119,22 +131,27 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Admin and utility functions
+# ---------------------------------------------------------------------------
+
+
+def _is_admin(user_id: str) -> bool:
+    """Return True if the user is the configured admin."""
+    return bool(settings.admin_user_id and user_id == settings.admin_user_id)
+
+
+# ---------------------------------------------------------------------------
 # Request / Response models
-# -----------------------------------------------------------------------
-
-
-class CreateSeriesRequest(BaseModel):
-    """Request body for creating a new series."""
-
-    id: str
-    name: str
+# ---------------------------------------------------------------------------
 
 
 class UpdateBookStatusRequest(BaseModel):
-    """Request body for updating a book's reading status."""
+    """Request body for updating a book's reading status and/or series metadata."""
 
     status: BookStatus
     current_chapter_index: Optional[int] = None
+    series_name: Optional[str] = None
+    series_position: Optional[float] = None
 
 
 class QueryRequest(BaseModel):
@@ -179,11 +196,11 @@ class QueryResponse(BaseModel):
 class UploadBookResponse(BaseModel):
     """Response returned after a successful book upload."""
 
-    series_id: str
-    book_index: int
+    canonical_book_id: str
+    canonical_series_id: str
     title: str
     chapter_count: int
-    chunks_indexed: int
+    knowledge_already_extracted: bool = False
 
 
 class ExtractBookResponse(BaseModel):
@@ -208,7 +225,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         url=settings.supabase_url,
         key=settings.supabase_key,
     )
-    app.state.anthropic_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    app.state.llm_client = create_llm_client()
     # Track which books are currently being extracted to prevent duplicates.
     app.state.extracting_books = set()
     # Warm up the embedding model so the first upload isn't slow
@@ -237,6 +254,8 @@ async def get_config():
     return {
         "supabase_url": settings.supabase_url,
         "supabase_anon_key": settings.supabase_anon_key or settings.supabase_key,
+        "enable_extraction": settings.enable_extraction,
+        "enable_graph": settings.enable_graph,
     }
 
 
@@ -246,135 +265,178 @@ async def get_library(user_id: str = Depends(get_current_user)) -> Library:
     return await load_library(user_id)
 
 
-@app.post("/library/series", response_model=Library, status_code=201)
-async def add_series(
-    body: CreateSeriesRequest, user_id: str = Depends(get_current_user)
-) -> Library:
-    """Create a new series."""
-    try:
-        await create_series(body.id, body.name, user_id)
-    except Exception as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return await load_library(user_id)
+@app.get("/books/search", response_model=list[OLBookResult])
+async def search_books_endpoint(q: str) -> list[OLBookResult]:
+    """Search Open Library for books matching the query.
+
+    Returns up to 10 results with title, author, series, cover URL.
+    Used by the frontend upload modal to look up book metadata.
+    """
+    if not q or len(q.strip()) < 2:
+        return []
+    return search_books(q.strip(), limit=10)
+
+
+def _is_book_fully_extracted(kb: KnowledgeBase, book_index: int, total_chapters: int) -> bool:
+    """Return True if all chapters of this book_index are already in the KB."""
+    extracted = {ref.chapter_index for ref in kb.extracted_chapters if ref.book_index == book_index}
+    return len(extracted) >= total_chapters
 
 
 async def _run_extraction_background(
-    series_id: str,
+    canonical_series_id: str,
+    canonical_book_id: str,
     book_index: int,
-    user_id: str,
     parsed_chapters: list,
-    anthropic_client: anthropic.AsyncAnthropic,
+    llm_client: LLMClient,
     extracting_books: set,
 ) -> None:
     """Background task: extract knowledge for a book after upload."""
-    key = (series_id, book_index, user_id)
-    if key in extracting_books:
-        logger.info("Extraction already in progress for %s, skipping.", key)
+    if canonical_book_id in extracting_books:
+        logger.info("Extraction already in progress for %s, skipping.", canonical_book_id)
         return
-    
-    extracting_books.add(key)
+    extracting_books.add(canonical_book_id)
     try:
-        logger.info("Background extraction started: series=%s book=%d", series_id, book_index)
+        logger.info(
+            "Background extraction started: %s (series=%s book_index=%d)",
+            canonical_book_id, canonical_series_id, book_index,
+        )
         await extract_book_knowledge(
             chapters=parsed_chapters,
-            series_id=series_id,
+            canonical_series_id=canonical_series_id,
             book_index=book_index,
-            user_id=user_id,
-            client=anthropic_client,
+            client=llm_client,
             extraction_model=settings.extraction_model,
         )
-        logger.info("Background extraction complete: series=%s book=%d", series_id, book_index)
+        logger.info("Background extraction complete: %s", canonical_book_id)
     except Exception:
-        logger.error("Background extraction failed: series=%s book=%d", series_id, book_index, exc_info=True)
+        logger.error("Background extraction failed: %s", canonical_book_id, exc_info=True)
     finally:
-        extracting_books.remove(key)
+        extracting_books.discard(canonical_book_id)
 
 
-@app.post("/library/series/{series_id}/books", response_model=UploadBookResponse)
-async def upload_book(
-    series_id: str,
+@app.post("/library/books", response_model=UploadBookResponse)
+async def upload_book_canonical(
     request: Request,
     background_tasks: BackgroundTasks,
+    canonical_book_id: Annotated[str, Form()],
     title: Annotated[str, Form()],
-    book_index: Annotated[int, Form()],
-    file: UploadFile,
+    canonical_series_id: Annotated[str, Form()],
+    ol_id: Annotated[str | None, Form()] = None,
+    author: Annotated[str | None, Form()] = None,
+    series_name: Annotated[str | None, Form()] = None,
+    series_position: Annotated[float | None, Form()] = None,
+    cover_url: Annotated[str | None, Form()] = None,
+    file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
 ) -> UploadBookResponse:
-    """Upload an epub and run the full ingestion pipeline using Supabase."""
-    if await get_series(series_id, user_id) is None:
-        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
-
+    """Upload an epub and register it against a canonical book."""
     if not file.filename or not file.filename.endswith(".epub"):
         raise HTTPException(status_code=400, detail="File must be an .epub.")
 
     book_bytes = await file.read()
-    
-    # Save book file to Supabase Storage - path: {user_id}/{series_id}/book_{book_index}.epub
     client = get_supabase_client()
-    book_path = f"{user_id}/{series_id}/book_{book_index}.epub"
+
+    # 1. Parse epub to get chapters
+    parsed_chapters = parse_epub(BytesIO(book_bytes))
+    chapters_for_db = [{"index": c.index, "label": c.label} for c in parsed_chapters]
+
+    # 2. Upsert canonical_books row (idempotent)
+    cb = CanonicalBook(
+        id=canonical_book_id,
+        ol_id=ol_id,
+        title=title,
+        author=author,
+        series_name=series_name,
+        series_position=series_position,
+        canonical_series_id=canonical_series_id,
+        cover_url=cover_url,
+        chapters=[Chapter(index=c["index"], label=c["label"]) for c in chapters_for_db],
+    )
+    upsert_canonical_book(cb)
+
+    # 3. Store epub per-user
+    epub_path = f"{user_id}/{canonical_book_id}/book.epub"
     try:
         client.storage.from_("books").upload(
-            path=book_path,
-            file=book_bytes,
-            file_options={"upsert": "true"}
+            path=epub_path, file=book_bytes,
+            file_options={"content-type": "application/epub+zip"}
         )
     except Exception as e:
         logger.warning("Failed to upload epub to Supabase: %s", e)
 
-    # Parse → chunk
-    parsed_chapters = parse_epub(BytesIO(book_bytes))
+    # 4. Compute book_index matching the sort order used by _group_into_series.
+    # Include ALL existing books (not just those with a series_position) so that
+    # multiple position-less books don't collide at index 0.
+    series = await get_series_by_canonical_id(canonical_series_id, user_id)
+    new_sort_key = series_position if series_position is not None else float("inf")
+    if series and series.books:
+        other_books = [
+            (b.series_position if b.series_position is not None else float("inf"), b.canonical_book_id)
+            for b in series.books
+            if b.canonical_book_id != canonical_book_id
+        ]
+        all_books_sorted = sorted(other_books + [(new_sort_key, canonical_book_id)], key=lambda x: x[0])
+        book_index = next(i for i, (_, bid) in enumerate(all_books_sorted) if bid == canonical_book_id)
+    else:
+        book_index = 0
+
+    # 5. Index vectors (per-user)
+    vector_store: SupabaseVectorStore = request.app.state.vector_store
     all_chunks = []
     for chapter in parsed_chapters:
         all_chunks.extend(chunk_chapter(chapter, settings.chunk_size, settings.chunk_overlap))
+    index_book(all_chunks, canonical_series_id, book_index, vector_store, user_id)
 
-    # Index into vector store
-    vector_store: SupabaseVectorStore = request.app.state.vector_store
-    chunks_indexed = index_book(all_chunks, series_id, book_index, vector_store, user_id)
-
-    # Extract and save cover image to Supabase Storage
+    # 6. Extract and save cover
     has_cover = False
     try:
         cover_result = extract_cover(book_bytes) or fetch_cover_open_library(title, book_bytes)
         if cover_result is not None:
             cover_bytes, _ = cover_result
-            cover_path = f"{user_id}/{series_id}/cover_{book_index}.jpg"
+            cover_path = f"{user_id}/{canonical_book_id}/cover.jpg"
             client.storage.from_("covers").upload(
-                path=cover_path,
-                file=cover_bytes,
-                file_options={"contentType": "image/jpeg", "upsert": "true"}
+                path=cover_path, file=cover_bytes,
+                file_options={"content-type": "image/jpeg"}
             )
             has_cover = True
     except Exception:
         logger.warning("Cover extraction failed; continuing", exc_info=True)
 
-    # Update library state
-    chapters = [Chapter(index=c.index, label=c.label) for c in parsed_chapters]
-    book = Book(
-        index=book_index,
-        title=title,
+    # 7. Upsert user_books row
+    ub = UserBook(
+        canonical_book_id=canonical_book_id,
+        user_id=user_id,
         status=BookStatus.NOT_STARTED,
-        chapters=chapters,
+        epub_path=epub_path,
         has_cover=has_cover,
     )
-    await upsert_book(series_id, book, user_id)
+    upsert_user_book(ub)
+    if has_cover:
+        await set_user_book_cover(canonical_book_id, user_id, True)
 
-    # Kick off knowledge extraction in the background.
-    background_tasks.add_task(
-        _run_extraction_background,
-        series_id,
-        book_index,
-        user_id,
-        parsed_chapters,
-        request.app.state.anthropic_client,
-        request.app.state.extracting_books,
-    )
+    # 8. Trigger extraction only if enabled and knowledge doesn't already exist
+    knowledge_already_extracted = False
+    if settings.enable_extraction:
+        kb = await load_knowledge(canonical_series_id)
+        knowledge_already_extracted = _is_book_fully_extracted(kb, book_index, len(parsed_chapters))
+        if not knowledge_already_extracted:
+            background_tasks.add_task(
+                _run_extraction_background,
+                canonical_series_id,
+                canonical_book_id,
+                book_index,
+                parsed_chapters,
+                request.app.state.llm_client,
+                request.app.state.extracting_books,
+            )
 
     return UploadBookResponse(
-        series_id=series_id,
-        book_index=book_index,
+        canonical_book_id=canonical_book_id,
+        canonical_series_id=canonical_series_id,
         title=title,
-        chapter_count=len(chapters),
-        chunks_indexed=chunks_indexed,
+        chapter_count=len(parsed_chapters),
+        knowledge_already_extracted=knowledge_already_extracted,
     )
 
 
@@ -388,146 +450,156 @@ async def get_book_cover(
     return RedirectResponse(url)
 
 
-@app.delete("/library/series/{series_id}", response_model=Library)
-async def delete_series_endpoint(
-    series_id: str, request: Request, user_id: str = Depends(get_current_user)
-) -> Library:
-    """Delete a series, all its books, vectors, and storage files."""
-    if await get_series(series_id, user_id) is None:
-        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
-
-    # Delete Supabase Vectors
-    vector_store: SupabaseVectorStore = request.app.state.vector_store
-    vector_store.delete_series(series_id, user_id)
-
-    # Delete Supabase Storage files
+async def _get_canonical_series_id_for_book(canonical_book_id: str) -> str:
+    """Look up the canonical_series_id for a given canonical_book_id."""
     client = get_supabase_client()
-    try:
-        book_files = client.storage.from_("books").list(f"{user_id}/{series_id}")
-        if book_files:
-            client.storage.from_("books").remove([f"{user_id}/{series_id}/{b['name']}" for b in book_files])
-        covers = client.storage.from_("covers").list(f"{user_id}/{series_id}")
-        if covers:
-            client.storage.from_("covers").remove([f"{user_id}/{series_id}/{c['name']}" for c in covers])
-    except Exception as e:
-        logger.warning("Storage cleanup failed: %s", e)
-
-    # Delete knowledge base
-    await delete_series_knowledge(series_id, user_id)
-
-    # Delete from Postgres
-    await remove_series(series_id, user_id)
-    
-    return await load_library(user_id)
+    resp = (
+        client.table("canonical_books")
+        .select("canonical_series_id")
+        .filter("id", "eq", canonical_book_id)
+        .execute()
+    )
+    if resp.data:
+        return resp.data[0]["canonical_series_id"]
+    return canonical_book_id
 
 
-@app.delete("/library/series/{series_id}/books/{book_index}", response_model=Library)
-async def delete_book_endpoint(
-    series_id: str,
-    book_index: int,
+@app.delete("/library/series/{canonical_series_id}", response_model=Library)
+async def delete_series_endpoint(
+    canonical_series_id: str,
     request: Request,
     user_id: str = Depends(get_current_user),
 ) -> Library:
-    """Delete a single book and its associated vectors/storage."""
-    if await get_series(series_id, user_id) is None:
-        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
+    """Delete all of a user's books in a series."""
+    series = await get_series_by_canonical_id(canonical_series_id, user_id)
+    if series is None:
+        raise HTTPException(status_code=404, detail=f"Series '{canonical_series_id}' not found.")
 
-    # Delete Supabase Vectors
     vector_store: SupabaseVectorStore = request.app.state.vector_store
-    vector_store.delete_book(series_id, book_index, user_id)
+    client = get_supabase_client()
 
-    # Delete Supabase Storage files
+    for book in series.books:
+        cid = book.canonical_book_id
+        vector_store.delete_book(canonical_series_id, book.index, user_id)
+        try:
+            client.storage.from_("books").remove([f"{user_id}/{cid}/book.epub"])
+            client.storage.from_("covers").remove([f"{user_id}/{cid}/cover.jpg"])
+        except Exception as e:
+            logger.warning("Storage cleanup failed: %s", e)
+
+    if not await other_users_have_series(canonical_series_id, user_id):
+        await delete_series_knowledge(canonical_series_id)
+
+    await remove_user_series(canonical_series_id, user_id)
+    return await load_library(user_id)
+
+
+@app.delete("/library/books/{canonical_book_id}", response_model=Library)
+async def delete_book_endpoint(
+    canonical_book_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+) -> Library:
+    """Remove a book from the user's library."""
+    book = await get_book_by_canonical_id(canonical_book_id, user_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail=f"Book '{canonical_book_id}' not found.")
+
+    canonical_series_id = await _get_canonical_series_id_for_book(canonical_book_id)
+    book_index = book.index
+
+    vector_store: SupabaseVectorStore = request.app.state.vector_store
+    vector_store.delete_book(canonical_series_id, book_index, user_id)
+
     client = get_supabase_client()
     try:
-        book_path = f"{user_id}/{series_id}/book_{book_index}.epub"
-        client.storage.from_("books").remove([book_path])
-        # Covers might have different extensions
-        for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-            client.storage.from_("covers").remove([f"{user_id}/{series_id}/cover_{book_index}{ext}"])
+        client.storage.from_("books").remove([f"{user_id}/{canonical_book_id}/book.epub"])
+        client.storage.from_("covers").remove([f"{user_id}/{canonical_book_id}/cover.jpg"])
     except Exception as e:
         logger.warning("Storage cleanup failed: %s", e)
 
-    # Delete knowledge base
-    await delete_book_knowledge(series_id, book_index, user_id)
+    if not await other_users_have_book(canonical_book_id, user_id):
+        await delete_book_knowledge(canonical_series_id, book_index)
 
-    # Delete from Postgres
-    await remove_book(series_id, book_index, user_id)
-    
+    await remove_user_book(canonical_book_id, user_id)
     return await load_library(user_id)
 
 
-@app.patch("/library/series/{series_id}/books/{book_index}", response_model=Library)
+@app.patch("/library/books/{canonical_book_id}", response_model=Library)
 async def update_book_status_endpoint(
-    series_id: str,
-    book_index: int,
+    canonical_book_id: str,
     body: UpdateBookStatusRequest,
     user_id: str = Depends(get_current_user),
 ) -> Library:
-    """Update a book's reading status."""
-    if await get_series(series_id, user_id) is None:
-        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
+    """Update a book's reading status and optionally its series metadata."""
+    if not _is_admin(user_id):
+        book = await get_book_by_canonical_id(canonical_book_id, user_id)
+        if book is None:
+            raise HTTPException(status_code=404, detail=f"Book '{canonical_book_id}' not found.")
+    else:
+        client = get_supabase_client()
+        resp = client.table("canonical_books").select("id").eq("id", canonical_book_id).execute()
+        if not resp.data:
+            raise HTTPException(status_code=404, detail=f"Book '{canonical_book_id}' not found.")
 
-    await update_book_status(
-        series_id, book_index, body.status, body.current_chapter_index, user_id
-    )
+    await update_user_book_status(canonical_book_id, body.status, body.current_chapter_index, user_id)
+
+    if body.series_name is not None or body.series_position is not None:
+        update_canonical_book_series(canonical_book_id, body.series_name, body.series_position)
+
     return await load_library(user_id)
 
 
-@app.post(
-    "/library/series/{series_id}/books/{book_index}/extract",
-)
+@app.post("/library/books/{canonical_book_id}/extract")
 async def extract_book_endpoint(
-    series_id: str,
-    book_index: int,
+    canonical_book_id: str,
     request: Request,
     background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user),
 ):
-    """Trigger knowledge extraction for a book in Supabase Storage."""
-    series = await get_series(series_id, user_id)
-    if series is None:
-        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
+    """Trigger knowledge extraction for a book (manual re-trigger)."""
+    if not settings.enable_extraction:
+        raise HTTPException(status_code=404, detail="Extraction feature is disabled.")
+    book = await get_book_by_canonical_id(canonical_book_id, user_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail=f"Book '{canonical_book_id}' not found.")
 
-    book_path = f"{user_id}/{series_id}/book_{book_index}.epub"
+    canonical_series_id = await _get_canonical_series_id_for_book(canonical_book_id)
+
+    epub_path = f"{user_id}/{canonical_book_id}/book.epub"
     try:
-        book_data = get_supabase_client().storage.from_("books").download(book_path)
+        book_data = get_supabase_client().storage.from_("books").download(epub_path)
     except Exception:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No book file found for book {book_index} in Supabase Storage.",
-        )
+        raise HTTPException(status_code=404, detail="Epub not found in storage.")
 
     parsed_chapters = parse_epub(BytesIO(book_data))
 
-    key = (series_id, book_index, user_id)
-    if key in request.app.state.extracting_books:
+    if canonical_book_id in request.app.state.extracting_books:
         return {"message": "Extraction already in progress"}
 
-    logger.info("Enqueuing knowledge extraction: series=%s book=%d", series_id, book_index)
     background_tasks.add_task(
         _run_extraction_background,
-        series_id,
-        book_index,
-        user_id,
+        canonical_series_id,
+        canonical_book_id,
+        book.index,
         parsed_chapters,
-        request.app.state.anthropic_client,
+        request.app.state.llm_client,
         request.app.state.extracting_books,
     )
-
     return {"message": "Extraction started"}
 
 
-
-@app.get("/library/series/{series_id}/knowledge", response_model=KnowledgeBase)
+@app.get("/library/series/{canonical_series_id}/knowledge", response_model=KnowledgeBase)
 async def get_knowledge_endpoint(
-    series_id: str, user_id: str = Depends(get_current_user)
+    canonical_series_id: str, user_id: str = Depends(get_current_user)
 ) -> KnowledgeBase:
     """Return filtered knowledge base from Supabase for the current user."""
-    series = await get_series(series_id, user_id)
+    if not settings.enable_extraction:
+        raise HTTPException(status_code=404, detail="Extraction feature is disabled.")
+    series = await get_series_by_canonical_id(canonical_series_id, user_id)
     if series is None:
-        raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
-
-    kb = await load_knowledge(series_id, user_id)
+        raise HTTPException(status_code=404, detail=f"Series '{canonical_series_id}' not found.")
+    kb = await load_knowledge(canonical_series_id)
     return filter_to_progress(kb, series)
 
 
@@ -557,11 +629,13 @@ async def get_knowledge_summary_endpoint(
     Used by the frontend to show the extraction badge on book covers without
     loading the full knowledge base.
     """
-    series = await get_series(series_id, user_id)
+    if not settings.enable_extraction:
+        raise HTTPException(status_code=404, detail="Extraction feature is disabled.")
+    series = await get_series_by_canonical_id(series_id, user_id)
     if series is None:
         raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
 
-    kb = await load_knowledge(series_id, user_id)
+    kb = await load_knowledge(series_id)
 
     # Count extracted chapters per book_index.
     extracted_per_book: dict[int, int] = {}
@@ -593,7 +667,9 @@ async def get_graph_endpoint(
     The window (from_book/from_chapter → to_book/to_chapter) is capped at the
     user's actual reading position to enforce spoiler safety.
     """
-    series = await get_series(series_id, user_id)
+    if not settings.enable_graph:
+        raise HTTPException(status_code=404, detail="Graph feature is disabled.")
+    series = await get_series_by_canonical_id(series_id, user_id)
     if series is None:
         raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
 
@@ -606,7 +682,7 @@ async def get_graph_endpoint(
     if to_book == ceiling[0]:
         to_chapter = min(to_chapter, ceiling[1])
 
-    raw_kb = await load_knowledge(series_id, user_id)
+    raw_kb = await load_knowledge(series_id)
     kb = filter_to_progress(raw_kb, series)
 
     return build_graph_payload(kb, from_book, from_chapter, to_book, to_chapter)
@@ -627,7 +703,9 @@ async def get_graph_digest_endpoint(
     This endpoint makes a Claude API call; call it in parallel with /graph
     so the graph renders immediately while the digest loads.
     """
-    series = await get_series(series_id, user_id)
+    if not settings.enable_graph:
+        raise HTTPException(status_code=404, detail="Graph feature is disabled.")
+    series = await get_series_by_canonical_id(series_id, user_id)
     if series is None:
         raise HTTPException(status_code=404, detail=f"Series '{series_id}' not found.")
 
@@ -640,13 +718,13 @@ async def get_graph_digest_endpoint(
     if to_book == ceiling[0]:
         to_chapter = min(to_chapter, ceiling[1])
 
-    raw_kb = await load_knowledge(series_id, user_id)
+    raw_kb = await load_knowledge(series_id)
     kb = filter_to_progress(raw_kb, series)
 
-    anthropic_client: anthropic.AsyncAnthropic = request.app.state.anthropic_client
+    llm_client: LLMClient = request.app.state.llm_client
     digest = await generate_digest(
         kb, from_book, from_chapter, to_book, to_chapter,
-        client=anthropic_client,
+        client=llm_client,
         model=settings.llm_model,
     )
     return {"digest": digest}
@@ -659,7 +737,7 @@ async def generate_proactive_prompt_endpoint(
     user_id: str = Depends(get_current_user),
 ) -> ProactivePromptResponse:
     """Generate a proactive check-in question."""
-    series = await get_series(body.series_id, user_id)
+    series = await get_series_by_canonical_id(body.series_id, user_id)
     if series is None:
         raise HTTPException(status_code=404, detail="Series not found")
 
@@ -685,13 +763,12 @@ async def generate_proactive_prompt_endpoint(
         "Make it sound natural, conversational, and tailored to the events. Do not answer the question."
     )
 
-    anthropic_client: anthropic.AsyncAnthropic = request.app.state.anthropic_client
-    message = await anthropic_client.messages.create(
-        model=settings.llm_model,
-        max_tokens=150,
+    llm_client: LLMClient = request.app.state.llm_client
+    answer = await llm_client.generate(
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=150,
     )
-    return ProactivePromptResponse(question=message.content[0].text)
+    return ProactivePromptResponse(question=answer)
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -701,12 +778,12 @@ async def query_endpoint(
     user_id: str = Depends(get_current_user),
 ) -> QueryResponse:
     """Ask a spoiler-safe question about a series."""
-    series = await get_series(body.series_id, user_id)
+    series = await get_series_by_canonical_id(body.series_id, user_id)
     if series is None:
         raise HTTPException(status_code=404, detail=f"Series '{body.series_id}' not found.")
 
     # 1. Load knowledge base filtered to reading progress.
-    raw_kb = await load_knowledge(body.series_id, user_id)
+    raw_kb = await load_knowledge(body.series_id)
     kb = filter_to_progress(raw_kb, series)
     kb_populated = bool(kb.characters or kb.summaries)
 
@@ -779,16 +856,14 @@ async def query_endpoint(
 
     history = body.conversation_history[-6:] if body.conversation_history else []
 
-    anthropic_client: anthropic.AsyncAnthropic = request.app.state.anthropic_client
-    message = await anthropic_client.messages.create(
-        model=settings.llm_model,
-        max_tokens=1024,
+    llm_client: LLMClient = request.app.state.llm_client
+    answer = await llm_client.generate(
         messages=[
             *history,
             {"role": "user", "content": prompt},
         ],
+        max_tokens=1024,
     )
-    answer = message.content[0].text
 
     sources = [
         SourceChunk(
