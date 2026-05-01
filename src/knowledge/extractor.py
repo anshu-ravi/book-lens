@@ -11,9 +11,8 @@ zero JSON parsing required.
 """
 
 import logging
-from typing import Any
 
-import anthropic
+from src.llm import LLMClient
 
 from src.knowledge.models import (
     ChapterExtraction,
@@ -35,104 +34,102 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Claude is forced to call this tool, guaranteeing the output shape.
-# The .input dict on the returned ToolUseBlock matches this schema exactly.
-_EXTRACTION_TOOL: Any = {
-    "name": "record_chapter_knowledge",
-    "description": (
-        "Record all structured knowledge extracted from this fiction chapter: "
-        "characters, relationships between them, world-building facts, and a summary."
-    ),
-    "input_schema": {
-        "type": "object",
-        "required": ["characters", "relationships", "world_facts", "summary"],
-        "properties": {
-            "characters": {
-                "type": "array",
-                "description": "Characters who appear or are meaningfully referenced in this chapter.",
-                "items": {
-                    "type": "object",
-                    "required": ["name", "aliases", "description", "key_events"],
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": (
-                                "Canonical name. Prefer names from the known characters list. "
-                                "For truly new characters, use the most formal/complete name."
-                            ),
-                        },
-                        "aliases": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "All other names, titles, and nicknames used in this chapter.",
-                        },
-                        "faction": {"type": "string"},
-                        "role": {
-                            "type": "string",
-                            "description": "Narrative role, e.g. protagonist, antagonist, mentor, ally.",
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "2-3 sentence description based on this chapter.",
-                        },
-                        "key_events": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": (
-                                "Brief descriptions of significant things that happen "
-                                "to or by this character in THIS chapter only."
-                            ),
-                        },
+# The extracted data matches this schema exactly.
+_TOOL_NAME = "record_chapter_knowledge"
+_TOOL_DESCRIPTION = (
+    "Record all structured knowledge extracted from this fiction chapter: "
+    "characters, relationships between them, world-building facts, and a summary."
+)
+_TOOL_SCHEMA: dict = {
+    "type": "object",
+    "required": ["characters", "relationships", "world_facts", "summary"],
+    "properties": {
+        "characters": {
+            "type": "array",
+            "description": "Characters who appear or are meaningfully referenced in this chapter.",
+            "items": {
+                "type": "object",
+                "required": ["name", "aliases", "description", "key_events"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": (
+                            "Canonical name. Prefer names from the known characters list. "
+                            "For truly new characters, use the most formal/complete name."
+                        ),
+                    },
+                    "aliases": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "All other names, titles, and nicknames used in this chapter.",
+                    },
+                    "faction": {"type": "string"},
+                    "role": {
+                        "type": "string",
+                        "description": "Narrative role, e.g. protagonist, antagonist, mentor, ally.",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "2-3 sentence description based on this chapter.",
+                    },
+                    "key_events": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Brief descriptions of significant things that happen "
+                            "to or by this character in THIS chapter only."
+                        ),
                     },
                 },
             },
-            "relationships": {
-                "type": "array",
-                "description": "Relationships between characters shown or developed in this chapter.",
-                "items": {
-                    "type": "object",
-                    "required": ["character_a", "character_b", "type", "description", "moments"],
-                    "properties": {
-                        "character_a": {"type": "string", "description": "Canonical name."},
-                        "character_b": {"type": "string", "description": "Canonical name."},
-                        "type": {
-                            "type": "string",
-                            "enum": ["ally", "rival", "family", "romance", "mentor", "enemy", "other"],
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Current state of the relationship after this chapter.",
-                        },
-                        "moments": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Key moments that define or shift the relationship in this chapter.",
-                        },
+        },
+        "relationships": {
+            "type": "array",
+            "description": "Relationships between characters shown or developed in this chapter.",
+            "items": {
+                "type": "object",
+                "required": ["character_a", "character_b", "type", "description", "moments"],
+                "properties": {
+                    "character_a": {"type": "string", "description": "Canonical name."},
+                    "character_b": {"type": "string", "description": "Canonical name."},
+                    "type": {
+                        "type": "string",
+                        "enum": ["ally", "rival", "family", "romance", "mentor", "enemy", "other"],
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Current state of the relationship after this chapter.",
+                    },
+                    "moments": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Key moments that define or shift the relationship in this chapter.",
                     },
                 },
             },
-            "world_facts": {
-                "type": "array",
-                "description": "World-building facts meaningfully established or explained in this chapter.",
-                "items": {
-                    "type": "object",
-                    "required": ["category", "name", "description"],
-                    "properties": {
-                        "category": {
-                            "type": "string",
-                            "description": "e.g. faction, location, concept, technology, rule, power_system",
-                        },
-                        "name": {"type": "string"},
-                        "description": {"type": "string"},
+        },
+        "world_facts": {
+            "type": "array",
+            "description": "World-building facts meaningfully established or explained in this chapter.",
+            "items": {
+                "type": "object",
+                "required": ["category", "name", "description"],
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "e.g. faction, location, concept, technology, rule, power_system",
                     },
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
                 },
             },
-            "summary": {
-                "type": "string",
-                "description": (
-                    "200-300 word narrative recap of this chapter: "
-                    "main events, character appearances, and plot developments."
-                ),
-            },
+        },
+        "summary": {
+            "type": "string",
+            "description": (
+                "200-300 word narrative recap of this chapter: "
+                "main events, character appearances, and plot developments."
+            ),
         },
     },
 }
@@ -313,10 +310,10 @@ async def extract_chapter(
     chapter: ParsedChapter,
     book_index: int,
     kb: KnowledgeBase,
-    client: anthropic.AsyncAnthropic,
+    client: LLMClient,
     extraction_model: str,
 ) -> ChapterExtraction:
-    """Extract structured knowledge from a single chapter using Claude tool_use."""
+    """Extract structured knowledge from a single chapter using the configured LLM."""
     prompt = _build_extraction_prompt(chapter, book_index, kb)
 
     logger.debug(
@@ -326,21 +323,13 @@ async def extract_chapter(
         chapter.index,
     )
 
-    response = await client.messages.create(
-        model=extraction_model,
-        max_tokens=4096,
-        tools=[_EXTRACTION_TOOL],
-        tool_choice={"type": "tool", "name": "record_chapter_knowledge"},
+    input_data: dict = await client.extract_structured(
         messages=[{"role": "user", "content": prompt}],
+        tool_name=_TOOL_NAME,
+        tool_description=_TOOL_DESCRIPTION,
+        tool_schema=_TOOL_SCHEMA,
+        max_tokens=4096,
     )
-
-    tool_block = response.content[0]
-    if tool_block.type != "tool_use":
-        raise RuntimeError(
-            f"Expected tool_use block from Claude, got: {tool_block.type!r}"
-        )
-
-    input_data: dict = tool_block.input  # type: ignore[assignment]
     logger.debug(
         '  → %d characters, %d relationships, %d world facts',
         len(input_data.get("characters", [])),

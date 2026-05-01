@@ -1,17 +1,11 @@
 """Knowledge base persistence and spoiler-safe filtering.
 
-The knowledge base is stored as a single JSON file per series:
-    knowledge/{series_id}.json
+The knowledge base is stored as one row per canonical_series_id in Supabase:
+    knowledge table: canonical_series_id (PK), data (JSONB)
 
-All functions are pure: they take and return KnowledgeBase objects without
-holding state themselves. This mirrors the pattern in src/library/manager.py.
-
-The filter_to_progress function is the knowledge-layer equivalent of
-build_qdrant_filter() in src/query/retriever.py — it applies the same
-spoiler boundary to structured entity data:
-  - COMPLETED books: all knowledge visible
-  - READING books: only knowledge up to current_chapter_index
-  - NOT_STARTED books: excluded entirely
+Extraction is shared across users — no user_id in this layer.
+Spoiler filtering (filter_to_progress) still takes a Series object, which
+is built per-user from user_books + canonical_books by the library manager.
 """
 
 from src.supabase_client import get_supabase_client
@@ -27,35 +21,40 @@ from src.knowledge.models import (
 )
 from src.models import BookStatus, Series
 
-async def load_knowledge(series_id: str, user_id: str) -> KnowledgeBase:
-    """Read knowledge base from Supabase for a specific user.
+
+async def load_knowledge(canonical_series_id: str) -> KnowledgeBase:
+    """Read shared knowledge base from Supabase.
 
     Args:
-        series_id: Series identifier.
-        user_id: The authenticated user's ID.
+        canonical_series_id: Canonical series slug or standalone book id.
 
     Returns:
-        KnowledgeBase object.
+        KnowledgeBase object (empty if not yet extracted).
     """
     client = get_supabase_client()
-    resp = client.table("knowledge").select("data").filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).execute()
-    
+    resp = (
+        client.table("knowledge")
+        .select("data")
+        .filter("canonical_series_id", "eq", canonical_series_id)
+        .execute()
+    )
     if not resp.data:
-        return KnowledgeBase(series_id=series_id)
-    
+        return KnowledgeBase(series_id=canonical_series_id)
     return KnowledgeBase.model_validate(resp.data[0]["data"])
 
 
-async def save_knowledge(kb: KnowledgeBase, user_id: str) -> None:
-    """Write knowledge base to Supabase for a specific user.
+async def save_knowledge(kb: KnowledgeBase, canonical_series_id: str) -> None:
+    """Write shared knowledge base to Supabase.
 
     Args:
         kb: KnowledgeBase to persist.
-        user_id: The authenticated user's ID.
+        canonical_series_id: The series key.
     """
     client = get_supabase_client()
     data = kb.model_dump()
-    client.table("knowledge").upsert({"series_id": kb.series_id, "user_id": user_id, "data": data}).execute()
+    client.table("knowledge").upsert(
+        {"canonical_series_id": canonical_series_id, "data": data}
+    ).execute()
 
 
 def is_chapter_extracted(kb: KnowledgeBase, book_index: int, chapter_index: int) -> bool:
@@ -66,9 +65,7 @@ def is_chapter_extracted(kb: KnowledgeBase, book_index: int, chapter_index: int)
     )
 
 
-def _is_within_progress(
-    book_index: int, chapter_index: int, series: Series
-) -> bool:
+def _is_within_progress(book_index: int, chapter_index: int, series: Series) -> bool:
     """Check if a (book_index, chapter_index) pair is within reading progress."""
     book = next((b for b in series.books if b.index == book_index), None)
     if book is None:
@@ -77,7 +74,6 @@ def _is_within_progress(
         return False
     if book.status == BookStatus.COMPLETED:
         return True
-    # READING: only up to current_chapter_index
     max_chapter = book.current_chapter_index if book.current_chapter_index is not None else 0
     return chapter_index <= max_chapter
 
@@ -87,7 +83,6 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
     def within(book_index: int, chapter_index: int) -> bool:
         return _is_within_progress(book_index, chapter_index, series)
 
-    # Filter characters
     filtered_characters: list[CharacterEntity] = []
     for char in kb.characters:
         if char.first_appearance is None:
@@ -109,7 +104,6 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
             )
         )
 
-    # Filter relationships
     filtered_relationships: list[Relationship] = []
     for rel in kb.relationships:
         safe_moments: list[RelationshipMoment] = [
@@ -127,12 +121,9 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
             )
         )
 
-    # Filter world facts
     filtered_world_facts: list[WorldFact] = [
         wf for wf in kb.world_facts if within(wf.book_index, wf.chapter_index)
     ]
-
-    # Filter summaries and extracted_chapters
     filtered_summaries: list[ChapterSummary] = [
         s for s in kb.summaries if within(s.book_index, s.chapter_index)
     ]
@@ -140,7 +131,6 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
         r for r in kb.extracted_chapters if within(r.book_index, r.chapter_index)
     ]
 
-    # Rebuild alias_registry
     visible_names = {c.name for c in filtered_characters}
     filtered_aliases = {
         alias: canonical
@@ -159,17 +149,16 @@ def filter_to_progress(kb: KnowledgeBase, series: Series) -> KnowledgeBase:
     )
 
 
-async def delete_series_knowledge(series_id: str, user_id: str) -> None:
-    """Delete the knowledge for a series from Supabase for a specific user."""
+async def delete_series_knowledge(canonical_series_id: str) -> None:
+    """Delete the knowledge for a series (only if no other users reference it)."""
     client = get_supabase_client()
-    client.table("knowledge").delete().filter("series_id", "eq", series_id).filter("user_id", "eq", user_id).execute()
+    client.table("knowledge").delete().filter("canonical_series_id", "eq", canonical_series_id).execute()
 
 
-async def delete_book_knowledge(series_id: str, book_index: int, user_id: str) -> KnowledgeBase:
-    """Remove knowledge entries for a specific book and save."""
-    kb = await load_knowledge(series_id, user_id)
+async def delete_book_knowledge(canonical_series_id: str, book_index: int) -> KnowledgeBase:
+    """Remove knowledge entries for a specific book index and save."""
+    kb = await load_knowledge(canonical_series_id)
 
-    # Remove characters first-appearing in this book
     kept_characters: list[CharacterEntity] = []
     removed_names: set[str] = set()
     for char in kb.characters:
@@ -189,7 +178,6 @@ async def delete_book_knowledge(series_id: str, book_index: int, user_id: str) -
                 )
             )
 
-    # Remove relationships
     kept_relationships: list[Relationship] = []
     for rel in kb.relationships:
         if rel.character_a in removed_names or rel.character_b in removed_names:
@@ -210,8 +198,6 @@ async def delete_book_knowledge(series_id: str, book_index: int, user_id: str) -
     kept_world_facts = [wf for wf in kb.world_facts if wf.book_index != book_index]
     kept_summaries = [s for s in kb.summaries if s.book_index != book_index]
     kept_extracted = [r for r in kb.extracted_chapters if r.book_index != book_index]
-
-    # Rebuild alias_registry
     kept_aliases = {
         alias: canonical
         for alias, canonical in kb.alias_registry.items()
@@ -219,7 +205,7 @@ async def delete_book_knowledge(series_id: str, book_index: int, user_id: str) -
     }
 
     updated = KnowledgeBase(
-        series_id=series_id,
+        series_id=canonical_series_id,
         characters=kept_characters,
         relationships=kept_relationships,
         world_facts=kept_world_facts,
@@ -227,5 +213,5 @@ async def delete_book_knowledge(series_id: str, book_index: int, user_id: str) -
         alias_registry=kept_aliases,
         extracted_chapters=kept_extracted,
     )
-    await save_knowledge(updated, user_id)
+    await save_knowledge(updated, canonical_series_id)
     return updated
