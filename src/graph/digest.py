@@ -1,12 +1,10 @@
 """Generate a narrative story digest for a given reading window.
 
 Filters chapter summaries from the KnowledgeBase to the requested window,
-then calls Claude to produce a 3-4 paragraph plain-English recap. Reuses
-the AsyncAnthropic client already initialised in the FastAPI lifespan.
+then calls the configured LLM to produce a 3-4 paragraph plain-English recap.
 """
 
-import anthropic
-
+from src.llm import LLMClient
 from src.knowledge.models import ChapterSummary, KnowledgeBase
 
 
@@ -33,7 +31,7 @@ async def generate_digest(
     from_chapter: int,
     to_book: int,
     to_chapter: int,
-    client: anthropic.AsyncAnthropic,
+    client: LLMClient,
     model: str,
 ) -> str:
     """Generate a narrative story digest for the given window.
@@ -44,7 +42,7 @@ async def generate_digest(
         from_chapter: Window start (chapter index, 0-based).
         to_book: Window end (book index, 0-based).
         to_chapter: Window end (chapter index, 0-based).
-        client: AsyncAnthropic client from app state.
+        client: LLM client (provider-agnostic).
         model: Claude model ID to use.
 
     Returns:
@@ -73,9 +71,7 @@ async def generate_digest(
         "Use markdown formatting (bold for character names on first mention)."
     )
 
-    message = await client.messages.create(
-        model=model,
-        max_tokens=800,
+    return await client.generate(
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=800,
     )
-    return message.content[0].text
