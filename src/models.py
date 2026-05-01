@@ -26,12 +26,16 @@ class Book(BaseModel):
     """Book metadata and state."""
 
     index: int
+    canonical_book_id: str = ""  # NEW — empty string for backwards compat
     title: str
+    author: Optional[str] = None  # NEW
     status: BookStatus
     chapters: List[Chapter]
     current_chapter_index: Optional[int] = None
     has_cover: bool = False
     cover_url: Optional[str] = None
+    series_position: Optional[float] = None  # NEW
+    series_name: Optional[str] = None  # NEW
 
 
 class Series(BaseModel):
@@ -78,3 +82,28 @@ class ChunkRecord(BaseModel):
     position: int  # Chunk number within chapter (0-indexed)
 
     model_config = ConfigDict(frozen=True)  # Immutable like ParsedChapter
+
+
+class CanonicalBook(BaseModel):
+    """Shared book metadata from Open Library or manual entry."""
+
+    id: str  # OL work ID or UUID
+    ol_id: Optional[str] = None
+    title: str
+    author: Optional[str] = None
+    series_name: Optional[str] = None
+    series_position: Optional[float] = None
+    canonical_series_id: str  # slugified series_name, or own id
+    cover_url: Optional[str] = None
+    chapters: List[Chapter] = []
+
+
+class UserBook(BaseModel):
+    """Per-user reading state for a canonical book."""
+
+    canonical_book_id: str
+    user_id: str
+    status: BookStatus = BookStatus.NOT_STARTED
+    current_chapter_index: Optional[int] = None
+    epub_path: Optional[str] = None
+    has_cover: bool = False
