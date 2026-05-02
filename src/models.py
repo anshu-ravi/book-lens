@@ -36,6 +36,7 @@ class Book(BaseModel):
     cover_url: Optional[str] = None
     series_position: Optional[float] = None  # NEW
     series_name: Optional[str] = None  # NEW
+    is_series: bool = False  # True if part of a series (from LLM determination)
 
 
 class Series(BaseModel):
@@ -94,6 +95,7 @@ class CanonicalBook(BaseModel):
     series_name: Optional[str] = None
     series_position: Optional[float] = None
     canonical_series_id: str  # slugified series_name, or own id
+    is_series: bool = False  # True if the book is part of a series (from LLM determination)
     cover_url: Optional[str] = None
     chapters: List[Chapter] = []
 

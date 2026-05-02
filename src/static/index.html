@@ -2372,7 +2372,7 @@
 
           <!-- Series shelves -->
           <div class="shelves">
-            <template x-for="(series, seriesIndex) in (library?.series ?? []).filter(s => s.books.length !== 1)" :key="series.id">
+            <template x-for="(series, seriesIndex) in (library?.series ?? []).filter(s => s.books.some(b => b.is_series))" :key="series.id">
               <section class="series-section">
                 <header class="series-head">
                   <div class="series-head-main">
@@ -2506,20 +2506,20 @@
               </section>
             </template>
 
-            <!-- Standalone books (single-book series grouped together) -->
-            <template x-if="(library?.series ?? []).some(s => s.books.length === 1)">
+            <!-- Standalone books (books marked as not part of series) -->
+            <template x-if="(library?.series ?? []).some(s => s.books.every(b => !b.is_series))">
               <section class="series-section">
                 <header class="series-head">
                   <div class="series-head-main">
                     <div class="series-name-display">Standalone Books</div>
                     <div class="series-meta-line">
-                      <span x-text="(library?.series ?? []).filter(s => s.books.length === 1).length + ' book' + ((library?.series ?? []).filter(s => s.books.length === 1).length !== 1 ? 's' : '')"></span>
+                      <span x-text="(library?.series ?? []).filter(s => s.books.every(b => !b.is_series)).length + ' book' + ((library?.series ?? []).filter(s => s.books.every(b => !b.is_series)).length !== 1 ? 's' : '')"></span>
                     </div>
                   </div>
                 </header>
                 <div class="series-scroll">
                   <div class="series-strip">
-                    <template x-for="series in (library?.series ?? []).filter(s => s.books.length === 1)" :key="series.id">
+                    <template x-for="series in (library?.series ?? []).filter(s => s.books.every(b => !b.is_series))" :key="series.id">
                       <template x-for="book in series.books" :key="book.index">
                         <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
                           <button class="cover cover-family-0"
@@ -2578,133 +2578,79 @@
             <h1 class="view-title-display" style="font-size:36px;">Upload.</h1>
           </div>
 
-          <div x-show="uploadSuccess" class="alert alert-success" x-transition>
-            ✓ <span x-text="uploadSuccess"></span>
-          </div>
-          <div x-show="uploadError" class="alert alert-error" x-transition>
-            <span x-text="uploadError"></span>
-          </div>
-
           <div class="card">
-            <!-- OL search (shown when no selection and not manual) -->
-            <template x-if="!upload.uploadManual && !upload.olSelected">
+
+            <!-- Step: idle — file selection -->
+            <div x-show="uploadStep === 'idle'">
               <div class="form-group">
-                <label>Search for a book</label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                  <input
-                    type="text"
-                    x-model="upload.olQuery"
-                    @input.debounce.400ms="searchOL()"
-                    placeholder="Title or author…"
-                    style="flex:1;"
-                  />
-                  <span x-show="upload.olSearching" style="font-size:13px;color:var(--ink-2);">Searching…</span>
-                </div>
-                <!-- Results list -->
-                <ul x-show="upload.olResults.length > 0" style="margin-top:8px;border:1px solid var(--border);border-radius:var(--radius);max-height:260px;overflow-y:auto;list-style:none;padding:0;margin-bottom:0;">
-                  <template x-for="r in upload.olResults" :key="r.ol_id">
-                    <li
-                      style="display:flex;align-items:center;gap:12px;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border);"
-                      @click="selectOLResult(r)"
-                    >
-                      <img x-show="r.cover_url" :src="r.cover_url" style="width:32px;height:48px;object-fit:cover;border-radius:2px;" />
-                      <div style="flex:1;min-width:0;">
-                        <div style="font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" x-text="r.title"></div>
-                        <div style="font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" x-text="[r.author, r.series_name ? (r.series_name + (r.series_position != null ? ' #' + r.series_position : '')) : ''].filter(Boolean).join(' · ')"></div>
-                      </div>
-                    </li>
-                  </template>
-                </ul>
-                <button style="margin-top:12px;font-size:12px;color:var(--ink-2);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;" @click="upload.uploadManual = true">Add manually instead</button>
-              </div>
-            </template>
-
-            <!-- Selected OL result confirmation -->
-            <template x-if="!upload.uploadManual && upload.olSelected">
-              <div>
-                <!-- Book identity row -->
-                <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);margin-bottom:16px;">
-                  <img x-show="upload.olSelected.cover_url" :src="upload.olSelected.cover_url" style="width:40px;height:56px;object-fit:cover;border-radius:2px;" />
-                  <div style="flex:1;">
-                    <div style="font-weight:500;font-size:14px;" x-text="upload.olSelected.title"></div>
-                    <div style="font-size:12px;color:var(--ink-2);" x-text="upload.olSelected.author || ''"></div>
-                  </div>
-                  <button style="font-size:12px;color:var(--ink-2);background:none;border:none;cursor:pointer;text-decoration:underline;" @click="clearOLSelection()">Change</button>
-                </div>
-                <!-- Series fields — always shown, pre-filled when OL has data -->
-                <div class="inline-form-row">
-                  <div class="form-group" style="flex:1;">
-                    <label style="display:flex;align-items:center;gap:6px;">
-                      Series name
-                      <span x-show="!upload.olSeriesName" style="font-size:11px;color:var(--error);font-weight:600;">✕ not found — please fill in</span>
-                      <span x-show="upload.olSeriesName" style="font-size:11px;color:var(--moss);">✓ from Open Library</span>
-                    </label>
-                    <input type="text" x-model="upload.olSeriesName" placeholder="e.g. Mistborn (or leave blank if standalone)" />
-                  </div>
-                  <div class="form-group" style="flex:0 0 130px;">
-                    <label style="display:flex;align-items:center;gap:6px;">
-                      Book #
-                      <span x-show="upload.olSeriesName && !upload.olPosition" style="font-size:11px;color:var(--error);font-weight:600;">✕ fill in</span>
-                    </label>
-                    <input type="number" step="0.5" min="0.5" x-model="upload.olPosition" placeholder="1" :disabled="!upload.olSeriesName" />
+                <label>Epub File <span style="color:var(--error);">*</span></label>
+                <div class="drop-zone" :class="{ 'drag-over': upload.dragging }"
+                  @dragover.prevent="upload.dragging = true" @dragleave="upload.dragging = false"
+                  @drop.prevent="onFileDrop($event)">
+                  <input type="file" accept=".epub" @change="onFileChange($event)" x-ref="fileInput" />
+                  <div class="drop-zone-icon">📄</div>
+                  <div class="drop-zone-text">
+                    <span x-show="!uploadFileName"><strong>Choose file</strong> or drag & drop</span>
+                    <span x-show="uploadFileName" x-text="uploadFileName" style="font-weight:500;color:var(--ink);"></span>
                   </div>
                 </div>
               </div>
-            </template>
+              <button class="btn btn-primary" style="width:100%;margin-top:4px;" @click="extractMetadata()" :disabled="!uploadFile">
+                Check Info
+              </button>
+            </div>
 
-            <!-- Manual fallback -->
-            <template x-if="upload.uploadManual">
-              <div>
-                <div class="form-group">
-                  <label>Title <span style="color:var(--error);">*</span></label>
-                  <input type="text" x-model="upload.manualTitle" placeholder="e.g. The Way of Kings" />
-                </div>
-                <div class="form-group">
-                  <label>Author</label>
-                  <input type="text" x-model="upload.manualAuthor" placeholder="e.g. Brandon Sanderson" />
-                </div>
-                <div class="inline-form-row">
-                  <div class="form-group">
-                    <label>Series Name</label>
-                    <input type="text" x-model="upload.manualSeriesName" placeholder="e.g. The Stormlight Archive" />
-                  </div>
-                  <div class="form-group">
-                    <label>Position</label>
-                    <input type="number" step="0.5" x-model="upload.manualSeriesPosition" placeholder="1" style="max-width:100px;" />
-                  </div>
-                </div>
-                <button style="font-size:12px;color:var(--ink-2);background:none;border:none;cursor:pointer;text-decoration:underline;" @click="upload.uploadManual = false">Search instead</button>
+            <!-- Step: extracting -->
+            <div x-show="uploadStep === 'extracting'" style="text-align:center;padding:32px 0;">
+              <div class="spinner" style="margin:0 auto 12px;"></div>
+              <p style="font-size:13px;color:var(--ink-2);">Reading epub and looking up series info…</p>
+            </div>
+
+            <!-- Step: confirming — metadata confirmation form -->
+            <div x-show="uploadStep === 'confirming'">
+              <div class="form-group">
+                <label>Title <span style="color:var(--error);">*</span></label>
+                <input type="text" x-model="extractedMeta.title" />
               </div>
-            </template>
-
-            <!-- Epub file picker -->
-            <div class="form-group" style="margin-top:16px;">
-              <label>Epub File <span style="color:var(--error);">*</span></label>
-              <div class="drop-zone" :class="{ 'drag-over': upload.dragging }"
-                @dragover.prevent="upload.dragging = true" @dragleave="upload.dragging = false"
-                @drop.prevent="onFileDrop($event)">
-                <input type="file" accept=".epub" @change="onFileChange($event)" />
-                <div class="drop-zone-icon">📄</div>
-                <div class="drop-zone-text">
-                  <strong>Choose file</strong> or drag & drop
+              <div class="form-group">
+                <label>Author</label>
+                <input type="text" x-model="extractedMeta.author" />
+              </div>
+              <div class="inline-form-row">
+                <div class="form-group" style="flex:1;">
+                  <label>Series Name</label>
+                  <input type="text" x-model="extractedMeta.series_name" placeholder="Leave blank if standalone" />
                 </div>
-                <div x-show="upload.file" class="drop-zone-filename" x-text="upload.file?.name"></div>
+                <div class="form-group" style="flex:0 0 130px;" x-show="extractedMeta.series_name">
+                  <label>Book #</label>
+                  <input type="number" step="0.5" min="1" x-model="extractedMeta.series_position" placeholder="1" />
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn btn-ghost" style="flex:1;" @click="uploadStep = 'idle'; uploadFile = null; uploadFileName = ''; upload.file = null;">Back</button>
+                <button class="btn btn-primary" style="flex:1;" @click="uploadBook()" :disabled="!extractedMeta.title">Upload &amp; Index</button>
               </div>
             </div>
 
-            <!-- Upload progress -->
-            <div x-show="upload.uploading" x-transition>
+            <!-- Step: uploading — progress -->
+            <div x-show="uploadStep === 'uploading'" x-transition>
               <div class="progress-wrap">
                 <div class="progress-bar" :style="'width:' + upload.progress + '%'"></div>
               </div>
               <div class="progress-label" x-text="upload.statusText"></div>
             </div>
 
-            <button class="btn btn-primary" style="width:100%;margin-top:4px;" @click="uploadBook()"
-              :disabled="upload.uploading || !upload.file || (!upload.olSelected && !upload.uploadManual) || (upload.uploadManual && !upload.manualTitle)">
-              <span x-show="upload.uploading" class="spinner"></span>
-              <span x-text="upload.uploading ? upload.statusText : 'Upload & Index'"></span>
-            </button>
+            <!-- Step: done -->
+            <div x-show="uploadStep === 'done' && uploadSuccess" class="alert alert-success" x-transition>
+              ✓ <span x-text="uploadSuccess"></span>
+            </div>
+
+            <!-- Step: error -->
+            <div x-show="uploadStep === 'error' && uploadError" class="alert alert-error" x-transition>
+              <span x-text="uploadError"></span>
+              <button style="margin-left:8px;font-size:12px;text-decoration:underline;background:none;border:none;cursor:pointer;" @click="uploadStep = 'idle'; uploadError = ''">Try again</button>
+            </div>
+
           </div>
         </div>
 
@@ -3257,26 +3203,16 @@
         thread: [],
 
         upload: {
-          // OL search state
-          olQuery: '',
-          olResults: [],
-          olSearching: false,
-          olSelected: null,
-          olSeriesName: '',
-          olPosition: '',
-          uploadManual: false,
-          // manual fallback fields
-          manualTitle: '',
-          manualAuthor: '',
-          manualSeriesName: '',
-          manualSeriesPosition: '',
-          // file
           file: null,
           dragging: false,
           uploading: false,
           progress: 0,
           statusText: '',
         },
+        uploadStep: 'idle',  // 'idle' | 'extracting' | 'confirming' | 'uploading' | 'done' | 'error'
+        extractedMeta: { title: '', author: '', series_name: '', series_position: '' },
+        uploadFile: null,
+        uploadFileName: '',
         uploadSuccess: '',
         uploadError: '',
 
@@ -3561,99 +3497,49 @@
 
         // ── Upload: file handling ───────────────────────────────────
         onFileChange(e) {
-          this.upload.file = e.target.files[0] ?? null;
+          const file = e.target.files[0] ?? null;
+          this.upload.file = file;
+          this.uploadFile = file;
+          this.uploadFileName = file ? file.name : '';
         },
 
         onFileDrop(e) {
           this.upload.dragging = false;
           const file = e.dataTransfer.files[0];
-          if (file && file.name.endsWith('.epub')) this.upload.file = file;
-        },
-
-        // ── Upload: OL search ───────────────────────────────────────
-        async searchOL() {
-          if (!this.upload.olQuery || this.upload.olQuery.length < 2) return;
-          this.upload.olSearching = true;
-          this.upload.olResults = [];
-          try {
-            const res = await fetch(`/books/search?q=${encodeURIComponent(this.upload.olQuery)}`);
-            this.upload.olResults = await res.json();
-          } catch (e) {
-            console.error('OL search failed', e);
-          } finally {
-            this.upload.olSearching = false;
+          if (file && file.name.endsWith('.epub')) {
+            this.upload.file = file;
+            this.uploadFile = file;
+            this.uploadFileName = file.name;
           }
         },
 
-        selectOLResult(result) {
-          this.upload.olSelected = result;
-          this.upload.olSeriesName = result.series_name || '';
-          this.upload.olPosition = result.series_position != null ? String(result.series_position) : '';
-          this.upload.olResults = [];
-          this.upload.olQuery = result.title;
-        },
-
-        clearOLSelection() {
-          this.upload.olSelected = null;
-          this.upload.olSeriesName = '';
-          this.upload.olPosition = '';
-          this.upload.olQuery = '';
-        },
-
-        // ── Upload: submit ──────────────────────────────────────────
-        async uploadBook() {
+        // ── Upload: extract metadata via Gemini ─────────────────────
+        async extractMetadata() {
+          this.uploadStep = 'extracting';
           this.uploadError = '';
-          this.uploadSuccess = '';
-
-          // Validate series fields
-          if (!this.upload.uploadManual && this.upload.olSelected) {
-            const seriesName = this.upload.olSeriesName.trim();
-            const pos = this.upload.olPosition;
-            if (seriesName && (pos === '' || pos == null)) {
-              this.uploadError = 'Please enter a book number (e.g. 1) for this series.';
-              return;
-            }
-          } else if (this.upload.uploadManual) {
-            const seriesName = this.upload.manualSeriesName.trim();
-            const pos = this.upload.manualSeriesPosition;
-            if (seriesName && (pos === '' || pos == null)) {
-              this.uploadError = 'Please enter a book number (e.g. 1) for this series.';
-              return;
-            }
-          }
-
           const fd = new FormData();
-          fd.append('file', this.upload.file);
-
-          if (this.upload.uploadManual || !this.upload.olSelected) {
-            // Manual path: generate a UUID client-side
-            const manualId = crypto.randomUUID();
-            const seriesSlug = this.upload.manualSeriesName
-              ? this.upload.manualSeriesName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
-              : manualId;
-            fd.append('canonical_book_id', manualId);
-            fd.append('title', this.upload.manualTitle);
-            fd.append('canonical_series_id', seriesSlug);
-            if (this.upload.manualAuthor) fd.append('author', this.upload.manualAuthor);
-            if (this.upload.manualSeriesName) fd.append('series_name', this.upload.manualSeriesName);
-            if (this.upload.manualSeriesPosition) fd.append('series_position', this.upload.manualSeriesPosition);
-          } else {
-            const r = this.upload.olSelected;
-            const seriesName = this.upload.olSeriesName.trim();
-            const seriesSlug = seriesName
-              ? seriesName.toLowerCase().replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
-              : r.ol_id;
-            fd.append('canonical_book_id', r.ol_id);
-            fd.append('ol_id', r.ol_id);
-            fd.append('title', r.title);
-            fd.append('canonical_series_id', seriesSlug);
-            if (r.author) fd.append('author', r.author);
-            if (seriesName) fd.append('series_name', seriesName);
-            const pos = this.upload.olPosition;
-            if (pos != null && pos !== '') fd.append('series_position', pos);
-            if (r.cover_url) fd.append('cover_url', r.cover_url);
+          fd.append('file', this.uploadFile);
+          try {
+            const res = await this.secureFetch('/books/extract-metadata', { method: 'POST', body: fd });
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            this.extractedMeta = {
+              title: data.book_name || data.title || '',
+              author: data.author || '',
+              series_name: data.series_name || '',
+              series_position: data.series_position != null ? String(data.series_position) : '',
+              is_series: data.is_series || false,
+            };
+            this.uploadStep = 'confirming';
+          } catch (e) {
+            this.uploadError = e.message;
+            this.uploadStep = 'error';
           }
+        },
 
+        // ── Upload: submit with confirmed metadata ──────────────────
+        async uploadBook() {
+          this.uploadStep = 'uploading';
           this.upload.uploading = true;
           this.upload.progress = 15;
           this.upload.statusText = 'Uploading…';
@@ -3669,31 +3555,47 @@
             }
           }, 1200);
 
+          const fd = new FormData();
+          fd.append('file', this.uploadFile);
+          fd.append('title', this.extractedMeta.title);
+          if (this.extractedMeta.author) fd.append('author', this.extractedMeta.author);
+          if (this.extractedMeta.series_name) fd.append('series_name', this.extractedMeta.series_name);
+          if (this.extractedMeta.series_position) fd.append('series_position', this.extractedMeta.series_position);
+          fd.append('is_series', this.extractedMeta.is_series ? 'true' : 'false');
+
           try {
             const res = await this.secureFetch('/library/books', { method: 'POST', body: fd });
             clearInterval(ticker);
 
             if (!res.ok) {
-              const err = await res.json();
+              const err = await res.json().catch(() => ({}));
               this.uploadError = err.detail ?? 'Upload failed.';
+              this.uploadStep = 'error';
               return;
             }
 
             const data = await res.json();
             this.upload.progress = 100;
             this.upload.statusText = 'Done!';
-            await this.loadLibrary();
-
             this.uploadSuccess = `"${data.title}" indexed — ${data.chapter_count} chapters.`;
-            this.upload = {
-              ...this.upload,
-              olQuery: '', olResults: [], olSearching: false, olSelected: null, olSeriesName: '', olPosition: '',
-              uploadManual: false, manualTitle: '', manualAuthor: '', manualSeriesName: '', manualSeriesPosition: '',
-              file: null, uploading: false, progress: 0, statusText: '',
-            };
+            this.uploadStep = 'done';
+            // Load library in background, don't block on it
+            this.loadLibrary();
+            setTimeout(() => {
+              this.uploadStep = 'idle';
+              this.uploadSuccess = '';
+              this.uploadFile = null;
+              this.uploadFileName = '';
+              this.upload.file = null;
+              this.upload.uploading = false;
+              this.upload.progress = 0;
+              this.upload.statusText = '';
+              this.extractedMeta = { title: '', author: '', series_name: '', series_position: '' };
+            }, 4000);
           } catch (e) {
             clearInterval(ticker);
             this.uploadError = 'Network error. Is the server running?';
+            this.uploadStep = 'error';
           } finally {
             this.upload.uploading = false;
           }

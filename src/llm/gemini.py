@@ -1,7 +1,9 @@
 """Gemini implementation of LLMClient using google-genai async API."""
 
+import time
+
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 
 class GeminiLLMClient:
@@ -74,3 +76,64 @@ class GeminiLLMClient:
                 f"Gemini: expected function_call in response, got: {part!r}"
             )
         return dict(part.function_call.args)
+
+    def get_series_via_gemini(
+        self, title: str, author: str, retries: int = 3, delay: int = 5
+    ) -> dict:
+        """Look up series information for a book using Gemini with Google Search.
+
+        Args:
+            title: The book title.
+            author: The book author.
+            retries: Number of retry attempts on server errors.
+            delay: Seconds to wait between retries.
+
+        Returns:
+            A dict with keys: is_series (bool), series_name (str|None),
+            position (float|None), book_name (str|None).
+        """
+        for attempt in range(retries):
+            try:
+                search_response = self._client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=f'Is the book "{title}" by {author} part of a series? If so, what is the book name, series name and position?',
+                    config=types.GenerateContentConfig(
+                        tools=[types.Tool(google_search=types.GoogleSearch())],
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
+                    ),
+                )
+                parse_response = self._client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=f"Extract the series information from this text:\n\n{search_response.text}",
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        thinking_config=types.ThinkingConfig(thinking_budget=0),
+                        response_schema=types.Schema(
+                            type=types.Type.OBJECT,
+                            properties={
+                                "is_series": types.Schema(type=types.Type.BOOLEAN),
+                                "series_name": types.Schema(
+                                    type=types.Type.STRING, nullable=True
+                                ),
+                                "position": types.Schema(
+                                    type=types.Type.NUMBER, nullable=True
+                                ),
+                                "book_name": types.Schema(
+                                    type=types.Type.STRING, nullable=True
+                                ),
+                            },
+                            required=["is_series", "series_name", "position", "book_name"],
+                        ),
+                    ),
+                )
+                result = parse_response.parsed
+                if result["is_series"] and result["position"] is None:
+                    result["is_series"] = False
+                    result["series_name"] = None
+                return result
+            except errors.ServerError:
+                if attempt < retries - 1:
+                    print(f"503 on attempt {attempt + 1}, retrying in {delay}s...")
+                    time.sleep(delay)
+                else:
+                    raise

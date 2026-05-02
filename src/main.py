@@ -1,7 +1,10 @@
 """BookLens FastAPI application."""
 
 import logging
+import os
 import re
+import tempfile
+import uuid
 from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Annotated, AsyncGenerator, Optional
@@ -13,13 +16,11 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from src.books.open_library import search_books, OLBookResult
 from src.config import settings
 from src.graph.builder import build_graph_payload
 from src.graph.digest import generate_digest
 from src.ingestion.chunker import chunk_chapter
-from src.ingestion.cover_extractor import (extract_cover,
-                                           fetch_cover_open_library)
+from src.ingestion.cover_extractor import extract_cover
 from src.ingestion.embedder import get_embedder
 from src.ingestion.epub_parser import parse_epub
 from src.ingestion.indexer import index_book
@@ -213,6 +214,17 @@ class ExtractBookResponse(BaseModel):
     relationships_found: int
 
 
+class ExtractMetadataResponse(BaseModel):
+    """Response returned after extracting metadata from an epub."""
+
+    title: str
+    author: Optional[str] = None
+    book_name: Optional[str] = None
+    series_name: Optional[str] = None
+    series_position: Optional[float] = None
+    is_series: bool = False
+
+
 # ---------------------------------------------------------------------------
 # App lifespan
 # ---------------------------------------------------------------------------
@@ -265,16 +277,64 @@ async def get_library(user_id: str = Depends(get_current_user)) -> Library:
     return await load_library(user_id)
 
 
-@app.get("/books/search", response_model=list[OLBookResult])
-async def search_books_endpoint(q: str) -> list[OLBookResult]:
-    """Search Open Library for books matching the query.
+@app.post("/books/extract-metadata", response_model=ExtractMetadataResponse)
+async def extract_metadata_endpoint(
+    request: Request, file: UploadFile = File(...)
+) -> ExtractMetadataResponse:
+    """Extract title, author, and series info from an epub using Gemini.
 
-    Returns up to 10 results with title, author, series, cover URL.
-    Used by the frontend upload modal to look up book metadata.
+    Reads epub metadata (title/author) locally and calls Gemini with Google Search
+    to determine series membership. No DB writes are performed.
     """
-    if not q or len(q.strip()) < 2:
-        return []
-    return search_books(q.strip(), limit=10)
+    from ebooklib import epub
+
+    if not file.filename or not file.filename.endswith(".epub"):
+        raise HTTPException(status_code=400, detail="File must be an .epub.")
+
+    book_bytes = await file.read()
+
+    # Write to a temp file since ebooklib requires a file path.
+    with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+        tmp.write(book_bytes)
+        tmp_path = tmp.name
+
+    try:
+        book = epub.read_epub(tmp_path)
+        title_meta = book.get_metadata("DC", "title")
+        author_meta = book.get_metadata("DC", "creator")
+        title: str = title_meta[0][0] if title_meta else (file.filename or "Unknown")
+        author: Optional[str] = author_meta[0][0] if author_meta else None
+    finally:
+        os.unlink(tmp_path)
+
+    series_name: Optional[str] = None
+    series_position: Optional[float] = None
+    is_series = False
+    book_name: Optional[str] = None
+
+    if author:
+        try:
+            llm_client = request.app.state.llm_client
+            result = llm_client.get_series_via_gemini(title, author)
+            is_series = bool(result.get("is_series"))
+            series_name = result.get("series_name") or None
+            pos = result.get("position")
+            series_position = float(pos) if pos is not None else None
+            book_name = result.get("book_name") or None
+        except Exception:
+            logger.warning(
+                "Gemini series lookup failed; returning metadata without series",
+                exc_info=True,
+            )
+
+    return ExtractMetadataResponse(
+        title=title,
+        author=author,
+        book_name=book_name,
+        series_name=series_name,
+        series_position=series_position,
+        is_series=is_series,
+    )
 
 
 def _is_book_fully_extracted(kb: KnowledgeBase, book_index: int, total_chapters: int) -> bool:
@@ -319,13 +379,13 @@ async def _run_extraction_background(
 async def upload_book_canonical(
     request: Request,
     background_tasks: BackgroundTasks,
-    canonical_book_id: Annotated[str, Form()],
     title: Annotated[str, Form()],
-    canonical_series_id: Annotated[str, Form()],
-    ol_id: Annotated[str | None, Form()] = None,
+    canonical_book_id: Annotated[str | None, Form()] = None,
+    canonical_series_id: Annotated[str | None, Form()] = None,
     author: Annotated[str | None, Form()] = None,
     series_name: Annotated[str | None, Form()] = None,
     series_position: Annotated[float | None, Form()] = None,
+    is_series: Annotated[str | None, Form()] = None,
     cover_url: Annotated[str | None, Form()] = None,
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
@@ -333,6 +393,22 @@ async def upload_book_canonical(
     """Upload an epub and register it against a canonical book."""
     if not file.filename or not file.filename.endswith(".epub"):
         raise HTTPException(status_code=400, detail="File must be an .epub.")
+
+    # Generate IDs if not provided
+    if not canonical_book_id:
+        canonical_book_id = str(uuid.uuid4())
+    if not canonical_series_id:
+        if series_name:
+            canonical_series_id = (
+                series_name.lower()
+                .replace(" ", "-")
+                .replace("/", "-")
+            )
+            # strip non-alphanumeric except hyphens
+            import re as _re
+            canonical_series_id = _re.sub(r"[^a-z0-9-]", "", canonical_series_id)
+        else:
+            canonical_series_id = canonical_book_id
 
     book_bytes = await file.read()
     client = get_supabase_client()
@@ -342,14 +418,15 @@ async def upload_book_canonical(
     chapters_for_db = [{"index": c.index, "label": c.label} for c in parsed_chapters]
 
     # 2. Upsert canonical_books row (idempotent)
+    is_series_bool = is_series and is_series.lower() == "true"
     cb = CanonicalBook(
         id=canonical_book_id,
-        ol_id=ol_id,
         title=title,
         author=author,
         series_name=series_name,
         series_position=series_position,
         canonical_series_id=canonical_series_id,
+        is_series=is_series_bool,
         cover_url=cover_url,
         chapters=[Chapter(index=c["index"], label=c["label"]) for c in chapters_for_db],
     )
@@ -391,7 +468,7 @@ async def upload_book_canonical(
     # 6. Extract and save cover
     has_cover = False
     try:
-        cover_result = extract_cover(book_bytes) or fetch_cover_open_library(title, book_bytes)
+        cover_result = extract_cover(book_bytes)
         if cover_result is not None:
             cover_bytes, _ = cover_result
             cover_path = f"{user_id}/{canonical_book_id}/cover.jpg"

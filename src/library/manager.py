@@ -34,6 +34,7 @@ def _book_from_rows(cb_data: dict, ub_data: dict, book_index: int, user_id: str)
         cover_url=_cover_url(user_id, canonical_book_id) if has_cover else None,
         series_position=cb_data.get("series_position"),
         series_name=cb_data.get("series_name"),
+        is_series=cb_data.get("is_series", False),
     )
 
 
@@ -48,6 +49,7 @@ def upsert_canonical_book(cb: CanonicalBook) -> None:
         "series_name": cb.series_name,
         "series_position": cb.series_position,
         "canonical_series_id": cb.canonical_series_id,
+        "is_series": cb.is_series,
         "cover_url": cb.cover_url,
         "chapters": [c.model_dump() for c in cb.chapters],
     }).execute()
@@ -109,7 +111,7 @@ def _group_into_series(rows: list[dict], user_id: str) -> list[Series]:
 
         books: list[Book] = []
         for book_index, row in enumerate(group_rows):
-            cb_data = {k: row[k] for k in ("id", "title", "author", "series_name", "series_position", "cover_url", "chapters")}
+            cb_data = {k: row[k] for k in ("id", "title", "author", "series_name", "series_position", "cover_url", "chapters", "is_series")}
             ub_data = {k: row.get(k) for k in ("status", "current_chapter_index", "epub_path", "has_cover")}
             books.append(_book_from_rows(cb_data, ub_data, book_index, user_id))  # series_name passed via cb_data
 
