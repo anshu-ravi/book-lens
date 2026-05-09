@@ -87,12 +87,13 @@ async def extract_book(
     ]
 
     # Run extraction
-    service = ExtractionService(user_id, book_id)
+    series_id = book.get("series_id")
+    service = ExtractionService(user_id, book_id, series_id)
     await service.extract_book(
         epub_bytes,
         chapters,
         limit=limit,
-        series_id=book.get("series_id"),
+        series_id=series_id,
         refresh_mode=refresh_mode,
         refresh_chapters=refresh_ch_list,
     )

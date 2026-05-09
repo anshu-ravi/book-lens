@@ -17,15 +17,17 @@ logger = logging.getLogger(__name__)
 class ExtractionService:
     """Handle extraction workflow: extract chapters, save to storage, update metadata."""
 
-    def __init__(self, user_id: str, book_id: str) -> None:
+    def __init__(self, user_id: str, book_id: str, series_id: str) -> None:
         """Initialize extraction service.
 
         Args:
             user_id: User identifier.
             book_id: Book identifier.
+            series_id: Series identifier.
         """
         self.user_id = user_id
         self.book_id = book_id
+        self.series_id = series_id
         self.client = get_supabase_client()
         self.extractor = Extractor()
 
@@ -113,11 +115,14 @@ class ExtractionService:
             # Upload all extractions to Supabase Storage
             await self._upload_to_storage(all_extractions)
 
-            # Mark as completed
+            # Mark extraction as completed
             await self._update_extraction_status("completed")
             logger.info(
                 f"Extraction complete: {len(extracted_indices)}/{total_chapters} chapters"
             )
+
+            # Trigger deduplication and ingestion
+            await self._trigger_downstream_stages()
 
         except Exception as e:
             logger.error(f"Extraction failed for book {self.book_id}: {e}", exc_info=True)
@@ -129,7 +134,7 @@ class ExtractionService:
         Args:
             extractions: Dict of chapter extractions.
         """
-        file_path = f"extractions/{self.user_id}/{self.book_id}/chapters.json"
+        file_path = f"extractions/{self.user_id}/{self.series_id}/{self.book_id}/chapters.json"
 
         try:
             # Delete existing file if it exists
@@ -160,7 +165,7 @@ class ExtractionService:
             error_message: Optional error message if status is 'failed'.
         """
         try:
-            file_path = f"extractions/{self.user_id}/{self.book_id}/chapters.json"
+            file_path = f"extractions/{self.user_id}/{self.series_id}/{self.book_id}/chapters.json"
 
             # Upsert: insert if not exists, update if does
             self.client.table("book_extractions").upsert(
@@ -270,8 +275,25 @@ class ExtractionService:
             Dict of existing chapter extractions, or empty dict if none exist.
         """
         try:
-            file_path = f"extractions/{self.user_id}/{self.book_id}/chapters.json"
+            file_path = f"extractions/{self.user_id}/{self.series_id}/{self.book_id}/chapters.json"
             content = self.client.storage.from_("extractions").download(file_path)
             return json.loads(content)
         except Exception:
             return {}
+
+    async def _trigger_downstream_stages(self) -> None:
+        """Trigger deduplication and ingestion after extraction completes."""
+        try:
+            from src.knowledge.deduplication_service import DeduplicationService
+            from src.knowledge.ingestion_service import IngestionService
+
+            logger.info("Starting deduplication...")
+            dedup_service = DeduplicationService(self.user_id, self.book_id, self.series_id)
+            await dedup_service.deduplicate_book()
+
+            logger.info("Starting ingestion...")
+            ingest_service = IngestionService(self.user_id, self.book_id, self.series_id)
+            await ingest_service.ingest_book()
+
+        except Exception as e:
+            logger.error(f"Downstream pipeline failed: {e}", exc_info=True)

@@ -27,8 +27,6 @@ class KnowledgeQueryEngine:
     ) -> Optional[dict[str, Any]]:
         """Get full character profile up to a given chapter.
 
-        Performs query-time identity merge for characters with REVEALED_AS edges.
-
         Args:
             name: Character name (or alias).
             up_to_chapter: Only include information up to this chapter.
@@ -55,27 +53,6 @@ class KnowledgeQueryEngine:
 
             char_node = char_record["c"]
             profile = dict(char_node)
-
-            # Check for identity reveals (query-time merge)
-            reveal_result = session.run(
-                """
-                MATCH (c:Character {name: $name, series_id: $series_id})
-                OPTIONAL MATCH (c)-[r:REVEALED_AS]->(other:Character)
-                WHERE r.reveal_chapter_index <= $up_to_chapter
-                RETURN other
-                """,
-                name=profile["name"],
-                series_id=self.series_id,
-                up_to_chapter=up_to_chapter,
-            )
-
-            other_profile = reveal_result.single()
-            if other_profile and other_profile["other"]:
-                # Merge the other character's info
-                other = dict(other_profile["other"])
-                profile["revealed_as"] = other["name"]
-                profile["revealed_description"] = other.get("description")
-
             return profile
 
     def list_characters(self, up_to_chapter: int) -> list[dict[str, Any]]:
@@ -143,7 +120,6 @@ class KnowledgeQueryEngine:
 
         Filters by:
         - First chapter introduction must be <= up_to_chapter
-        - Must not have future REVEALED_AS edges beyond up_to_chapter
 
         Args:
             query_text: Search query.
@@ -163,10 +139,6 @@ class KnowledgeQueryEngine:
                 YIELD node, score
                 WHERE node.series_id = $series_id
                   AND node.first_chapter_index <= $up_to_chapter
-                  AND NOT EXISTS {
-                    MATCH (node)-[r:REVEALED_AS]->()
-                    WHERE r.reveal_chapter_index > $up_to_chapter
-                  }
                 RETURN node.name as name,
                        node.description as description,
                        score

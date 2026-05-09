@@ -54,7 +54,7 @@ async def _run_extraction_background(
 ) -> None:
     """Background task to run extraction for a book."""
     try:
-        service = ExtractionService(user_id, book_id)
+        service = ExtractionService(user_id, book_id, series_id)
         await service.extract_book(
             epub_bytes, chapters, series_id=series_id, refresh_mode="skip"
         )
