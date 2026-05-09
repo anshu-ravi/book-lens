@@ -35,11 +35,16 @@ class KnowledgePipeline:
 
         # Extract knowledge per chapter
         extractor = Extractor()
+        processed_count = 0
         for idx, (label, text) in enumerate(chapters):
             if limit and idx >= limit:
                 break
             print(f"Extracting chapter {idx}: {label}")
             extractor.extract(text, self.series_id, idx, label)
+            processed_count += 1
+
+        chapter_word = "chapter" if processed_count == 1 else "chapters"
+        print(f"Extraction complete: {processed_count} {chapter_word} processed")
 
     def run_deduplication(self, limit: Optional[int] = None) -> None:
         """Run SILVER stage: deduplicate characters.

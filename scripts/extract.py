@@ -34,13 +34,16 @@ def main() -> None:
 
     # Extract knowledge
     extractor = Extractor()
+    processed_count = 0
     for idx, (label, text) in enumerate(chapters):
         if args.limit and idx >= args.limit:
             break
         print(f"Extracting chapter {idx}: {label}")
         extractor.extract(text, args.series, idx, label)
+        processed_count += 1
 
-    print(f"Extraction complete: {len(chapters)} chapters processed")
+    chapter_word = "chapter" if processed_count == 1 else "chapters"
+    print(f"Extraction complete: {processed_count} {chapter_word} processed")
 
 
 if __name__ == "__main__":
