@@ -1,0 +1,104 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "Helldiver",
+        "Mad Helldiver of Lykos"
+      ],
+      "faction": "Reds",
+      "role": "protagonist",
+      "description": "A miner known for his skill and fearlessness, living on Mars. He is devoted to his wife and family but struggles with the conflicting philosophy of safety versus freedom.",
+      "key_events": [
+        "Witnessed the distribution of Laurel-wreathed boxes",
+        "Entered the secret garden via the ventilation shaft",
+        "Engaged in a tense ideological debate about freedom and rebellion with Eo",
+        "Discovered a secret garden with Eo",
+        "Confronted by an outsider in the Webbery"
+      ]
+    },
+    {
+      "name": "Eo",
+      "aliases": [
+        "Darrow's wife"
+      ],
+      "faction": "Reds",
+      "role": "ally, spouse",
+      "description": "Darrow's wife, a woman who is fiercely intelligent and harbor a deep hatred for the Society. She acts as Darrow's conscience and attempts to incite him to lead a rebellion for their people's freedom.",
+      "key_events": [
+        "Took Darrow to a secret garden in the Webbery",
+        "Argued that the Reds are slaves to the Golds",
+        "Challenged Darrow to live for more than just family",
+        "Revealed the truth about the Society's control of the land"
+      ]
+    },
+    {
+      "name": "Kieran",
+      "aliases": [
+        "Brother"
+      ],
+      "faction": "Reds",
+      "role": "family",
+      "description": "Darrow's younger brother who looks up to him but lacks Darrow's perceived fearlessness.",
+      "key_events": [
+        "Reported Darrow's activities to Eo"
+      ]
+    },
+    {
+      "name": "Unknown Outsider",
+      "aliases": [
+        "Oily voice"
+      ],
+      "faction": "Society (implied Gold or overseer)",
+      "role": "antagonist",
+      "description": "A person with an Earth-accented voice who discovers Darrow and Eo in the prohibited garden area.",
+      "key_events": [
+        "Discovered Darrow and Eo in the ventilation ducts"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Eo",
+      "type": "romance",
+      "description": "A deeply loving but conflicted marriage; they are soulmates, yet their outlooks on life\u2014Darrow's focus on family survival versus Eo's focus on abstract freedom\u2014create significant tension.",
+      "moments": [
+        "Shared a secret intimate moment in the garden",
+        "Ideological argument about Darrow's father and the rebellion"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Kieran",
+      "type": "family",
+      "description": "Brothers who share a complex relationship where the younger feels both fear and admiration for the elder.",
+      "moments": [
+        "Kieran tells Eo about Darrow's actions"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "faction",
+      "name": "The Society",
+      "description": "The ruling hierarchy that governs Mars, keeping the Reds in chains and maintaining control through systemic inequality."
+    },
+    {
+      "category": "concept",
+      "name": "Helldiver",
+      "description": "A title given to miners who face the highest risk and perform the most dangerous tasks in the mines of Mars."
+    },
+    {
+      "category": "location",
+      "name": "The Webbery",
+      "description": "A facility where spiderworms are kept to knit silk; it contains hidden ventilation shafts leading to secret areas."
+    },
+    {
+      "category": "concept",
+      "name": "The Garden",
+      "description": "A prohibited, lush space with trees, grass, and animals, kept hidden from the Reds by the governing class."
+    }
+  ],
+  "summary": "In this chapter, Darrow and the other Reds cope with the injustice of the Laurels being awarded based on birth rather than merit, a cruel demonstration of the Society's power. Despite his underlying rage, Darrow is calmed by his wife, Eo, who leads him to a secret location. They infiltrate the Webbery, a place where spiderworms toil, and discover a forgotten ventilation shaft that leads to a hidden garden. Darrow is awestruck by the lush, alien environment\u2014a stark contrast to the gray, suffocating reality of the mines. As they lie in a bed of grass, their conversation turns political and philosophical. Eo urges Darrow to stop being a 'machine' and to use his influence to lead the Reds toward freedom, arguing that they are not mere colonists but enslaved people whose labor has built the very land the Golds keep for themselves. Darrow, still reeling from the trauma of his father\u2019s death for a 'cause,' resists her call to action, insisting that survival and family are all that matter. Eo counters that life without freedom is empty and challenges him to dream of a future for their children. Their intimate moment is abruptly shattered when they return to the ventilation shafts and are intercepted by an unidentified, oily voice who discovers them in the forbidden area, signaling a dangerous turn of events for the couple."
+}

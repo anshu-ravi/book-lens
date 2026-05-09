@@ -42,40 +42,102 @@ class GeminiLLMClient:
         tool_schema: dict,
         max_tokens: int,
     ) -> dict:
-        """Force Gemini to call tool_name via function calling and return its args."""
-        # Gemini function declarations use "parameters" (same JSON Schema shape).
-        func_decl = types.FunctionDeclaration(
-            name=tool_name,
-            description=tool_description,
-            parameters=tool_schema,
-        )
-        tool = types.Tool(function_declarations=[func_decl])
-        tool_config = types.ToolConfig(
-            function_calling_config=types.FunctionCallingConfig(
-                mode="ANY",
-                allowed_function_names=[tool_name],
-            )
-        )
+        """Use Gemini's JSON schema mode to return structured data."""
+        import logging
+        logger = logging.getLogger(__name__)
 
-        # Extraction is always a single user message.
-        prompt = messages[0]["content"] if messages else ""
+        def json_schema_to_gemini_schema(schema: dict) -> types.Schema:
+            """Recursively convert JSON Schema dict to Gemini Schema."""
+            if "type" not in schema:
+                raise ValueError(f"Schema must have 'type': {schema}")
+
+            schema_type = schema["type"]
+
+            type_map = {
+                "object": types.Type.OBJECT,
+                "array": types.Type.ARRAY,
+                "string": types.Type.STRING,
+                "number": types.Type.NUMBER,
+                "integer": types.Type.INTEGER,
+                "boolean": types.Type.BOOLEAN,
+            }
+
+            gemini_type = type_map.get(schema_type)
+            if not gemini_type:
+                raise ValueError(f"Unsupported schema type: {schema_type}")
+
+            kwargs = {"type": gemini_type}
+            if "description" in schema:
+                kwargs["description"] = schema["description"]
+
+            if schema_type == "object" and "properties" in schema:
+                kwargs["properties"] = {
+                    prop_name: json_schema_to_gemini_schema(prop_schema)
+                    for prop_name, prop_schema in schema["properties"].items()
+                }
+                if "required" in schema:
+                    kwargs["required"] = schema["required"]
+
+            if schema_type == "array" and "items" in schema:
+                kwargs["items"] = json_schema_to_gemini_schema(schema["items"])
+
+            if "enum" in schema:
+                kwargs["enum"] = schema["enum"]
+
+            if schema.get("nullable"):
+                kwargs["nullable"] = True
+
+            return types.Schema(**kwargs)
+
+        gemini_schema = json_schema_to_gemini_schema(tool_schema)
+
+        logger.debug(f"Using Gemini JSON schema mode for extraction")
+
+        contents = []
+        for msg in messages:
+            role = "model" if msg["role"] == "assistant" else "user"
+            contents.append(
+                types.Content(role=role, parts=[types.Part(text=msg["content"])])
+            )
 
         response = await self._client.aio.models.generate_content(
             model=self._extraction_model,
-            contents=prompt,
+            contents=contents,
             config=types.GenerateContentConfig(
-                tools=[tool],
-                tool_config=tool_config,
+                response_mime_type="application/json",
+                response_schema=gemini_schema,
                 max_output_tokens=max_tokens,
             ),
         )
 
-        part = response.candidates[0].content.parts[0]
-        if not part.function_call:
-            raise RuntimeError(
-                f"Gemini: expected function_call in response, got: {part!r}"
-            )
-        return dict(part.function_call.args)
+        # Check for response errors
+        if response is None:
+            raise RuntimeError("Gemini API returned None response. Check API key and quota.")
+
+        if not response.candidates:
+            raise RuntimeError(f"Gemini API returned no candidates. Prompt feedback: {response.prompt_feedback if hasattr(response, 'prompt_feedback') else 'unknown'}")
+
+        candidate = response.candidates[0]
+
+        if not candidate.content:
+            finish_reason = candidate.finish_reason if hasattr(candidate, 'finish_reason') else 'unknown'
+            logger.error(f"Empty content from Gemini. Finish reason: {finish_reason}")
+            raise RuntimeError(f"Gemini API returned empty content. Finish reason: {finish_reason}")
+
+        # Use response.parsed if available (SDK handles JSON decoding + schema coercion)
+        if response.parsed is not None:
+            return dict(response.parsed)
+
+        # Fallback: parse text manually
+        import json
+        text_content = candidate.content.parts[0].text if candidate.content.parts else None
+        if not text_content:
+            raise RuntimeError("Gemini returned no text content")
+        try:
+            return json.loads(text_content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini JSON response: {text_content[:500]}")
+            raise RuntimeError(f"Gemini returned invalid JSON: {e}")
 
     def get_series_via_gemini(
         self, title: str, author: str, retries: int = 3, delay: int = 5

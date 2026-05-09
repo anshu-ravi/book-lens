@@ -1,0 +1,120 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "little bird",
+        "the killer",
+        "my boy"
+      ],
+      "faction": "Red (disguised as Gold)",
+      "role": "protagonist",
+      "description": "A former Red Helldiver being surgically transformed into a Gold to infiltrate their society. He is undergoing extreme physical and mental conditioning to become an 'iron Gold' warrior.",
+      "key_events": [
+        "Survives lethal surgery to replace his skin and bone structure",
+        "Learns thousands of years of literature and history",
+        "Trains in high-gravity simulations to build Gold-standard strength"
+      ]
+    },
+    {
+      "name": "Mickey",
+      "aliases": [
+        "The Carver"
+      ],
+      "faction": "Carvers",
+      "role": "mentor",
+      "description": "An expert bio-sculptor who views his subjects as art projects. He is a cynical, eccentric figure who believes in the stability of the Society while secretly enjoying the power to 'create gods.'",
+      "key_events": [
+        "Performs invasive surgeries on Darrow",
+        "Instructs Darrow on the history and philosophy of the Golds",
+        "Experiences fear when Darrow threatens him"
+      ]
+    },
+    {
+      "name": "Harmony",
+      "aliases": [
+        "Dancer"
+      ],
+      "faction": "Ares/Sons of Ares",
+      "role": "mentor",
+      "description": "A harsh, physically hardened woman who oversees Darrow's combat training. She is fueled by a deep-seated rage and shares a common background of suffering with Darrow.",
+      "key_events": [
+        "Forces Darrow to train in intense concentration machines",
+        "Coordinates with Dancer to push Darrow beyond his limits"
+      ]
+    },
+    {
+      "name": "Evey",
+      "aliases": [
+        "the winged girl"
+      ],
+      "faction": "Pink",
+      "role": "ally",
+      "description": "A silent, soft-faced Pink who serves as a dancer in Mickey's club. She possesses a latent sense of self that Darrow recognizes, leading to a quiet connection.",
+      "key_events": [
+        "Bathes and grooms Darrow during his recovery",
+        "Leaves a feather in Darrow's pocket as a gesture of defiance"
+      ]
+    },
+    {
+      "name": "Dancer",
+      "aliases": [
+        "Ares (associate)"
+      ],
+      "faction": "Sons of Ares",
+      "role": "mentor",
+      "description": "A strategist behind Darrow's transformation who believes that intense suffering creates superior warriors. He serves as an overseer to ensure Darrow is molded correctly for his mission.",
+      "key_events": [
+        "Orders Harmony to increase the intensity of Darrow's training",
+        "Communicates with Mickey about the progress of the transformation"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Mickey",
+      "type": "other",
+      "description": "A complex dynamic of creator and art; Darrow feels both a dependency on Mickey for his survival and a growing resentment for being treated as a tool/property.",
+      "moments": [
+        "Darrow threatening to remove Mickey's hands if he hurts Evey"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Harmony",
+      "type": "ally",
+      "description": "A harsh mentor-student relationship built on mutual recognition of shared, suppressed rage.",
+      "moments": [
+        "Harmony pushing Darrow to his physical limits in the gym"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Evey",
+      "type": "ally",
+      "description": "A quiet bond formed through shared misery and silent empathy.",
+      "moments": [
+        "Evey placing a feather in Darrow's pocket as a gift"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "power_system",
+      "name": "The Carving",
+      "description": "A high-level biological and surgical process used to transform low-tier humans (Reds) into superior physical specimens (Golds), involving gene therapy and structural reconstruction."
+    },
+    {
+      "category": "technology",
+      "name": "Concentration Machine",
+      "description": "A device that uses dry gel and resistance fields to simulate extreme physical scenarios, forcing muscle tissues to tear and rebuild with significantly increased density."
+    },
+    {
+      "category": "rule",
+      "name": "HighGrav",
+      "description": "An environment with artificially increased gravity used to force bone and muscle density to Gold-standard levels."
+    }
+  ],
+  "summary": "Darrow endures weeks of agony as Mickey, a Carver, fundamentally reconstructs his body to transform him from a Red into a Gold. Through multiple surgeries, his skeleton is reinforced, his skin is replaced, and a datachip is installed in his frontal lobe to facilitate rapid learning. During his recovery, Darrow is watched over by Evey, a silent Pink, and trained by Harmony (Dancer) in high-gravity gymnasium simulators that push him to the brink of physical collapse. While Mickey initially treats Darrow as a precious 'art piece' and property, the intensity of the process and the cruel conditioning imposed by Dancer force Darrow to harden his resolve. Darrow begins to resent his mentors\u2014Dancer for his detachment and Mickey for his superficial cruelty. Despite the misery, Darrow thrives, absorbing thousands of years of human history and literature through processing enhancers. He develops Gold-level physical strength, capable of crushing rock and displaying lightning-fast reflexes. As his transformation nears completion, his personality shifts; he becomes cold, arrogant, and physically imposing. In a final show of power, Darrow confronts Mickey, shedding his former submissive role and warning him to protect Evey, signaling that he is no longer just a 'little bird' but a rising force determined to challenge the oppressive order of the Golds."
+}

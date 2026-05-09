@@ -1,0 +1,82 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "HellDiver"
+      ],
+      "faction": "Reds",
+      "role": "protagonist",
+      "description": "A young Red miner from Lykos who discovers the reality of the Solar System's hierarchy. He is reeling from the revelation that his entire life and people's suffering have been based on an elaborate lie, shifting his focus from grief to vengeful determination.",
+      "key_events": [
+        "Witnessed the paradise city of the Golds",
+        "Learned the truth about the Conquering and the history of the Society",
+        "Vowed to seek justice through violence"
+      ]
+    },
+    {
+      "name": "Dancer",
+      "aliases": [
+        "The Mentor"
+      ],
+      "faction": "Sons of Ares",
+      "role": "mentor",
+      "description": "An operative who guides Darrow and reveals the true history of Mars and the Society. He displays a cold, calculating demeanor beneath a fatherly exterior and is committed to the violent overthrow of the ruling order.",
+      "key_events": [
+        "Revealed the historical lies of the Golds to Darrow",
+        "Confirmed that the war for freedom will require blood"
+      ]
+    },
+    {
+      "name": "Eo",
+      "aliases": [
+        "None"
+      ],
+      "faction": "Reds",
+      "role": "deceased",
+      "description": "Darrow's late wife whose martyrdom and dreams of freedom continue to influence his actions. Her memory serves as the catalyst for Darrow's transformation from a laborer to a potential revolutionary.",
+      "key_events": [
+        "Died fighting for the cause",
+        "Influenced Darrow's perception of duty and love"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Dancer",
+      "type": "mentor",
+      "description": "Dancer acts as a guide, providing Darrow with the forbidden knowledge required to understand his role in the rebellion.",
+      "moments": [
+        "Dancer explained the history of the Conquering to Darrow while showing him the city"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Eo",
+      "type": "romance",
+      "description": "Though deceased, Eo remains the primary emotional anchor for Darrow. Her death has turned his grief into a hardening resolve for vengeance.",
+      "moments": [
+        "Darrow reflects on how Eo's love softened his hands, while her death has now hardened his fists"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "history",
+      "name": "The Conquering",
+      "description": "A historical war where the Golds and their Society rebelled against Earth after Earth lost its ability to enforce ownership of the Solar System, establishing Luna as the new power center."
+    },
+    {
+      "category": "concept",
+      "name": "The Society",
+      "description": "A rigid, Color-coded hierarchy that enforces the enslavement of Reds to build and maintain the infrastructure of the interplanetary empire."
+    },
+    {
+      "category": "location",
+      "name": "Mars",
+      "description": "A fully terraformed planet inhabited by the wealthy elite, while the Reds have been kept underground for centuries under the false pretense of being pioneer colonists."
+    }
+  ],
+  "summary": "In this chapter, Darrow is brought to a vantage point where he can observe the breathtaking, lush city of the Golds on the surface of Mars. The beauty and technological grace of the city, contrasted with the forced labor and lies of his life in the mines of Lykos, shatter his worldview. Dancer, his mentor from the Sons of Ares, reveals the truth: Earth is not overcrowded and the Reds are not pioneers saving humanity, but slaves who have been exploited for five hundred years since the Conquering. Dancer explains that Luna won a war for independence against Earth, and since then, the Society has maintained an empire built on the back-breaking labor of Reds. Darrow realizes that his people have been misled to believe their suffering was a noble sacrifice for humanity, when in reality, the planets were terraformed long ago. The revelation transforms Darrow's internal state; the grief he felt for his late wife, Eo, turns into a cold, hard determination to avenge his people. He acknowledges that if the system is to be dismantled, it will only be through blood. By the end of the chapter, Darrow has accepted his role in the struggle, transitioning from a grieving husband to a weapon of the resistance, and asks Dancer for his mission."
+}

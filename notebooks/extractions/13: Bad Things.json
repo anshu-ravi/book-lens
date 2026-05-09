@@ -1,0 +1,85 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "Caius au Andromedus",
+        "Helldiver"
+      ],
+      "faction": "The Sons of Ares",
+      "role": "protagonist",
+      "description": "A former Red miner who has undergone extensive surgery to disguise himself as a Gold. He struggles with his new identity and body while receiving intense training to infiltrate Gold society.",
+      "key_events": [
+        "Completes surgeries to look like a Gold",
+        "Undergoes training in manners, etiquette, and combat from Matteo and Dancer",
+        "Refuses to abandon his original name 'Darrow'"
+      ]
+    },
+    {
+      "name": "Matteo",
+      "aliases": [
+        "None"
+      ],
+      "faction": "The Sons of Ares (associates)",
+      "role": "mentor",
+      "description": "A former Pink who serves as a tutor for Darrow in the ways of Gold culture. He is fastidious, vain, and demanding, holding Darrow to strict standards of behavior and speech.",
+      "key_events": [
+        "Teaches Darrow personal grooming and physical maintenance",
+        "Instructs Darrow on Aureate etiquette and social codes",
+        "Challenges Darrow to a duel with a razor to teach him about honor"
+      ]
+    },
+    {
+      "name": "Dancer",
+      "aliases": [
+        "None"
+      ],
+      "faction": "The Sons of Ares",
+      "role": "mentor",
+      "description": "A leader within the Sons of Ares who is responsible for Darrow's political and social indoctrination. He shares a common past with Darrow as a former miner and provides guidance on his mission.",
+      "key_events": [
+        "Attempts to give Darrow the cover identity of Caius au Andromedus",
+        "Coaches Darrow on his Gold accent",
+        "Reminds Darrow that he is fighting for Eo's dream rather than just vengeance"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Matteo",
+      "type": "mentor",
+      "description": "An intense, often friction-filled mentorship where Matteo attempts to civilize Darrow through physical discipline and verbal correction.",
+      "moments": [
+        "Matteo disciplines Darrow for his language and lack of social graces"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Dancer",
+      "type": "mentor",
+      "description": "A guiding relationship grounded in shared history as miners, though Darrow is suspicious of Dancer's true status within the rebellion.",
+      "moments": [
+        "Dancer draws blood from Darrow to remind him of his true identity"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "technology",
+      "name": "Razor",
+      "description": "A versatile weapon that functions as both a whip and a sword; it is considered the traditional weapon of a gentleman Gold."
+    },
+    {
+      "category": "concept",
+      "name": "Peerless Scarred",
+      "description": "The elite class of Gold society that values extreme honor, self-control, and the ability to fight."
+    },
+    {
+      "category": "concept",
+      "name": "Trimalchian Feasts",
+      "description": "Formal multi-course Gold dinners where specific rules of etiquette and self-control regarding consumption and bodily functions are enforced."
+    }
+  ],
+  "summary": "In this chapter, Darrow continues his arduous transformation into a Gold, undergoing grooming and extensive training under the guidance of Matteo, a former Pink. Matteo insists that Darrow shed his 'Red' tendencies\u2014such as his accent, slang, and lack of etiquette\u2014to blend in with the upper echelons of Gold society. Darrow finds the process demeaning and alienating, often feeling hatred for his new reflection and fearing he is betraying his origins and the memory of his wife, Eo. Dancer, Darrow's primary contact in the Sons of Ares, attempts to help him navigate these psychological hurdles. Dancer emphasizes that Darrow's mission is not merely for revenge, but to fulfill Eo's dream for their people. Dancer provides Darrow with a fake identity, 'Caius au Andromedus,' which Darrow rejects, insisting on keeping his own name. Throughout the chapter, the tension between Darrow's internal morality and the 'bad things' he must do to infiltrate the Gold society is a recurring theme. The chapter concludes with a sobering discussion about the upcoming admissions testing for the Institute, where Darrow will be entering a literal and figurative 'nest of vipers,' and the necessity of Darrow embracing his role as a weapon for the revolution while maintaining his core identity."
+}

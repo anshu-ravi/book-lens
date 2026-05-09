@@ -1,0 +1,110 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "Helldiver of Lykos",
+        "my young friend"
+      ],
+      "faction": "The Rising / Sons of Ares",
+      "role": "protagonist",
+      "description": "A former Red miner from Lykos who is being prepared by rebels to infiltrate Gold society. He possesses exceptional dexterity and problem-solving skills honed by years of dangerous mining work.",
+      "key_events": [
+        "Confirms his identity as a Helldiver of Lykos",
+        "Demonstrates his superior manual dexterity by solving Mickey's complex puzzles",
+        "Learns that his purpose is to become a 'messiah' for the rebel cause"
+      ]
+    },
+    {
+      "name": "Mickey",
+      "aliases": [
+        "Carver"
+      ],
+      "faction": "Neutral / Independent",
+      "role": "mentor",
+      "description": "A highly skilled Carver capable of biological modification, recognized for his twelve-fingered hands and cynical, unimpressed demeanor. He initially dismisses the possibility of turning a Red into a Gold but is stunned by Darrow's capabilities.",
+      "key_events": [
+        "Identifies Darrow from a viral video of his public whipping",
+        "Debates the feasibility of the biological and neurological transformation of Darrow",
+        "Witnesses Darrow solve his complex puzzles, leading him to acknowledge the transformation might be possible"
+      ]
+    },
+    {
+      "name": "Dancer",
+      "aliases": [
+        "The recruiter"
+      ],
+      "faction": "Sons of Ares",
+      "role": "mentor",
+      "description": "A stoic and calculated rebel leader working for Ares who seeks to turn Darrow into an infiltrator. He is cold, purposeful, and fully committed to the long-term goal of the cause.",
+      "key_events": [
+        "Proposes the risky surgery to transform Darrow",
+        "Outlines the plan for Darrow to infiltrate the Institute",
+        "Negotiates with Mickey regarding the transformation of Darrow"
+      ]
+    },
+    {
+      "name": "Harmony",
+      "aliases": [],
+      "faction": "Sons of Ares",
+      "role": "ally",
+      "description": "A member of the rebel group who facilitates the meeting between Dancer and Mickey. She maintains a confident and taunting demeanor during the negotiations.",
+      "key_events": [
+        "Taunts Mickey to convince him to take the job",
+        "Observes Darrow's successful demonstration of his skills"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Dancer",
+      "character_b": "Darrow",
+      "type": "mentor",
+      "description": "Dancer views Darrow as a tool or 'messiah' to achieve the goals of the revolution.",
+      "moments": [
+        "Dancer plans for Darrow to become a Peerless Scarred to command fleets for Ares."
+      ]
+    },
+    {
+      "character_a": "Mickey",
+      "character_b": "Darrow",
+      "type": "other",
+      "description": "Initial skepticism that turns into professional intrigue and awe.",
+      "moments": [
+        "Mickey mocks Darrow's chances but is silenced after Darrow solves his puzzle device."
+      ]
+    },
+    {
+      "character_a": "Dancer",
+      "character_b": "Mickey",
+      "type": "ally",
+      "description": "Professional associates bound by a high-stakes, illegal medical contract.",
+      "moments": [
+        "Dancer pressures Mickey to perform the surgery; Mickey eventually engages in price negotiations."
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "power_system",
+      "name": "Carving",
+      "description": "A highly advanced medical/biological process capable of changing a person's species, appearance, and physical capabilities."
+    },
+    {
+      "category": "rule",
+      "name": "The Institute",
+      "description": "A lethal culling ground for Gold elites where they compete to prove their dominance and tactical prowess."
+    },
+    {
+      "category": "faction",
+      "name": "Sons of Ares",
+      "description": "An insurgent group dedicated to overthrowing the current Gold-dominated caste system."
+    },
+    {
+      "category": "concept",
+      "name": "Peerless Scarred",
+      "description": "The elite rank of Golds who have graduated from the Institute and are capable of commanding fleets."
+    }
+  ],
+  "summary": "In this chapter, Dancer and Harmony bring Darrow to a highly skilled Carver named Mickey to perform an experimental procedure. Their goal is to transform Darrow, a low-caste Ruster, into a Gold to infiltrate the Institute and eventually lead the rebellion for Ares. Mickey is initially deeply skeptical, mocking the idea as physically and mentally impossible, noting that Golds are monsters born of a different caste. He identifies Darrow as the 'Helldiver' from a viral execution video, realizing the political weight of the decision to transform him. Dancer clarifies that they are not just looking for a superficial change, but a true 'messiah' capable of navigating the brutal politics and warfare of the Gold elite. Darrow remains silent until he decides to engage with one of Mickey's complex, twelve-fingered puzzle devices. Drawing on his years of intense manual labor in the mines of Lykos and the grace taught by his uncle, Darrow solves the puzzle with surprising speed and skill. This demonstration of inherent cognitive and physical pattern recognition stuns Mickey. The chapter concludes with Mickey shifting from mockery to professional curiosity, as Dancer begins to discuss the price for the procedure, signaling that the transformation of the Helldiver has officially begun."
+}

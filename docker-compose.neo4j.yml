@@ -1,0 +1,17 @@
+services:
+  neo4j:
+    image: neo4j:latest
+    container_name: booklens-neo4j
+    ports:
+      - "7687:7687"   # Bolt (driver connections)
+      - "7474:7474"   # HTTP browser UI
+    environment:
+      - NEO4J_AUTH=none
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

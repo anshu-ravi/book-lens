@@ -1,0 +1,121 @@
+{
+  "characters": [
+    {
+      "name": "Darrow of Lykos",
+      "aliases": [
+        "Darrow",
+        "Lambda Helldiver",
+        "our boy"
+      ],
+      "faction": "Sons of Ares",
+      "role": "protagonist",
+      "description": "A Red miner from Lykos chosen by the Sons of Ares to infiltrate the Gold hierarchy. He is deeply traumatized by the death of his wife, Eo, and fears losing his humanity in the process of his transformation.",
+      "key_events": [
+        "Traveled to the surface of Mars with Dancer and Harmony",
+        "Met Mickey the Carver to begin his transformation into a Gold",
+        "Experienced severe vertigo and culture shock upon seeing the surface city"
+      ]
+    },
+    {
+      "name": "Dancer",
+      "aliases": [
+        "The cripple"
+      ],
+      "faction": "Sons of Ares",
+      "role": "mentor",
+      "description": "A leader within the Sons of Ares who believes in systematic change rather than immediate terrorism. He is physically disabled but sharp-witted, guiding Darrow's mission to become a Gold.",
+      "key_events": [
+        "Instructed Darrow on the nature of the Gold empire",
+        "Led Darrow and Harmony into the Bazaar to find Mickey",
+        "Presented the Gold Sigils to Mickey for Darrow's carving"
+      ]
+    },
+    {
+      "name": "Harmony",
+      "aliases": [
+        "darling"
+      ],
+      "faction": "Sons of Ares",
+      "role": "ally",
+      "description": "An impatient and intense member of the Sons of Ares who is fully committed to the rebellion. She often carries explosives and is willing to use them to ensure compliance.",
+      "key_events": [
+        "Guided Darrow through the city",
+        "Threatened guards with a suicide bomb to enter Mickey's lair"
+      ]
+    },
+    {
+      "name": "Mickey the Carver",
+      "aliases": [
+        "Mickey"
+      ],
+      "faction": "Violet",
+      "role": "ally",
+      "description": "A highly skilled and eccentric Violet artisan who specializes in radical biomodification. He is a 'Carver' capable of physically altering individuals to match the traits of other colors.",
+      "key_events": [
+        "Met with Dancer and Harmony",
+        "Reacted with shock and terror upon seeing the Gold Sigils",
+        "Agreed to begin the process of carving Darrow into a Gold"
+      ]
+    },
+    {
+      "name": "Eo",
+      "aliases": [],
+      "faction": "Red",
+      "role": "deceased",
+      "description": "Darrow's late wife whose death catalyzed his radicalization. Her memory drives his fear that he will become someone she would not recognize.",
+      "key_events": [
+        "Died via execution",
+        "Her death is being used by the Sons of Ares to spark rebellion"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow of Lykos",
+      "character_b": "Dancer",
+      "type": "mentor",
+      "description": "Dancer acts as a handler and guide to Darrow, pushing him toward a path that Darrow fears.",
+      "moments": [
+        "Dancer pulling Darrow in to comfort him and reassure him of his potential",
+        "Dancer explaining the philosophy of the Sons of Ares to Darrow"
+      ]
+    },
+    {
+      "character_a": "Darrow of Lykos",
+      "character_b": "Harmony",
+      "type": "ally",
+      "description": "Tense partnership; Harmony is impatient with Darrow's morality and fear.",
+      "moments": [
+        "Harmony advising Darrow to lose his modesty to blend into the city"
+      ]
+    },
+    {
+      "character_a": "Dancer",
+      "character_b": "Mickey the Carver",
+      "type": "ally",
+      "description": "A professional connection built on mutual need; Dancer uses his association with the Sons of Ares to coerce Mickey's services.",
+      "moments": [
+        "Dancer presenting the Gold Sigils to Mickey, forcing him to accept the dangerous assignment"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "concept",
+      "name": "The Carving",
+      "description": "A forbidden and dangerous procedure that uses advanced Violet science to modify a human's physical appearance and biological traits to resemble a different color."
+    },
+    {
+      "category": "faction",
+      "name": "The Sons of Ares",
+      "role": "rebel group",
+      "description": "A clandestine organization dedicated to dismantling the Gold-dominated hierarchy from within."
+    },
+    {
+      "category": "power_system",
+      "name": "The Colors",
+      "description": "A rigid, caste-based hierarchy where every color serves a specific purpose in society, from Reds (miners) to Golds (rulers)."
+    }
+  ],
+  "summary": "Darrow, a Red miner, travels from his home in Lykos to the surface of Mars with his handlers, Dancer and Harmony. As they navigate the opulent and high-tech city of Yorkton, Darrow experiences intense vertigo and culture shock, struggling to reconcile the reality of the surface world with his background. Dancer explains the goals of the Sons of Ares, emphasizing that they are 'empire-breakers' who intend to destroy the Gold society from within rather than resorting to futile, immediate terrorism. Darrow is plagued by the fear that his coming trial\u2014the Carving\u2014will strip away his humanity and turn him into a monster his late wife, Eo, would not recognize. He learns that ninety-seven others have failed this transition and died. The group travels into the dark underbelly of the city, the Bazaar, to meet Mickey the Carver, a talented Violet artisan. After forcing their way past armed guards using the threat of a bomb, they confront Mickey. While Mickey initially treats them with his usual flamboyant disdain, his attitude shifts to genuine fear when Dancer produces two gold wings, the Sigils of a Gold. Dancer demands that Mickey perform the Carving on Darrow, an act of such danger and treason that it could lead to their deaths. The chapter ends with the setup for Darrow's transformation, marking the definitive point where he must leave his old identity behind to become an infiltrator within the ranks of the Golds."
+}

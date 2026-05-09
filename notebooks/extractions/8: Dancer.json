@@ -1,0 +1,106 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "little Helldiver",
+        "boy"
+      ],
+      "faction": "Lykos Miners",
+      "role": "protagonist",
+      "description": "A grief-stricken young miner who lost his wife, Eo, to a public execution. He is recruited by the Sons of Ares to channel his rage into a larger struggle against the governing Golds.",
+      "key_events": [
+        "Extracted from the grave by the Sons of Ares",
+        "Defied Dancer in a rigged card test",
+        "Taken to the surface to witness the truth about Mars"
+      ]
+    },
+    {
+      "name": "Dancer",
+      "aliases": [
+        "The Fatherly Smile"
+      ],
+      "faction": "Sons of Ares",
+      "role": "mentor",
+      "description": "An aging, scarred man with one withered side who leads a cell of the Sons of Ares. He possesses a manipulative yet charismatic nature and claims to offer Darrow justice rather than simple vengeance.",
+      "key_events": [
+        "Managed the extraction of Darrow",
+        "Tested Darrow's intelligence via a rigged game",
+        "Revealed the truth about the surface world to Darrow"
+      ]
+    },
+    {
+      "name": "Harmony",
+      "aliases": [
+        "The Blade"
+      ],
+      "faction": "Sons of Ares",
+      "role": "ally",
+      "description": "A harsh, cynical member of the Sons of Ares who views idealists like Eo as expendable tools. She cleans Darrow's wounds and facilitates his integration into their cell.",
+      "key_events": [
+        "Mocked Eo as a worthless dreamer",
+        "Physically scuffled with Darrow",
+        "Cleaned Darrow's infected wounds"
+      ]
+    },
+    {
+      "name": "Uncle Narol",
+      "aliases": [
+        "The drunk",
+        "HeadTalk"
+      ],
+      "faction": "Lykos Miners / Sons of Ares informant",
+      "role": "informant",
+      "description": "Darrow's uncle who is a secret informant for the Sons of Ares. He is revealed to have been working against the mines for years to facilitate the recruitment of talented miners.",
+      "key_events": [
+        "Informed the Sons of Ares about Darrow",
+        "Used a jammer to assist in Darrow's extraction"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Dancer",
+      "type": "mentor",
+      "description": "Complex; Darrow views Dancer as a manipulator and a fool, while Dancer views Darrow as a necessary asset to be shaped.",
+      "moments": [
+        "Dancer challenges Darrow to a game to test his intelligence",
+        "Dancer brings Darrow to the surface to show him the reality of his oppression"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Harmony",
+      "type": "rival",
+      "description": "Antagonistic and volatile; they share a mutual disdain for each other's beliefs and temperaments.",
+      "moments": [
+        "Darrow chokes Harmony after she insults Eo",
+        "Harmony aggressively cleans Darrow's wounds while insulting his late wife"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "faction",
+      "name": "Sons of Ares",
+      "description": "A clandestine organization of miners and rebels dedicated to opposing the rule of the Golds through sabotage and violent insurgency."
+    },
+    {
+      "category": "concept",
+      "name": "The Conquering",
+      "description": "Historical event where the Golds rose to power centuries ago by massacring cities and worlds, including the moon Rhea."
+    },
+    {
+      "category": "concept",
+      "name": "The Flea Analogy",
+      "description": "A metaphor for the oppression of miners, where they believe in a glass ceiling that no longer exists because they have been conditioned to accept their limitations."
+    },
+    {
+      "category": "power_system",
+      "name": "Colors",
+      "description": "A hierarchical social system where individuals are stratified by the color of their caste; the Golds rule over Reds and other castes."
+    }
+  ],
+  "summary": "After his execution, Darrow is extracted from his grave by a rebel group known as the Sons of Ares, led by a scarred man named Dancer. Still reeling from the death of his wife, Eo, Darrow is initially hostile, especially toward a woman named Harmony who mocks Eo's idealism. Dancer, acting as a mentor, attempts to channel Darrow\u2019s rage away from small-scale vengeance against local officials and toward the broader systemic corruption of the Golds. Darrow is subjected to a test of wit\u2014a rigged game involving cards\u2014which he manages to manipulate, proving his potential as an 'outlier.' Dancer explains the history of the Society, citing the 'Conquering' and the destruction of worlds like Rhea as evidence of the Golds' inherent tyranny. He frames Eo\u2019s death as a catalyst that has sparked hope across the mining colonies, turning her into a martyr figure she never intended to be. Harmony tends to Darrow's wounds while emphasizing that 'dreamers' like Eo are only useful in death for the sake of their message. Finally, Dancer takes Darrow to the surface of Mars. Darrow, having lived his entire life in the deep tunnels of the mines, is blinded by the genuine light of the sun for the first time. The chapter concludes with Darrow entering a luxurious room and looking out a glass window to see a vast city, realizing that everything he has known about his life and the world has been a calculated deception by the ruling class."
+}

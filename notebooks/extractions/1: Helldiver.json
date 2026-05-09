@@ -1,0 +1,111 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "The Helldiver"
+      ],
+      "faction": "Lambda Clan",
+      "role": "protagonist",
+      "description": "A sixteen-year-old Red miner on Mars who serves as his clan's skilled Helldiver. He is defiant, restless, and deeply driven by a desire to transcend the crushing poverty of his people and prove his worth.",
+      "key_events": [
+        "Refused to cry at his father's execution",
+        "Performed a dangerous descent into a drill shaft to scan a gas pocket against orders"
+      ]
+    },
+    {
+      "name": "Eo",
+      "aliases": [
+        "Little Eo"
+      ],
+      "faction": "Red Clan",
+      "role": "wife",
+      "description": "Darrow's wife who shares his heritage as a Red. She is perceptive, critical of the Society, and suffers from hunger caused by meager rations.",
+      "key_events": [
+        "Wed Darrow at age sixteen",
+        "Hidden from the narrator's sight throughout the chapter"
+      ]
+    },
+    {
+      "name": "Uncle Narol",
+      "aliases": [
+        "HeadTalk"
+      ],
+      "faction": "Lambda Clan",
+      "role": "mentor",
+      "description": "The leader of the mining crew who values caution and obedience over ambition. He is an alcoholic and often clashes with Darrow's risky work methods.",
+      "key_events": [
+        "Ordered Darrow to hold his drill progress",
+        "Ordered a scanCrew to investigate a gas pocket"
+      ]
+    },
+    {
+      "name": "Kieran",
+      "aliases": [
+        "Brother"
+      ],
+      "faction": "Lambda Clan",
+      "role": "ally",
+      "description": "Darrow's older brother who advocates for the safety protocols enforced by the elders.",
+      "key_events": [
+        "Cried at their father's execution",
+        "Advised Darrow to obey Uncle Narol"
+      ]
+    },
+    {
+      "name": "Barlow",
+      "aliases": [
+        "Old Barlow"
+      ],
+      "faction": "Lambda Clan",
+      "role": "ally",
+      "description": "An older, fat member of the mining crew who frequently teases Darrow and supports the status quo.",
+      "key_events": [
+        "Mocked Darrow's youth and competence over the comms"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Eo",
+      "type": "romance",
+      "description": "Husband and wife who care for each other, though their survival is threatened by extreme starvation.",
+      "moments": [
+        "Darrow thinks of her ribs and wonders if she would sell herself for food"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Uncle Narol",
+      "type": "mentor",
+      "description": "A strained relationship defined by Darrow's resentment of Narol's caution and alcoholism.",
+      "moments": [
+        "Darrow calls his uncle a coward over the comms"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "location",
+      "name": "Mars",
+      "description": "A colony where the surface is inaccessible and inhabitants work in deep, gravity-deficient underground tunnels."
+    },
+    {
+      "category": "faction",
+      "name": "Society",
+      "description": "The oppressive governing body of the colony that utilizes Golds, Grays, and other classes to maintain a rigid hierarchy."
+    },
+    {
+      "category": "concept",
+      "name": "The Laurel",
+      "description": "A reward given to the most productive mining clan per quarter, providing better food and supplies."
+    },
+    {
+      "category": "technology",
+      "name": "Frysuit",
+      "description": "A nanoplastic suit worn by miners to insulate them from extreme heat and provide limited protection in the deep tunnels."
+    }
+  ],
+  "summary": "Darrow, a sixteen-year-old Helldiver from the Lambda clan, toils in the dangerous, deep tunnels of Mars. Struggling with the physical agony of his frysuit and the oppressive atmosphere of the mine, he harbors deep-seated resentment toward the Society that executed his father and keeps his people in poverty. Despite being the youngest and most skilled operator in his crew, Darrow is forced to answer to the cautious, drunken leadership of his Uncle Narol. Driven by a desire for the Laurel\u2014a prize that would offer his starving wife, Eo, and his clan a better life\u2014Darrow believes his elders are cowards who are content with slavery. When a small gas pocket interrupts their drilling, the crew orders a halt for a safety inspection, a process that will guarantee they fail to meet their quota. Frustrated by their lack of ambition and constant fear of the Society, Darrow rebels. He leaves the safety of his holster seat and performs a perilous, unauthorized descent into the scorching depths of the mine to scan the pocket himself. His reckless act of independence brings him to the edge of catastrophe as his suit begins to melt, leaving him in a life-threatening situation."
+}

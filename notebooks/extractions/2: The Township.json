@@ -1,0 +1,128 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "Dago",
+        "Young pup",
+        "Darrow of Lykos"
+      ],
+      "faction": "Reds (Lambda)",
+      "role": "protagonist",
+      "description": "A skilled Helldiver who works in the dangerous mines of Mars extracting helium-3. He is brave, rebellious, and deeply in love with his wife, Eo, though he struggles with the oppressive nature of the Society.",
+      "key_events": [
+        "Survived a near-death accident in the drill shafts",
+        "Refused to bow to the Gray captain Ugly Dan until forced",
+        "Earned the highest helium-3 pull of the month",
+        "Treated for a burn by his wife Eo"
+      ]
+    },
+    {
+      "name": "Eo",
+      "aliases": [
+        "Little Eo"
+      ],
+      "faction": "Reds (Lambda)",
+      "role": "wife of protagonist",
+      "description": "Darrow's wife, characterized by her kindness, fierce will, and hope for a better future. She works in the Webbery and often keeps secrets from Darrow, maintaining a spirit of resistance.",
+      "key_events": [
+        "Treated Darrow's hand injury",
+        "Secretly gathered items for a surprise for Darrow",
+        "Reminisced about the song and dance that defines their people"
+      ]
+    },
+    {
+      "name": "Loran",
+      "aliases": [
+        "Loran"
+      ],
+      "faction": "Reds (Lambda)",
+      "role": "ally",
+      "description": "A worker and companion of Darrow who shares the hardships of the mines. He is boisterous and competitive regarding the status of the mine crews.",
+      "key_events": [
+        "Communicated the intensity of the monthly pull competition with Gamma",
+        "Accompanied Darrow back to the township"
+      ]
+    },
+    {
+      "name": "Ugly Dan",
+      "aliases": [
+        "The Gray Captain"
+      ],
+      "faction": "Grays (Society Security)",
+      "role": "antagonist",
+      "description": "A crippled Gray captain who oversees the staging depot and enjoys mocking the Reds. He is insecure about his synthetic arm and uses his authority to demean the workers.",
+      "key_events": [
+        "Mocked Darrow regarding his bravery",
+        "Forced Darrow to bow to him",
+        "Exchanged insults with Darrow"
+      ]
+    },
+    {
+      "name": "Dago",
+      "aliases": [
+        "The Gamma Helldiver"
+      ],
+      "faction": "Reds (Gamma)",
+      "role": "rival",
+      "description": "A legendary Gamma Helldiver who possesses a cynical and detached attitude toward the mining competition. He treats Darrow as a talented but young rival.",
+      "key_events": [
+        "Engaged in a rivalry conversation with Darrow",
+        "Dismissed the importance of raw count numbers to irritate the Lambdas"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Eo",
+      "type": "romance",
+      "description": "Deeply loving and mutually supportive; they rely on each other to maintain their humanity and spirit in the oppressive mining colony.",
+      "moments": [
+        "Eo treats Darrow's wound with care",
+        "The two share a lighthearted exchange about surprises and their life together"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Ugly Dan",
+      "type": "enemy",
+      "description": "Mutual contempt; Darrow hides his hatred while the Gray uses his power to bully the Red miners.",
+      "moments": [
+        "Darrow forces himself to bow to Ugly Dan while silently planning revenge"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Dago",
+      "type": "rival",
+      "description": "Friendly but tense competitive rivalry between the top miners of the Lambda and Gamma groups.",
+      "moments": [
+        "Darrow and Dago exchange banter about who will win the Laurel"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "location",
+      "name": "Lykos",
+      "description": "A colony located under the surface of Mars where Red pioneers toil to terraform the planet."
+    },
+    {
+      "category": "power_system",
+      "name": "Color Hierarchy",
+      "description": "A rigid social structure where 'Colors' (Gold, Gray, Red) dictate a person's role, worth, and treatment in Society."
+    },
+    {
+      "category": "concept",
+      "name": "The Laurel",
+      "description": "A prize/recognition awarded to the most productive mining crew, which includes improved food rations like sugar and fruit."
+    },
+    {
+      "category": "concept",
+      "name": "The Fading Dirge",
+      "description": "A mournful rhythmic ritual performed by the people of Lykos to honor those who have died, punishable by death if caught by the Society."
+    }
+  ],
+  "summary": "In the depths of the Martian mines, Darrow, a Red miner of the Lambda clan, narrowly escapes death when his foot becomes trapped in a drilling mechanism. Using a specialized cutting tool, he frees himself despite severe burns to his hand. Upon returning to the surface, he learns that his crew has outperformed the rival Gamma crew, fueling anticipation for the Laurel award, which grants better food rations. Darrow returns to the township to reunite with his wife, Eo, hiding his injury from her until she discovers it and treats his wound with webwrap. Throughout the chapter, the tension between the laboring Reds and their overseers, the Grays, is highlighted through interactions with the abusive captain Ugly Dan. Darrow reflects on the history of his people, the tragic fate of his father, and the forbidden nature of their cultural songs and dances. The narrative establishes the cruel hierarchy of the Society, where Sovereign Octavia au Lune preaches obedience as the ultimate virtue while the Reds sacrifice their lives to terraform Mars for the benefit of the 'softer' colors above. Despite the bleak environment, Darrow and Eo find a fragile sense of happiness and resistance in their private life, underscored by Eo's secretive and hopeful demeanor."
+}

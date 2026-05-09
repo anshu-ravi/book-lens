@@ -61,7 +61,11 @@ _TOOL_SCHEMA: dict = {
                     "aliases": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "All other names, titles, and nicknames used in this chapter.",
+                        "description": (
+                            "Stable names, titles, or nicknames that consistently identify this character "
+                            "across chapters (e.g. 'Reaper', 'ArchGovernor'). "
+                            "Exclude throwaway terms of address like 'boy', 'darling', or 'the narrator'."
+                        ),
                     },
                     "faction": {"type": "string"},
                     "role": {
@@ -328,7 +332,7 @@ async def extract_chapter(
         tool_name=_TOOL_NAME,
         tool_description=_TOOL_DESCRIPTION,
         tool_schema=_TOOL_SCHEMA,
-        max_tokens=4096,
+        max_tokens=16384,
     )
     logger.debug(
         '  → %d characters, %d relationships, %d world facts',

@@ -1,0 +1,60 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "Red"
+      ],
+      "faction": "Reds",
+      "role": "protagonist",
+      "description": "A member of the low-born Red caste who infiltrates or observes the Gold elite. He is fueled by hatred for the ruling class and a deep desire for vengeance following personal loss.",
+      "key_events": [
+        "Observes the Golden assembly",
+        "Resolves to destroy the Gold caste"
+      ]
+    },
+    {
+      "name": "Unnamed Gold Speaker",
+      "aliases": [
+        "The beast",
+        "Golden man"
+      ],
+      "faction": "Golds",
+      "role": "antagonist",
+      "description": "An imperious and arrogant leader of the Gold caste who views his people as the pinnacle of evolution. He delivers a speech advocating for social Darwinism and the absolute rule of the Golds.",
+      "key_events": [
+        "Delivers speech to students",
+        "Declares that only the fit will survive"
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Unnamed Gold Speaker",
+      "type": "enemy",
+      "description": "A profound ideological and personal hatred; Darrow views the speaker as the source of his suffering.",
+      "moments": [
+        "Darrow watches the speaker and silently vows that none of the Golds will survive his vengeance."
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "faction",
+      "name": "Gold",
+      "description": "The ruling caste in society, characterized by immense power, arrogance, and a belief in their natural superiority over other colors."
+    },
+    {
+      "category": "faction",
+      "name": "Red",
+      "description": "The lowest caste in society, perceived by the Golds as weak, subhuman, and meant to be ruled."
+    },
+    {
+      "category": "concept",
+      "name": "The Noble Lie of Demokracy",
+      "description": "A philosophy dismissed by the Golds as a cancer that incorrectly suggests all men are created equal."
+    }
+  ],
+  "summary": "The prologue introduces a polarized world divided by caste, specifically contrasting the elite Golds with the downtrodden Reds. Darrow, the narrator and a member of the Red caste, observes an assembly of Gold students being indoctrinated by a high-ranking speaker. This speaker, an imperious and arrogant man, declares that the Golds are the pinnacle of human evolution and that they hold the right to dominion through strength and blood, rejecting equality as a poisonous lie. He informs the privileged students that they will be tested and that only the strongest among them will survive to maintain the hierarchy. Darrow, hiding his true identity among the elite, rejects the speaker's assessment of his kind. Having been forged by suffering and loss rather than the pampered life of the Golds, Darrow harbors a cold, calculated rage. The chapter concludes with Darrow's internal declaration of war; while the Golds believe they are invincible masters of the world, Darrow vows that he will ensure none of them survive."
+}

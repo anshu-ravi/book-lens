@@ -4,7 +4,7 @@ The knowledge base is stored as one row per canonical_series_id in Supabase:
     knowledge table: canonical_series_id (PK), data (JSONB)
 
 Extraction is shared across users — no user_id in this layer.
-Spoiler filtering (filter_to_progress) still takes a Series object, which
+Spoiler filtering (filter_to_progress) still takes a Series object, whichA
 is built per-user from user_books + canonical_books by the library manager.
 """
 
