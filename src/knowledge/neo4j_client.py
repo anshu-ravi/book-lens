@@ -42,7 +42,7 @@ def _initialize_schema(driver: Driver) -> None:
             session.run(
                 "CREATE VECTOR INDEX character_embeddings IF NOT EXISTS "
                 "FOR (c:Character) ON (c.embedding) "
-                "OPTIONS {indexConfig: {`vector.dimensions`: 384, `vector.similarity_metric`: 'cosine'}}"
+                "OPTIONS {indexConfig: {`vector.dimensions`: 384, `vector.similarity_function`: 'cosine'}}"
             )
         except Exception as e:
             # Vector index creation might fail in some Neo4j versions; log and continue

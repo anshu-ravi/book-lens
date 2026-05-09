@@ -1,0 +1,90 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "Helldiver",
+        "mad Helldiver of Lykos"
+      ],
+      "faction": "Reds",
+      "role": "protagonist",
+      "description": "A Red Helldiver who works in the mines, burdened by the death of his father and his own sense of duty to his family.",
+      "key_events": [
+        "Watches the Laurel distribution ceremony",
+        "Dances with his wife Eo",
+        "Enters the secret garden room with Eo",
+        "Debates the value of freedom and rebellion with Eo",
+        "Discovers an intruder upon leaving the garden"
+      ],
+      "first_chapter_index": 4
+    },
+    {
+      "name": "Eo",
+      "aliases": [],
+      "faction": "Reds",
+      "role": "protagonist",
+      "description": "Darrow's wife, a passionate and idealistic woman who dreams of freedom and believes in the necessity of rebellion against the Society.",
+      "key_events": [
+        "Calms Darrow's rage after the Laurel ceremony",
+        "Takes Darrow to a secret garden facility",
+        "Attempts to convince Darrow to lead a rebellion",
+        "Watches the sunrise with Darrow"
+      ],
+      "first_chapter_index": 4
+    },
+    {
+      "name": "Loran",
+      "aliases": [],
+      "faction": "Reds",
+      "role": null,
+      "description": "A resident of Gamma who reacts with anger toward the Society's unfair distribution of gifts.",
+      "key_events": [
+        "Reacts angrily to the Laurel ceremony results"
+      ],
+      "first_chapter_index": 4
+    },
+    {
+      "name": "Kieran",
+      "aliases": [],
+      "faction": "Reds",
+      "role": null,
+      "description": "Darrow's younger brother.",
+      "key_events": [
+        "Informed Eo about Darrow's actions at the ceremony"
+      ],
+      "first_chapter_index": 4
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Eo",
+      "type": "ROMANCE",
+      "description": "Husband and wife who share a deep, complex emotional bond, though they differ on their outlook regarding rebellion.",
+      "moments": [
+        "Dancing together in the square",
+        "Making love in the secret garden",
+        "Arguing about the philosophy of freedom versus safety"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "Social Structure",
+      "name": "The Society",
+      "description": "A hierarchical governing power that suppresses the Red population, controlling distribution and enforcing a meritocracy based on birth."
+    },
+    {
+      "category": "Environment",
+      "name": "The Secret Garden",
+      "description": "A hidden facility on Mars containing plants, insects, and a view of the sky, likely used by the Grays, which Darrow and Eo discover."
+    },
+    {
+      "category": "Creatures",
+      "name": "Spiderworms",
+      "description": "Genetically engineered creatures used to knit silk within the mining structures."
+    }
+  ],
+  "identity_reveals": [],
+  "summary": "The chapter opens with Darrow witnessing the unfair distribution of Laurels to Gamma, a system designed by the Society to keep the Red population subservient. Darrow struggles with suppressed rage, but his wife, Eo, diverts his anger through dance. Following the ceremony, Eo leads Darrow through hidden, dangerous tunnels to a secret garden located within a restricted facility. In this place, which features real plants and insects\u2014things Darrow has only ever seen on screens\u2014they share an intimate moment under a transparent dome that reveals the night sky. While in the garden, Eo pushes Darrow to adopt her vision of rebellion against the Golds, urging him to use his influence to fight for the land they mine, which she believes belongs to their people. Darrow, still haunted by the loss of his father to a failed uprising, rejects her call to action, arguing that life and family are more important than ideological martyrdom. Despite their conflicting philosophies, they watch the sunrise together before returning to the industrial gray of the mines. Upon exiting the secret passage into the Webbery, their emotional interlude is shattered when an oily voice from Earth confronts them, suggesting they have been discovered in the restricted area, setting up immediate danger for the couple."
+}

@@ -1,0 +1,158 @@
+{
+  "characters": [
+    {
+      "name": "Darrow",
+      "aliases": [
+        "Dago",
+        "young pup"
+      ],
+      "faction": "Red (Lambda)",
+      "role": "protagonist",
+      "description": "A Red Helldiver, skilled at working in dangerous mining conditions. He is brave, reckless, and deeply in love with his wife, Eo.",
+      "key_events": [
+        "Mines helium-3 in dangerous tunnels",
+        "Injures hand while mining",
+        "Interacts with Ugly Dan",
+        "Returns home to Eo"
+      ],
+      "first_chapter_index": 2
+    },
+    {
+      "name": "Loran",
+      "aliases": [],
+      "faction": "Red (Lambda)",
+      "role": "supporting",
+      "description": "Darrow's comrade and fellow miner.",
+      "key_events": [
+        "Travels with Darrow after shift",
+        "Boasts about Darrow's mining pull"
+      ],
+      "first_chapter_index": 2
+    },
+    {
+      "name": "Kieran",
+      "aliases": [],
+      "faction": "Red (Lambda)",
+      "role": "supporting",
+      "description": "A miner and friend to Darrow.",
+      "key_events": [
+        "Accompanies Darrow to the gravLift"
+      ],
+      "first_chapter_index": 2
+    },
+    {
+      "name": "Barlow",
+      "aliases": [],
+      "faction": "Red (Lambda)",
+      "role": "supporting",
+      "description": "A miner in Darrow's crew.",
+      "key_events": [
+        "Mocks a Gamma miner floating in the lift"
+      ],
+      "first_chapter_index": 2
+    },
+    {
+      "name": "Ugly Dan",
+      "aliases": [],
+      "faction": "Gray",
+      "role": "antagonist",
+      "description": "A crippled Gray captain who acts as a supervisor and mocks the Red miners.",
+      "key_events": [
+        "Mocks Darrow's heroic reputation",
+        "Demands a bow from Darrow"
+      ],
+      "first_chapter_index": 2
+    },
+    {
+      "name": "Darrow",
+      "aliases": [],
+      "faction": "Gamma",
+      "role": "rival",
+      "description": "A Gamma Helldiver known as a legend in his own faction.",
+      "key_events": [
+        "Exchanges banter with Darrow and Loran"
+      ],
+      "first_chapter_index": 2
+    },
+    {
+      "name": "Eo",
+      "aliases": [],
+      "faction": "Red (Lambda)",
+      "role": "supporting",
+      "description": "Darrow's wife, characterized by her passion, kindness, and strong will.",
+      "key_events": [
+        "Treats Darrow's hand injury",
+        "Prepares a surprise for Darrow"
+      ],
+      "first_chapter_index": 2
+    },
+    {
+      "name": "Octavia au Lune",
+      "aliases": [],
+      "faction": "Gold",
+      "role": "antagonist",
+      "description": "The aged Sovereign of the Society, whose recorded message broadcasts to the miners.",
+      "key_events": [
+        "Delivers a propaganda speech to the Red miners via holoCan"
+      ],
+      "first_chapter_index": 2
+    }
+  ],
+  "relationships": [
+    {
+      "character_a": "Darrow",
+      "character_b": "Eo",
+      "type": "ROMANCE",
+      "description": "Married couple with a deep bond and mutual support.",
+      "moments": [
+        "Darrow seeks her out",
+        "Eo treats Darrow's injury",
+        "They exchange gifts"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Ugly Dan",
+      "type": "ENEMY",
+      "description": "Mutual contempt and verbal hostility.",
+      "moments": [
+        "Ugly Dan mocks Darrow",
+        "Darrow internally vows to kill him"
+      ]
+    },
+    {
+      "character_a": "Darrow",
+      "character_b": "Darrow",
+      "type": "RIVAL",
+      "description": "Professional mining rivalry.",
+      "moments": [
+        "Boasting about helium-3 pulls",
+        "Banter on the horizonTram"
+      ]
+    }
+  ],
+  "world_facts": [
+    {
+      "category": "Location",
+      "name": "Lykos",
+      "description": "A mining colony located under the surface of Mars."
+    },
+    {
+      "category": "Society",
+      "name": "The Society",
+      "description": "A rigid hierarchical system divided by colors; Reds mine helium-3 to terraform Mars for other Colors."
+    },
+    {
+      "category": "Cultural Event",
+      "name": "The Laurel",
+      "description": "A competition or achievement award for mining production that grants extra resources."
+    },
+    {
+      "category": "Culture",
+      "name": "Fading Dirge",
+      "description": "A mournful ritual performed by the people of Lykos after a death, involving rhythmic chest thumping."
+    }
+  ],
+  "identity_reveals": [],
+  "summary": "Darrow, a Red miner, survives a perilous day in the helium-3 mines, narrowly escaping being crushed in a drill mechanism by using his slingBlade. Despite a severe burn on his hand, he returns to his township, hiding his injury. As a Lambda, Darrow competes with the Gamma faction for the 'Laurel,' a reward for high productivity that could bring fruit and sugar to his people. On the way back, Darrow brushes off taunts from the Grays, specifically the crippled supervisor Ugly Dan. Later, while showering in the Flush, Darrow reflects on the hardships of his people and the propaganda of the Sovereign, Octavia au Lune, who urges the Reds to sacrifice for the future terraforming of Mars. He returns home to find his wife, Eo, who treats his burn with a special webwrap. They share a tender, private moment amidst the harsh reality of their subterranean life. Darrow is surprised by Eo\u2019s resilience and secretiveness, while he looks forward to an upcoming celebration where the winners of the Laurel will be announced. The chapter establishes the oppressive nature of the mining colony, the deep-seated rivalry between factions, and the unbreakable emotional connection between Darrow and Eo, which serves as a beacon of hope against the crushing weight of their existence under the Society's rule."
+}

@@ -32,8 +32,10 @@ class Ingestor:
             limit: If set, only ingest first N chapters.
         """
         # Find all extraction files sorted by chapter index
+        # Filter: only files that match pattern {index}_{label}.json (not pending_reveals or canonical_registry)
         extraction_files = sorted(
-            self.extraction_dir.glob("*_*.json"),
+            (f for f in self.extraction_dir.glob("*_*.json")
+             if f.name not in ("pending_reveals.json", "canonical_registry.json")),
             key=lambda f: int(f.stem.split("_")[0]),
         )
 
