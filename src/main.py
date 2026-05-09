@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Annotated, AsyncGenerator, Optional
 
-from fastapi import (Depends, FastAPI, File, Form, Header,
+from fastapi import (BackgroundTasks, Depends, FastAPI, File, Form, Header,
                      HTTPException, Request, UploadFile)
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from src.config import settings
 from src.ingestion.cover_extractor import extract_cover
 from src.ingestion.epub_parser import parse_epub
+from src.knowledge.extraction_service import ExtractionService
 from src.library.manager import (
     get_book_by_id,
     get_series_by_id,
@@ -42,6 +43,23 @@ def _slugify(text: str) -> str:
     slug = re.sub(r"\s+", "-", slug)
     slug = re.sub(r"-+", "-", slug)
     return slug
+
+
+async def _run_extraction_background(
+    user_id: str,
+    book_id: str,
+    series_id: str,
+    epub_bytes: bytes,
+    chapters: list[Chapter],
+) -> None:
+    """Background task to run extraction for a book."""
+    try:
+        service = ExtractionService(user_id, book_id)
+        await service.extract_book(
+            epub_bytes, chapters, series_id=series_id, refresh_mode="skip"
+        )
+    except Exception as e:
+        logger.error(f"Background extraction failed for {book_id}: {e}", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +203,7 @@ async def upload_book(
     title: Annotated[str, Form()],
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> UploadBookResponse:
     """Upload an epub and register it in the library."""
     if not file.filename or not file.filename.endswith(".epub"):
@@ -227,17 +246,29 @@ async def upload_book(
         logger.warning("Cover extraction failed; continuing", exc_info=True)
 
     # 4. Upsert books row
+    chapters_list = [Chapter(index=c["index"], label=c["label"]) for c in chapters_for_db]
     record = BookRecord(
         id=book_id,
         user_id=user_id,
         series_id=series_id,
         title=title,
-        chapters=[Chapter(index=c["index"], label=c["label"]) for c in chapters_for_db],
+        chapters=chapters_list,
         status=BookStatus.NOT_STARTED,
         epub_path=epub_path,
         has_cover=has_cover,
     )
     upsert_book(record)
+
+    # 5. Trigger async extraction (if enabled)
+    if settings.enable_extraction:
+        background_tasks.add_task(
+            _run_extraction_background,
+            user_id=user_id,
+            book_id=book_id,
+            series_id=series_id,
+            epub_bytes=book_bytes,
+            chapters=chapters_list,
+        )
 
     return UploadBookResponse(
         book_id=book_id,

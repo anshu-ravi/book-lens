@@ -124,43 +124,39 @@ class Extractor:
         """Initialize Gemini client.
 
         Args:
-            api_key: Google Gemini API key. If None, reads from GOOGLE_API_KEY env var.
+            api_key: Google Gemini API key. If None, reads from GEMINI_API_KEY or GOOGLE_API_KEY env var.
         """
         if api_key is None:
-            api_key = os.environ.get("GOOGLE_API_KEY", "")
+            api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
         self.client = genai.Client(api_key=api_key)
 
     def extract(
         self,
         chapter_text: str,
-        series_id: str,
+        user_id: str,
+        book_id: str,
         chapter_index: int,
         chapter_label: str,
+        series_id: Optional[str] = None,
     ) -> dict:
-        """Extract knowledge from chapter text.
+        """Extract knowledge from chapter text and save to Supabase.
 
         Args:
             chapter_text: Full text of the chapter.
-            series_id: Series identifier (e.g., 'red-rising').
+            user_id: User identifier.
+            book_id: Book identifier.
             chapter_index: Chapter number (0-indexed).
             chapter_label: Chapter title/label.
+            series_id: Series identifier (for Neo4j coreference, optional).
 
         Returns:
             Extracted knowledge dict matching EXTRACTION_SCHEMA.
         """
-        # Check if extraction already exists
-        output_dir = Path("data/extractions") / series_id
-        output_file = (
-            output_dir / f"{chapter_index:03d}_{chapter_label.replace(' ', '_')}.json"
-        )
-
-        if output_file.exists():
-            with open(output_file) as f:
-                return json.load(f)
+        from src.supabase_client import get_supabase_client
 
         # Get known characters from Neo4j for coreference resolution
         driver = get_driver()
-        known_characters = self._get_known_characters(driver, series_id)
+        known_characters = self._get_known_characters(driver, series_id or book_id)
 
         # Build extraction prompt
         prompt = self._build_prompt(chapter_text, known_characters, chapter_label)
@@ -187,15 +183,10 @@ class Extractor:
         # Parse response
         extraction = dict(response.parsed)
 
-        # Save extraction
-        output_dir.mkdir(parents=True, exist_ok=True)
-        with open(output_file, "w") as f:
-            json.dump(extraction, f, indent=2)
-
         return extraction
 
     def _get_known_characters(self, driver, series_id: str) -> list[str]:
-        """Get list of known character names in series from Neo4j.
+        """Get list of known character names for a series from Neo4j.
 
         Args:
             driver: Neo4j driver.
