@@ -25,18 +25,19 @@ class Chapter(BaseModel):
 class Book(BaseModel):
     """Book metadata and state."""
 
+    id: str
     index: int
-    canonical_book_id: str = ""  # NEW — empty string for backwards compat
     title: str
-    author: Optional[str] = None  # NEW
+    author: Optional[str] = None
     status: BookStatus
     chapters: List[Chapter]
     current_chapter_index: Optional[int] = None
     has_cover: bool = False
     cover_url: Optional[str] = None
-    series_position: Optional[float] = None  # NEW
-    series_name: Optional[str] = None  # NEW
-    is_series: bool = False  # True if part of a series (from LLM determination)
+    position_in_series: Optional[float] = None
+    series_name: Optional[str] = None
+    is_series: bool = False
+    uploaded_at: Optional[str] = None
 
 
 class Series(BaseModel):
@@ -85,26 +86,18 @@ class ChunkRecord(BaseModel):
     model_config = ConfigDict(frozen=True)  # Immutable like ParsedChapter
 
 
-class CanonicalBook(BaseModel):
-    """Shared book metadata from Open Library or manual entry."""
+class BookRecord(BaseModel):
+    """Full book record for upsert to the books table."""
 
-    id: str  # OL work ID or UUID
-    ol_id: Optional[str] = None
+    id: str
+    user_id: str
+    series_id: str
     title: str
     author: Optional[str] = None
     series_name: Optional[str] = None
-    series_position: Optional[float] = None
-    canonical_series_id: str  # slugified series_name, or own id
-    is_series: bool = False  # True if the book is part of a series (from LLM determination)
-    cover_url: Optional[str] = None
+    position_in_series: Optional[float] = None
+    is_series: bool = False
     chapters: List[Chapter] = []
-
-
-class UserBook(BaseModel):
-    """Per-user reading state for a canonical book."""
-
-    canonical_book_id: str
-    user_id: str
     status: BookStatus = BookStatus.NOT_STARTED
     current_chapter_index: Optional[int] = None
     epub_path: Optional[str] = None

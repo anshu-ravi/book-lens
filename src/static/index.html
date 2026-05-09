@@ -2486,7 +2486,7 @@
                         </div>
                         <button
                           x-show="features.enable_extraction && extractionPct(series.id, book.index) < 100"
-                          @click="triggerExtraction(book.canonical_book_id, series.id + '_' + book.index)"
+                          @click="triggerExtraction(book.id, series.id + '_' + book.index)"
                           :disabled="extractingNow[series.id + '_' + book.index]"
                           style="flex-shrink:0;background:none;border:1px solid var(--hairline);border-radius:var(--radius-sm);padding:2px 7px;font-family:var(--mono);font-size:0.62rem;letter-spacing:0.06em;color:var(--ink-4);cursor:pointer;transition:color var(--transition),border-color var(--transition);"
                           @mouseover="$el.style.color='var(--ink)';$el.style.borderColor='var(--ink-3)'"
@@ -3491,7 +3491,7 @@
         // ── Library: delete book (with confirm) ─────────────────────
         async confirmDeleteBook(series, book) {
           if (!confirm(`Delete "${book.title}" from ${series.name}?`)) return;
-          const res = await this.secureFetch(`/library/books/${book.canonical_book_id}`, { method: 'DELETE' });
+          const res = await this.secureFetch(`/library/books/${book.id}`, { method: 'DELETE' });
           if (res.ok) this.library = await res.json();
         },
 
@@ -3716,7 +3716,7 @@
               body.series_position = isNaN(pos) ? null : pos;
             }
             const res = await this.secureFetch(
-              `/library/books/${this.modal.book.canonical_book_id}`,
+              `/library/books/${this.modal.book.id}`,
               { method: 'PATCH', body: JSON.stringify(body) }
             );
             if (!res.ok) {

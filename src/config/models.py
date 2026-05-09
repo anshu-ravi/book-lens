@@ -1,7 +1,6 @@
-"""LLM model configuration for different purposes."""
+"""LLM model configuration for BookLens."""
 
 import os
-from typing import Optional
 
 
 class ModelConfig:
