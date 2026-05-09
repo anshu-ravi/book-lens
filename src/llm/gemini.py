@@ -5,6 +5,8 @@ import time
 from google import genai
 from google.genai import errors, types
 
+from src.config import ModelConfig
+
 
 class GeminiLLMClient:
     """LLMClient backed by Google's Gemini models."""
@@ -156,8 +158,9 @@ class GeminiLLMClient:
         """
         for attempt in range(retries):
             try:
+                series_model = ModelConfig.get_model("series_lookup")
                 search_response = self._client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model=series_model,
                     contents=f'Is the book "{title}" by {author} part of a series? If so, what is the book name, series name and position?',
                     config=types.GenerateContentConfig(
                         tools=[types.Tool(google_search=types.GoogleSearch())],

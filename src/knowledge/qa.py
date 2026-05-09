@@ -6,6 +6,7 @@ from typing import Any
 from google import genai
 from google.genai import types
 
+from src.config import ModelConfig
 from src.knowledge.neo4j_client import get_driver
 from src.knowledge.query import KnowledgeQueryEngine
 
@@ -84,8 +85,9 @@ class KnowledgeQA:
 
         full_prompt = f"{system_prompt}\n\nQuestion: {question}"
 
+        qa_model = ModelConfig.get_model("qa")
         response = await self.gemini_client.aio.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=qa_model,
             contents=full_prompt,
             config=types.GenerateContentConfig(max_output_tokens=1024),
         )

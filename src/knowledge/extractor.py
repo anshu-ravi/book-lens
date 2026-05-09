@@ -8,6 +8,7 @@ from typing import Optional
 from google import genai
 from google.genai import types
 
+from src.config import ModelConfig
 from src.knowledge.neo4j_client import get_driver
 
 
@@ -165,8 +166,9 @@ class Extractor:
         prompt = self._build_prompt(chapter_text, known_characters, chapter_label)
 
         # Call Gemini with structured output
+        extraction_model = ModelConfig.get_model("extraction")
         response = self.client.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=extraction_model,
             contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
