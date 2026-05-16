@@ -125,7 +125,27 @@ async def get_book_by_id(book_id: str, user_id: str) -> Book | None:
     if not resp.data:
         return None
     row = resp.data[0]
-    return _book_from_row(row, row["book_index"], user_id)
+
+    # Get all books in the series to find this book's index
+    series_resp = (
+        client.table("books")
+        .select("*")
+        .filter("user_id", "eq", user_id)
+        .filter("series_id", "eq", row["series_id"])
+        .execute()
+    )
+
+    if not series_resp.data:
+        return None
+
+    # Sort by position_in_series (same as _group_into_series)
+    series_books = series_resp.data
+    series_books.sort(key=lambda r: (r.get("position_in_series") is None, r.get("position_in_series")))
+
+    # Find this book's index in the sorted series
+    book_index = next((idx for idx, b in enumerate(series_books) if b["id"] == book_id), 0)
+
+    return _book_from_row(row, book_index, user_id)
 
 
 async def remove_book(book_id: str, user_id: str) -> None:
