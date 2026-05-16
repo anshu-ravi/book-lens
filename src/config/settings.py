@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     supabase_anon_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None
-    tavily_api_key: Optional[str] = None
+    # tavily_api_key: Optional[str] = None
     admin_user_id: Optional[str] = None
     enable_extraction: bool = True
     enable_graph: bool = True
