@@ -196,10 +196,12 @@ class ExtractionService:
             extracted_indices: List of chapter indices that have been extracted.
         """
         try:
+            # Deduplicate and sort indices
+            unique_indices = sorted(set(extracted_indices))
             progress = {
                 "total_chapters": total_chapters,
-                "extracted_chapters": extracted_chapters,
-                "extracted_indices": sorted(extracted_indices),
+                "extracted_chapters": len(unique_indices),
+                "extracted_indices": unique_indices,
                 "last_extracted_at": datetime.utcnow().isoformat() + "Z",
             }
 
