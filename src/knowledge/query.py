@@ -174,3 +174,48 @@ class KnowledgeQueryEngine:
 
             record = result.single()
             return record[0] if record else None
+
+    def get_timeline(self, to_chapter_index: int) -> dict[str, Any]:
+        """Get chapter and reveal data for the story timeline visualization.
+
+        Args:
+            to_chapter_index: Only include data up to this chapter index.
+
+        Returns:
+            Dict with 'chapters' and 'reveals' lists.
+        """
+        with self.driver.session() as session:
+            chapter_result = session.run(
+                """
+                MATCH (c:Chapter {series_id: $series_id})
+                WHERE c.chapter_index <= $to_chapter_index
+                RETURN c.chapter_index AS chapter_index,
+                       c.name AS name,
+                       c.summary AS summary,
+                       c.book_id AS book_id
+                ORDER BY c.chapter_index ASC
+                """,
+                series_id=self.series_id,
+                to_chapter_index=to_chapter_index,
+            )
+            chapters = [dict(record) for record in chapter_result]
+
+            reveals: list[dict[str, Any]] = []
+            try:
+                reveal_result = session.run(
+                    """
+                    MATCH (a:Character {series_id: $series_id})-[r:REVEALED_AS]->(b:Character {series_id: $series_id})
+                    WHERE r.reveal_chapter_index <= $to_chapter_index
+                    RETURN a.name AS from_name,
+                           b.name AS to_name,
+                           r.reveal_chapter_index AS chapter_index,
+                           r.context AS context
+                    """,
+                    series_id=self.series_id,
+                    to_chapter_index=to_chapter_index,
+                )
+                reveals = [dict(record) for record in reveal_result]
+            except Exception:
+                pass
+
+        return {"chapters": chapters, "reveals": reveals}

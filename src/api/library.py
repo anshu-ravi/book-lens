@@ -25,6 +25,7 @@ from src.library.manager import (
     update_book_series,
     upsert_book,
 )
+from src.knowledge.query import KnowledgeQueryEngine
 from src.models import Book, BookRecord, BookStatus, Chapter, Library, Series
 from src.supabase_client import get_supabase_client
 
@@ -58,6 +59,31 @@ async def _run_extraction_background(
         logger.error(f"Background extraction failed for {book_id}: {e}", exc_info=True)
 
 
+class TimelineChapter(BaseModel):
+    """A chapter entry in the timeline response."""
+
+    chapter_index: int
+    name: Optional[str] = None
+    summary: Optional[str] = None
+    book_id: Optional[str] = None
+
+
+class TimelineReveal(BaseModel):
+    """An identity reveal entry in the timeline response."""
+
+    from_name: str
+    to_name: str
+    chapter_index: int
+    context: Optional[str] = None
+
+
+class TimelineResponse(BaseModel):
+    """Response for the series timeline endpoint."""
+
+    chapters: list[TimelineChapter]
+    reveals: list[TimelineReveal]
+
+
 class UpdateBookStatusRequest(BaseModel):
     """Request body for updating a book's reading status and/or series metadata."""
 
@@ -76,6 +102,25 @@ class UploadBookResponse(BaseModel):
     chapter_count: int
 
 
+@router.get("/series/{series_id}/timeline", response_model=TimelineResponse)
+async def get_series_timeline(
+    series_id: str,
+    to_chapter: int = 0,
+    user_id: str = Depends(get_current_user),
+) -> TimelineResponse:
+    """Return chapter and reveal data for the story timeline visualization."""
+    try:
+        engine = KnowledgeQueryEngine(series_id)
+        data = engine.get_timeline(to_chapter)
+        return TimelineResponse(
+            chapters=[TimelineChapter(**c) for c in data["chapters"]],
+            reveals=[TimelineReveal(**r) for r in data["reveals"]],
+        )
+    except Exception as e:
+        logger.error("Timeline query failed for series %s: %s", series_id, e, exc_info=True)
+        raise HTTPException(status_code=503, detail="Knowledge graph unavailable.")
+
+
 @router.get("", response_model=Library)
 async def get_library(user_id: str = Depends(get_current_user)) -> Library:
     """Return the full library state for the current user."""
@@ -88,14 +133,27 @@ async def upload_book(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user),
     background_tasks: BackgroundTasks = BackgroundTasks(),
+    series_name: Annotated[Optional[str], Form()] = None,
+    series_position: Annotated[Optional[str], Form()] = None,
+    is_series: Annotated[str, Form()] = "false",
 ) -> UploadBookResponse:
     """Upload an epub and register it in the library."""
     if not file.filename or not file.filename.endswith(".epub"):
         raise HTTPException(status_code=400, detail="File must be an .epub.")
 
+    # Parse series metadata from form fields
+    parsed_series_name = series_name.strip() if series_name and series_name.strip() else None
+    parsed_position: Optional[float] = None
+    if series_position:
+        try:
+            parsed_position = float(series_position)
+        except ValueError:
+            pass
+    parsed_is_series = is_series.lower() == "true"
+
     # Generate IDs
     book_id = str(uuid.uuid4())
-    series_id = _slugify(title)  # Use book title as series_id for standalone
+    series_id = _slugify(parsed_series_name or title)
 
     book_bytes = await file.read()
     client = get_supabase_client()
@@ -142,6 +200,9 @@ async def upload_book(
         status=BookStatus.NOT_STARTED,
         epub_path=epub_path,
         has_cover=has_cover,
+        series_name=parsed_series_name,
+        position_in_series=parsed_position,
+        is_series=parsed_is_series,
     )
     upsert_book(record)
 

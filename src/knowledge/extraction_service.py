@@ -57,6 +57,24 @@ class ExtractionService:
             # Parse EPUB
             parsed_chapters = parse_epub(BytesIO(epub_bytes))
 
+            # Store text chunks for vector search (runs once; idempotent on re-ingest)
+            try:
+                from src.knowledge.chunk_store import ChunkStore
+
+                chunk_store = ChunkStore()
+                chapter_tuples = [
+                    (ch.index, ch.label, ch.text) for ch in parsed_chapters
+                ]
+                n_chunks = chunk_store.upsert_chapters(
+                    user_id=self.user_id,
+                    series_id=self.series_id,
+                    book_id=self.book_id,
+                    chapters=chapter_tuples,
+                )
+                logger.info(f"Stored {n_chunks} text chunks for book {self.book_id}")
+            except Exception as chunk_err:
+                logger.warning(f"Chunk storage failed (non-fatal): {chunk_err}")
+
             # Get already-extracted chapters
             already_extracted = await self._get_extracted_indices()
             logger.info(f"Already extracted chapters: {already_extracted}")

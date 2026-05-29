@@ -12,9 +12,7 @@
     rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.29.2/dist/cytoscape.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <style>
     /* ── Reset & base ─────────────────────────────────────────── */
     *,
@@ -1809,220 +1807,13 @@
       min-height: 0;
     }
 
-    .explore-main {
-      flex: 1;
-      display: flex;
-      min-height: 0;
-    }
-
-    .explore-graph {
-      flex: 1;
-      min-width: 0;
-      background: var(--bone-2);
-      position: relative;
-    }
-
-    #cy {
-      position: absolute;
-      inset: 0;
-    }
-
-    .explore-graph-empty {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      color: var(--ink-4);
-      font-family: var(--mono);
-      font-size: 0.75rem;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-    }
-
-    .explore-panel {
-      width: 300px;
-      flex-shrink: 0;
-      border-left: 1px solid var(--hairline);
-      background: var(--bone);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .explore-panel-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-    }
-
-    .explore-panel-loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      height: 120px;
-      color: var(--ink-3);
-      font-family: var(--mono);
-      font-size: 0.7rem;
-      letter-spacing: 0.06em;
-    }
-
-    .explore-panel-title {
-      font-family: var(--serif-display);
-      font-size: 1.1rem;
-      font-weight: 600;
-      font-style: italic;
-      color: var(--forest);
-      margin-bottom: 4px;
-    }
-
-    .explore-panel-sub {
-      font-family: var(--mono);
-      font-size: 0.7rem;
-      color: var(--ink-4);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      margin-bottom: 16px;
-    }
-
-    .explore-panel-digest {
-      font-size: 0.9rem;
-      line-height: 1.7;
-      color: var(--ink-2);
-    }
-
-    .explore-panel-digest p { margin-bottom: 12px; }
-    .explore-panel-digest strong { color: var(--ink); }
-
-    .explore-roll-call {
-      margin-top: 20px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-
-    .explore-char-chip {
-      padding: 4px 10px;
-      border-radius: 99px;
-      font-family: var(--mono);
-      font-size: 0.7rem;
-      letter-spacing: 0.04em;
-      border: 1px solid var(--hairline);
-      background: var(--bone-2);
-      cursor: pointer;
-      transition: background var(--transition), border-color var(--transition);
-    }
-
-    .explore-char-chip:hover {
-      background: var(--bone-3);
-      border-color: var(--ink-4);
-    }
-
-    .explore-timeline {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      margin-top: 4px;
-    }
-
-    .explore-timeline-item {
-      display: flex;
-      gap: 12px;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--hairline);
-    }
-
-    .explore-timeline-item:last-child {
-      border-bottom: none;
-    }
-
-    .explore-timeline-marker {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--brass);
-      flex-shrink: 0;
-      margin-top: 6px;
-    }
-
-    .explore-timeline-marker.turning-point {
-      background: var(--ribbon);
-    }
-
-    .explore-timeline-label {
-      font-family: var(--mono);
-      font-size: 0.65rem;
-      color: var(--ink-4);
-      letter-spacing: 0.05em;
-      margin-bottom: 2px;
-    }
-
-    .explore-timeline-text {
-      font-size: 0.85rem;
-      color: var(--ink-2);
-      line-height: 1.5;
-    }
-
-    .explore-connections {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 12px;
-    }
-
-    .explore-conn-chip {
-      padding: 3px 9px;
-      border-radius: 99px;
-      font-family: var(--mono);
-      font-size: 0.65rem;
-      letter-spacing: 0.04em;
-      border: 1px solid;
-      cursor: pointer;
-      transition: opacity var(--transition);
-    }
-
-    .explore-conn-chip:hover { opacity: 0.75; }
-
-    .explore-back-btn {
-      background: none;
-      border: none;
-      color: var(--ink-4);
-      font-family: var(--mono);
-      font-size: 0.65rem;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      margin-bottom: 14px;
-      padding: 0;
-      transition: color var(--transition);
-    }
-
-    .explore-back-btn:hover { color: var(--ink); }
-
-    .explore-rel-type {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 99px;
-      font-family: var(--mono);
-      font-size: 0.65rem;
-      letter-spacing: 0.04em;
-      border: 1px solid;
-      margin-bottom: 14px;
-    }
 
     /* ── Scrubber bar ─────────────────────────────────────────── */
     .explore-scrubber {
       flex-shrink: 0;
-      border-top: 1px solid var(--hairline);
-      background: var(--bone);
-      padding: 12px 20px;
+      border-top: 1px solid rgba(201, 169, 110, 0.1);
+      background: #0a0b0d;
+      padding: 12px 20px 14px;
       display: flex;
       flex-direction: column;
       gap: 10px;
@@ -2031,31 +1822,33 @@
     .scrubber-presets {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       flex-wrap: wrap;
     }
 
     .scrubber-preset {
-      padding: 5px 12px;
+      padding: 4px 12px;
       border-radius: 99px;
       font-family: var(--mono);
-      font-size: 0.7rem;
-      letter-spacing: 0.05em;
-      border: 1px solid var(--hairline);
-      background: var(--bone-2);
+      font-size: 0.65rem;
+      letter-spacing: 0.06em;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: rgba(255, 255, 255, 0.38);
       cursor: pointer;
       transition: background var(--transition), border-color var(--transition), color var(--transition);
     }
 
     .scrubber-preset:hover {
-      background: var(--bone-3);
-      border-color: var(--ink-4);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.16);
+      color: rgba(255, 255, 255, 0.7);
     }
 
     .scrubber-preset.active {
-      background: var(--forest);
-      color: var(--bone);
-      border-color: var(--forest);
+      background: rgba(201, 169, 110, 0.14);
+      color: rgba(201, 169, 110, 0.9);
+      border-color: rgba(201, 169, 110, 0.35);
     }
 
     .scrubber-custom {
@@ -2065,13 +1858,13 @@
     }
 
     .scrubber-book-select {
-      padding: 5px 8px;
-      border: 1px solid var(--hairline);
+      padding: 4px 8px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: var(--radius-sm);
-      background: var(--bone);
+      background: rgba(255, 255, 255, 0.05);
       font-family: var(--mono);
-      font-size: 0.7rem;
-      color: var(--ink-2);
+      font-size: 0.65rem;
+      color: rgba(255, 255, 255, 0.55);
       cursor: pointer;
       flex-shrink: 0;
     }
@@ -2086,8 +1879,8 @@
 
     .scrubber-track {
       width: 100%;
-      height: 4px;
-      background: var(--bone-3);
+      height: 3px;
+      background: rgba(255, 255, 255, 0.08);
       border-radius: 2px;
       position: relative;
     }
@@ -2097,7 +1890,7 @@
       left: 0;
       top: 0;
       height: 100%;
-      background: var(--forest);
+      background: rgba(201, 169, 110, 0.55);
       border-radius: 2px;
       pointer-events: none;
       transition: width 0.2s ease;
@@ -2107,12 +1900,12 @@
       position: absolute;
       top: 50%;
       transform: translate(-50%, -50%);
-      width: 14px;
-      height: 14px;
+      width: 13px;
+      height: 13px;
       border-radius: 50%;
-      background: var(--forest);
-      border: 2px solid var(--bone);
-      box-shadow: 0 0 0 1px var(--forest);
+      background: #c9a96e;
+      border: 2px solid #07080a;
+      box-shadow: 0 0 0 1px rgba(201, 169, 110, 0.5), 0 2px 8px rgba(0,0,0,0.5);
       cursor: grab;
       z-index: 2;
       transition: left 0.15s ease;
@@ -2134,23 +1927,175 @@
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      border: 1.5px solid var(--bone);
+      border: 1.5px solid #07080a;
       pointer-events: all;
       cursor: pointer;
       z-index: 3;
     }
 
-    .scrubber-marker-dot[data-type="relationship"] { background: #5a9e94; }
-    .scrubber-marker-dot[data-type="turning_point"] { background: var(--ribbon); }
-    .scrubber-marker-dot[data-type="first_appearance"] { background: var(--bone-3); border-color: var(--ink-4); }
+    .scrubber-marker-dot[data-type="relationship"] { background: #4a8e84; }
+    .scrubber-marker-dot[data-type="turning_point"] { background: #c8433f; box-shadow: 0 0 4px rgba(200,67,63,0.6); }
+    .scrubber-marker-dot[data-type="first_appearance"] { background: rgba(201,169,110,0.5); border-color: rgba(201,169,110,0.3); }
 
     .scrubber-chapter-label {
       font-family: var(--mono);
-      font-size: 0.65rem;
-      color: var(--ink-4);
+      font-size: 0.62rem;
+      color: rgba(255, 255, 255, 0.3);
       letter-spacing: 0.05em;
       white-space: nowrap;
       flex-shrink: 0;
+    }
+
+    /* ── Timeline canvas area ─────────────────────────────────── */
+    .explore-timeline-canvas {
+      flex: 1;
+      position: relative;
+      background: #07080a;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: visible;
+    }
+
+    .tl-minimap-wrap {
+      height: 54px;
+      flex-shrink: 0;
+      position: relative;
+      background: rgba(0, 0, 0, 0.35);
+      border-bottom: 1px solid rgba(201, 169, 110, 0.1);
+      cursor: col-resize;
+    }
+
+    .tl-main-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+      cursor: crosshair;
+    }
+
+    .tl-canvas {
+      display: block;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Timeline floating popup card ────────────────────────── */
+    .tl-popup {
+      position: absolute;
+      z-index: 10;
+      width: 320px;
+      max-height: 300px;
+      display: flex;
+      flex-direction: column;
+      background: rgba(6, 7, 9, 0.96);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid rgba(201, 169, 110, 0.22);
+      border-radius: 10px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(201, 169, 110, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      pointer-events: auto;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      overflow: hidden;
+    }
+
+    .tl-popup.is-visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+
+    .tl-popup:not(.is-visible) {
+      opacity: 0;
+      transform: translateY(8px) scale(0.96);
+    }
+
+    .tl-popup-inner {
+      padding: 16px 18px;
+      overflow-y: auto;
+      flex: 1;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(201, 169, 110, 0.25) transparent;
+    }
+
+    .tl-popup-inner::-webkit-scrollbar { width: 3px; }
+    .tl-popup-inner::-webkit-scrollbar-track { background: transparent; }
+    .tl-popup-inner::-webkit-scrollbar-thumb { background: rgba(201, 169, 110, 0.3); border-radius: 99px; }
+
+    .tl-popup-meta {
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(201, 169, 110, 0.5);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tl-popup-turning-badge {
+      padding: 2px 8px;
+      background: rgba(200, 67, 63, 0.15);
+      border: 1px solid rgba(200, 67, 63, 0.4);
+      border-radius: 99px;
+      color: #e07878;
+      font-size: 0.54rem;
+      letter-spacing: 0.1em;
+    }
+
+    .tl-popup-title {
+      font-family: var(--serif-display);
+      font-size: 1.2rem;
+      font-weight: 500;
+      font-style: italic;
+      color: rgba(255, 255, 255, 0.96);
+      margin-bottom: 10px;
+      line-height: 1.3;
+    }
+
+    .tl-popup-body {
+      font-family: var(--serif-body);
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.62);
+      line-height: 1.72;
+    }
+
+    .tl-popup-chars {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .tl-popup-char-chip {
+      padding: 2px 9px;
+      border-radius: 99px;
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.05em;
+      background: rgba(201, 169, 110, 0.08);
+      border: 1px solid rgba(201, 169, 110, 0.24);
+      color: rgba(201, 169, 110, 0.85);
+    }
+
+    .tl-empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: rgba(255, 255, 255, 0.15);
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      pointer-events: none;
     }
   </style>
 </head>
@@ -2461,45 +2406,6 @@
                     </template>
                   </div>
 
-                  <!-- Knowledge extraction toggle -->
-                  <button class="knowledge-toggle" :class="{ open: knowledgeOpen[series.id] }" @click="knowledgeOpen = { ...knowledgeOpen, [series.id]: !knowledgeOpen[series.id] }"
-                    x-show="knowledgeSummary[series.id]">
-                    <svg viewBox="0 0 10 10" fill="none">
-                      <path d="M3 2l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                    Knowledge
-                  </button>
-
-                  <div class="knowledge-panel" x-show="knowledgeOpen[series.id]" x-transition>
-                    <template x-for="book in sortedBooks(series.books)" :key="book.index">
-                      <div class="knowledge-row">
-                        <div class="knowledge-row-label" x-text="book.title"></div>
-                        <div class="knowledge-bar-track">
-                          <div class="knowledge-bar-fill"
-                            :class="extractionPct(series.id, book.index) === 100 ? 'complete' : extractionPct(series.id, book.index) > 0 ? 'partial' : 'none'"
-                            :style="'width:' + extractionPct(series.id, book.index) + '%'">
-                          </div>
-                        </div>
-                        <div class="knowledge-row-count"
-                          :class="{ complete: extractionPct(series.id, book.index) === 100 }"
-                          x-text="(knowledgeSummary[series.id]?.[book.index]?.extracted ?? 0) + '/' + (knowledgeSummary[series.id]?.[book.index]?.total ?? book.chapters?.length ?? '?')">
-                        </div>
-                        <button
-                          x-show="features.enable_extraction && extractionPct(series.id, book.index) < 100"
-                          @click="triggerExtraction(book.id, series.id + '_' + book.index)"
-                          :disabled="extractingNow[series.id + '_' + book.index]"
-                          style="flex-shrink:0;background:none;border:1px solid var(--hairline);border-radius:var(--radius-sm);padding:2px 7px;font-family:var(--mono);font-size:0.62rem;letter-spacing:0.06em;color:var(--ink-4);cursor:pointer;transition:color var(--transition),border-color var(--transition);"
-                          @mouseover="$el.style.color='var(--ink)';$el.style.borderColor='var(--ink-3)'"
-                          @mouseleave="$el.style.color='var(--ink-4)';$el.style.borderColor='var(--hairline)'"
-                          x-text="extractingNow[series.id + '_' + book.index] ? 'Running…' : 'Extract'">
-                        </button>
-                      </div>
-                      <div x-show="extractionErrors[series.id + '_' + book.index]"
-                        x-text="extractionErrors[series.id + '_' + book.index]"
-                        style="font-size:0.7rem;color:var(--red);margin-top:4px;line-height:1.4;">
-                      </div>
-                    </template>
-                  </div>
 
                 </div>
 
@@ -2849,121 +2755,42 @@
             </select>
           </div>
 
-          <!-- Main canvas: graph + panel -->
+          <!-- Main canvas -->
           <div class="explore-canvas">
-            <div class="explore-main">
-
-              <!-- Cytoscape graph -->
-              <div class="explore-graph">
-                <div id="cy" x-ref="cyContainer"></div>
-                <div class="explore-graph-empty" x-show="!graphData || !graphData.nodes.length">
-                  <svg width="28" height="28" viewBox="0 0 20 20" fill="none">
-                    <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.2"/>
-                    <circle cx="10" cy="10" r="2.5" fill="currentColor" opacity="0.3"/>
-                    <path d="M10 3v1.5M10 15.5V17M3 10h1.5M15.5 10H17" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                  </svg>
-                  <span x-show="!seriesId">Select a series to begin</span>
-                  <span x-show="seriesId && !graphLoading">No character data yet — run knowledge extraction first</span>
-                  <div class="spinner" x-show="graphLoading" style="width:20px;height:20px;"></div>
+            <!-- Timeline canvas -->
+            <div class="explore-timeline-canvas" style="display:flex;">
+              <div class="tl-minimap-wrap" x-ref="tlMmWrap">
+                <canvas id="tl-mm" class="tl-canvas"></canvas>
+              </div>
+              <!-- Floating popup card — outside tl-main-wrap so it isn't clipped -->
+              <div class="tl-popup" :class="{'is-visible': timeline.popupVisible}"
+                   :style="`left:${timeline.popupX}px; top:${timeline.popupY}px`">
+                <div class="tl-popup-inner">
+                  <div class="tl-popup-meta">
+                    <span x-text="timeline.popupEvent ? `Ch ${timeline.popupEvent.chapter_index + 1}` : ''"></span>
+                    <span class="tl-popup-turning-badge" x-show="timeline.popupEvent?.turning">Turning Point</span>
+                  </div>
+                  <div class="tl-popup-title" x-text="timeline.popupEvent?.label || ''"></div>
+                  <div class="tl-popup-body" x-text="timeline.popupEvent?.body || ''"></div>
+                  <div class="tl-popup-chars" x-show="timeline.popupEvent?.chars?.length">
+                    <template x-for="c in (timeline.popupEvent?.chars ?? [])" :key="c">
+                      <span class="tl-popup-char-chip" x-text="c"></span>
+                    </template>
+                  </div>
                 </div>
               </div>
-
-              <!-- Recap panel -->
-              <div class="explore-panel">
-                <div class="explore-panel-content">
-
-                  <!-- Loading state for digest -->
-                  <div class="explore-panel-loading" x-show="digestLoading && panelState === 'recap'">
-                    <div class="spinner" style="width:16px;height:16px;"></div>
-                    <span>Generating recap…</span>
-                  </div>
-
-                  <!-- State 1: Full Recap -->
-                  <div x-show="panelState === 'recap' && !digestLoading">
-                    <div class="explore-panel-title">Story so far</div>
-                    <div class="explore-panel-sub" x-text="windowLabel"></div>
-                    <div class="explore-panel-digest prose" x-html="marked.parse(digest || '_No recap available yet._')"></div>
-                    <div class="explore-roll-call" x-show="graphData && graphData.nodes.filter(n => !n.ghost).length">
-                      <template x-for="node in (graphData?.nodes ?? []).filter(n => !n.ghost).slice(0, 20)" :key="node.id">
-                        <button
-                          class="explore-char-chip"
-                          :style="`border-color: ${factionColor(node.faction)}44; color: ${factionColor(node.faction)}`"
-                          @click="selectCharacter(node)"
-                          x-text="node.label">
-                        </button>
-                      </template>
-                    </div>
-                  </div>
-
-                  <!-- State 2: Character Arc -->
-                  <div x-show="panelState === 'character' && selectedNode">
-                    <button class="explore-back-btn" @click="panelState = 'recap'">
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                        <path d="M6 2L3 5l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                      Back
-                    </button>
-                    <div class="explore-panel-title" x-text="selectedNode?.label"></div>
-                    <div class="explore-panel-sub">
-                      <span x-text="selectedNode?.faction || ''"></span>
-                      <span x-show="selectedNode?.role"> · <span x-text="selectedNode?.role"></span></span>
-                    </div>
-                    <div class="explore-timeline">
-                      <template x-for="(evt, i) in (selectedNode?.key_events ?? [])" :key="i">
-                        <div class="explore-timeline-item">
-                          <div class="explore-timeline-marker"></div>
-                          <div>
-                            <div class="explore-timeline-label" x-text="`Book ${evt.book + 1} · Ch ${evt.chapter + 1}`"></div>
-                            <div class="explore-timeline-text" x-text="evt.description"></div>
-                          </div>
-                        </div>
-                      </template>
-                      <div x-show="!selectedNode?.key_events?.length" style="color:var(--ink-4);font-size:0.85rem;">No events in this window.</div>
-                    </div>
-                    <!-- Connections -->
-                    <div x-show="characterConnections(selectedNode?.id).length" style="margin-top:16px;">
-                      <div class="explore-panel-sub" style="margin-bottom:8px;">Connections</div>
-                      <div class="explore-connections">
-                        <template x-for="edge in characterConnections(selectedNode?.id)" :key="edge.source + edge.target">
-                          <button
-                            class="explore-conn-chip"
-                            :style="`border-color:${relColor(edge.type)}66;color:${relColor(edge.type)};background:${relColor(edge.type)}11`"
-                            @click="selectEdge(edge)"
-                            x-text="(edge.source === selectedNode.id ? edge.target : edge.source) + ' · ' + edge.type">
-                          </button>
-                        </template>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- State 3: Relationship History -->
-                  <div x-show="panelState === 'relationship' && selectedEdge">
-                    <button class="explore-back-btn" @click="panelState = selectedNode ? 'character' : 'recap'">
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                        <path d="M6 2L3 5l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-                      </svg>
-                      Back
-                    </button>
-                    <div class="explore-panel-title" x-text="(selectedEdge?.source ?? '') + ' & ' + (selectedEdge?.target ?? '')"></div>
-                    <div
-                      class="explore-rel-type"
-                      :style="`border-color:${relColor(selectedEdge?.type)}66;color:${relColor(selectedEdge?.type)};background:${relColor(selectedEdge?.type)}11`"
-                      x-text="selectedEdge?.type || ''">
-                    </div>
-                    <div class="explore-timeline">
-                      <template x-for="(moment, i) in (selectedEdge?.moments ?? [])" :key="i">
-                        <div class="explore-timeline-item">
-                          <div class="explore-timeline-marker" :class="{'turning-point': selectedEdge?.has_turning_point && i > 0}"></div>
-                          <div>
-                            <div class="explore-timeline-label" x-text="`Book ${moment.book + 1} · Ch ${moment.chapter + 1}`"></div>
-                            <div class="explore-timeline-text" x-text="moment.description"></div>
-                          </div>
-                        </div>
-                      </template>
-                      <div x-show="!selectedEdge?.moments?.length" style="color:var(--ink-4);font-size:0.85rem;">No moments in this window.</div>
-                    </div>
-                  </div>
-
+              <div class="tl-main-wrap" x-ref="tlMcWrap">
+                <canvas id="tl-mc" class="tl-canvas"></canvas>
+                <!-- Empty / loading states -->
+                <div class="tl-empty" x-show="timeline.loading">
+                  <div class="spinner" style="width:16px;height:16px;border-color:rgba(255,255,255,0.08);border-top-color:rgba(201,169,110,0.65);"></div>
+                </div>
+                <div class="tl-empty" x-show="!timeline.loading && !timeline.events?.length">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                    <path d="M3 12h18M3 6h18M3 18h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                  </svg>
+                  <span x-show="!seriesId">Select a series</span>
+                  <span x-show="seriesId && !timeline.loading">No chapter data yet — run knowledge extraction first</span>
                 </div>
               </div>
             </div>
@@ -3130,7 +2957,7 @@
         <!-- Chapter selector (only when READING) -->
         <div x-show="modal.status === 'reading'" x-transition class="form-group"
           style="margin-top:14px;margin-bottom:0;">
-          <label>Currently reading up to…</label>
+          <label>Last chapter finished</label>
           <select x-model.number="modal.chapterIndex">
             <template x-for="ch in (modal.book?.chapters ?? [])" :key="ch.index">
               <option :value="ch.index" x-text="ch.label"></option>
@@ -3192,7 +3019,6 @@
         },
         view: 'library',
         library: null,
-        knowledgeSummary: {},   // { seriesId: { bookIndex: { extracted, total } } }
         extractingNow: {},      // { 'seriesId_bookIndex': true } while POST in flight
         extractionErrors: {},   // { 'seriesId_bookIndex': 'error message' }
         knowledgeOpen: {},      // { seriesId: bool }
@@ -3348,27 +3174,9 @@
             if (!res.ok) throw new Error("Failed to load library");
             this.library = await res.json();
             this.updateReadingSummary();
-            this.refreshKnowledgeSummary();
           } catch (e) {
             this.error = "Failed to connect to library.";
           }
-        },
-
-        async refreshKnowledgeSummary() {
-          if (!this.features.enable_extraction || !this.library?.series?.length) return;
-          await Promise.allSettled(
-            this.library.series.map(async (series) => {
-              if (!series.books.length) return;
-              try {
-                const res = await this.secureFetch(`/library/series/${series.id}/knowledge-summary`);
-                if (!res.ok) return;
-                const data = await res.json();
-                const byIndex = {};
-                for (const b of data.books) byIndex[b.index] = { extracted: b.extracted, total: b.total };
-                this.knowledgeSummary = { ...this.knowledgeSummary, [series.id]: byIndex };
-              } catch (e) { /* non-fatal */ }
-            })
-          );
         },
 
         async triggerExtraction(canonicalBookId, key) {
@@ -3392,32 +3200,12 @@
           }
         },
 
-        startPolling(seriesId, bookIndex) {
-          // Poll every 5 seconds until extraction is complete
-          const pollId = setInterval(async () => {
-            // Only poll if we are still on the library view or something that needs this
-            await this.refreshKnowledgeSummary();
-            if (!this.isExtracting(seriesId, bookIndex)) {
-              clearInterval(pollId);
-            }
-          }, 5000);
+        isExtracting(_seriesId, _bookIndex) {
+          return false;
         },
 
-
-        isExtracting(seriesId, bookIndex) {
-          const s = this.knowledgeSummary[seriesId];
-          if (!s) return false;
-          const b = s[bookIndex];
-          if (!b || b.total === 0) return false;
-          return b.extracted < b.total;
-        },
-
-        extractionPct(seriesId, bookIndex) {
-          const s = this.knowledgeSummary[seriesId];
-          if (!s) return 0;
-          const b = s[bookIndex];
-          if (!b || b.total === 0) return 0;
-          return Math.round((b.extracted / b.total) * 100);
+        extractionPct(_seriesId, _bookIndex) {
+          return 0;
         },
 
         switchView(v) {
@@ -3450,7 +3238,7 @@
           if (book.status === 'reading') {
             if (book.current_chapter_index != null && book.chapters?.length) {
               const ch = book.chapters.find(c => c.index === book.current_chapter_index);
-              return 'Reading · ' + (ch ? ch.label : 'Ch ' + book.current_chapter_index);
+              return 'Read through · ' + (ch ? ch.label : 'Ch ' + book.current_chapter_index);
             }
             return 'Reading';
           }
@@ -3618,7 +3406,7 @@
               if (b.status === 'reading') {
                 if (b.current_chapter_index != null && b.chapters?.length) {
                   const ch = b.chapters.find(c => c.index === b.current_chapter_index);
-                  return `${b.title} (reading up to ${ch ? ch.label : 'ch ' + b.current_chapter_index})`;
+                  return `${b.title} (read through ${ch ? ch.label : 'ch ' + b.current_chapter_index})`;
                 }
                 return `${b.title} (reading)`;
               }
@@ -3761,21 +3549,33 @@
 
     // ── Reading Compass Explore Tab ─────────────────────────────────
     function exploreTab() {
-      let cyInstance = null;
+
+      // Timeline internal state (kept outside Alpine reactivity for canvas perf)
+      const tl = {
+        winS: 0.0, winE: 0.35,
+        hoveredId: null,
+        dragMode: null, dragStart: null,
+        mmCanvas: null, mcCanvas: null,
+        mmCtx: null, mcCtx: null,
+        noise: Array.from({length: 256}, () => Math.random() * 2 - 1),
+        cleanup: null,
+      };
+
       return {
         seriesId: '',
-        graphData: null,
-        graphLoading: false,
-        digest: '',
-        digestLoading: false,
-        panelState: 'recap',       // 'recap' | 'character' | 'relationship'
-        selectedNode: null,
-        selectedEdge: null,
         activePreset: 'book',
         windowLabel: '',
         scrubber: { bookIndex: 0, chapterIndex: 0 },
-        scrubber: { bookIndex: 0, chapterIndex: 0 },
         _scrubMaxChapter: 0,
+        timeline: {
+          events: [],
+          loading: false,
+          error: null,
+          popupVisible: false,
+          popupEvent: null,
+          popupX: 0,
+          popupY: 0,
+        },
 
         relColor(type) {
           const map = { ally:'#2a7a3a', enemy:'#8a3030', rival:'#8a3030', family:'#2a4a7a', romance:'#8a3a5a', mentor:'#5a2a8a', other:'#6e7268' };
@@ -3795,14 +3595,7 @@
 
           this.$watch('view', v => {
             if (v === 'explore') {
-              this.$nextTick(() => {
-                if (cyInstance) {
-                  cyInstance.resize();
-                  cyInstance.fit();
-                } else if (this.graphData && this.graphData.nodes?.length) {
-                  this._renderGraph(this.graphData);
-                }
-              });
+              this.$nextTick(() => this._loadTimeline());
             }
           });
         },
@@ -3816,10 +3609,9 @@
 
         onSeriesChange() {
           if (!this.seriesId) return;
-          this.panelState = 'recap'; this.selectedNode = null; this.selectedEdge = null;
           this.activePreset = 'book';
           this._initScrubberForCurrentBook();
-          this._loadGraph();
+          this._loadTimeline();
         },
 
         _currentReadingBook() {
@@ -3866,7 +3658,7 @@
             : (book.current_chapter_index ?? 0);
           this._scrubMaxChapter = book.index === ceiling.book ? ceiling.chapter : maxCh;
           this.scrubber.chapterIndex = this._scrubMaxChapter;
-          this._loadGraph();
+          this._loadTimeline();
         },
 
         availableBooksForScrubber() {
@@ -3880,8 +3672,7 @@
         },
 
         scrubberMarkersForBook() {
-          if (!this.graphData?.scrubber_markers) return [];
-          return this.graphData.scrubber_markers.filter(m => m.book === this.scrubber.bookIndex);
+          return [];
         },
 
         markerPct(marker) {
@@ -3911,7 +3702,7 @@
             document.removeEventListener('mouseup', up);
             document.removeEventListener('touchmove', move);
             document.removeEventListener('touchend', up);
-            this._loadGraph();
+            this._loadTimeline();
           };
           document.addEventListener('mousemove', move);
           document.addEventListener('mouseup', up);
@@ -3923,12 +3714,12 @@
           this.scrubber.bookIndex = marker.book;
           this.scrubber.chapterIndex = marker.chapter;
           this.activePreset = 'custom';
-          this._loadGraph();
+          this._loadTimeline();
         },
 
         applyPreset(preset) {
           this.activePreset = preset;
-          this._loadGraph();
+          this._loadTimeline();
         },
 
         _windowFromPreset() {
@@ -3968,116 +3759,458 @@
           return `${fromLabel} through ${toChLabel}`;
         },
 
-        async _loadGraph() {
+        async _loadTimeline() {
           if (!this.seriesId) return;
           const w = this._windowFromPreset();
-          this.windowLabel = this._buildWindowLabel(w);
-          const params = new URLSearchParams({ from_book: w.from_book, from_chapter: w.from_chapter, to_book: w.to_book, to_chapter: w.to_chapter });
+          const toChapter = w.to_chapter;
+          this.timeline.loading = true;
+          this.timeline.error = null;
+          this.timeline.events = [];
+          this.timeline.popupVisible = false;
+          if (tl.cleanup) { tl.cleanup(); tl.cleanup = null; }
 
-          this.graphLoading = true; this.digestLoading = true; this.digest = '';
-
-          const [graphRes, digestRes] = await Promise.allSettled([
-            this.secureFetch(`/library/series/${this.seriesId}/graph?${params}`),
-            this.secureFetch(`/library/series/${this.seriesId}/graph/digest?${params}`),
-          ]);
-
-          this.graphLoading = false;
-          if (graphRes.status === 'fulfilled' && graphRes.value.ok) {
-            this.graphData = await graphRes.value.json();
-            this._renderGraph(this.graphData);
-          }
-
-          this.digestLoading = false;
-          if (digestRes.status === 'fulfilled' && digestRes.value.ok) {
-            const d = await digestRes.value.json();
-            this.digest = d.digest || '';
+          try {
+            const res = await this.secureFetch(`/library/series/${this.seriesId}/timeline?to_chapter=${toChapter}`);
+            if (res.ok) {
+              const data = await res.json();
+              const events = this._buildTimelineEvents(data.chapters, data.reveals);
+              this.timeline.events = events;
+              tl.winS = 0.0;
+              tl.winE = Math.min(0.4, 1.0);
+              this.$nextTick(() => this._initTimelineCanvas(events));
+            }
+          } catch(e) {
+            this.timeline.error = 'Could not load timeline.';
+          } finally {
+            this.timeline.loading = false;
           }
         },
 
-        _renderGraph(data) {
-          if (!data?.nodes?.length) return;
-          if (this.view !== 'explore') return;
-
-          const self = this;
-          const elements = [
-            ...data.nodes.map(n => ({ data: { id: n.id, label: n.label, faction: n.faction, ghost: n.ghost, prominence: Math.min(1 + (n.key_events?.length ?? 0) * 0.15, 2.5), nodeData: n } })),
-            ...data.edges.map(e => ({ data: { id: e.source + '__' + e.target, source: e.source, target: e.target, type: e.type, weight: Math.min(1 + (e.moments?.length ?? 0) * 0.4, 4), hasTurningPoint: e.has_turning_point, edgeData: e } })),
-          ];
-
-          if (cyInstance) {
-            const existingIds = new Set(cyInstance.elements().map(el => el.id()));
-            const newEls = elements.filter(el => !existingIds.has(el.data.id));
-            if (newEls.length) { cyInstance.add(newEls); cyInstance.layout({ name: 'cose', animate: true, animationDuration: 400, fit: true, padding: 40 }).run(); }
-            cyInstance.nodes().forEach(node => {
-              const nd = data.nodes.find(n => n.id === node.id());
-              if (nd) node.animate({ style: { opacity: nd.ghost ? 0.3 : 1 } }, { duration: 400 });
+        _buildTimelineEvents(chapters, reveals) {
+          const events = [];
+          for (let i = 0; i < chapters.length; i++) {
+            const ch = chapters[i];
+            const summary = ch.summary || '';
+            events.push({
+              id: `ch_${ch.chapter_index}`,
+              chapter_index: ch.chapter_index,
+              label: ch.name || `Ch ${ch.chapter_index + 1}`,
+              body: summary,
+              chars: [],
+              turning: false,
+              type: 'chapter_summary',
+              t_raw: i * 0.3,
             });
-            cyInstance.edges().forEach(edge => {
-              const ed = data.edges.find(e => e.source + '__' + e.target === edge.id() || e.target + '__' + e.source === edge.id());
-              if (ed) edge.animate({ style: { 'line-color': self.relColor(ed.type), 'target-arrow-color': self.relColor(ed.type) } }, { duration: 300 });
-            });
-            return;
+          }
+          for (const rev of reveals || []) {
+            if (rev.from_name && rev.to_name) {
+              events.push({
+                id: `reveal_${rev.from_name}_${rev.to_name}`,
+                chapter_index: rev.chapter_index,
+                label: `${rev.from_name} revealed`,
+                body: rev.context || `${rev.from_name} is revealed to be ${rev.to_name}.`,
+                chars: [rev.from_name, rev.to_name],
+                turning: true,
+                type: 'reveal',
+                t_raw: rev.chapter_index * 0.3 + 0.15,
+              });
+            }
+          }
+          events.sort((a, b) => a.t_raw - b.t_raw);
+          const maxT = Math.max(...events.map(e => e.t_raw), 1);
+          for (const e of events) e.t = maxT > 0 ? Math.round((e.t_raw / maxT) * 10000) / 10000 : 0;
+          return events;
+        },
+
+        _initTimelineCanvas(events) {
+          if (tl.cleanup) { tl.cleanup(); tl.cleanup = null; }
+
+          const mmWrap = this.$refs.tlMmWrap;
+          const mcWrap = this.$refs.tlMcWrap;
+          const mmCanvas = document.getElementById('tl-mm');
+          const mcCanvas = document.getElementById('tl-mc');
+          if (!mmCanvas || !mcCanvas || !mmWrap || !mcWrap) return;
+
+          const dpr = window.devicePixelRatio || 1;
+          const MM_W = mmWrap.clientWidth, MM_H = mmWrap.clientHeight;
+          const MC_W = mcWrap.clientWidth, MC_H = mcWrap.clientHeight;
+
+          mmCanvas.width = MM_W * dpr; mmCanvas.height = MM_H * dpr;
+          mcCanvas.width = MC_W * dpr; mcCanvas.height = MC_H * dpr;
+
+          const mmCtx = mmCanvas.getContext('2d');
+          const mcCtx = mcCanvas.getContext('2d');
+          mmCtx.scale(dpr, dpr); mcCtx.scale(dpr, dpr);
+          tl.mmCtx = mmCtx; tl.mcCtx = mcCtx;
+
+          const MM_PAD = { l: 20, r: 20, t: 8, b: 8 };
+          const MC_PAD = { l: 40, r: 28, t: 52, b: 52 };
+          const MM_AMP = 7, MM_MID = MM_H / 2;
+          const MC_AMP = Math.max(24, (MC_H - MC_PAD.t - MC_PAD.b) * 0.40);
+          const MC_MID = MC_PAD.t + (MC_H - MC_PAD.t - MC_PAD.b) / 2;
+
+          const noise = tl.noise;
+          function sn(x) {
+            const i = Math.floor(x * 40) & 255;
+            const f = x * 40 - Math.floor(x * 40);
+            return noise[i] * (1 - f) + noise[(i + 1) & 255] * f;
+          }
+          // Raw wave value (unscaled, centered at 0)
+          function wyRaw(t) {
+            return Math.sin(t * Math.PI * 3.4) * 0.65
+                 + Math.sin(t * Math.PI * 7.2 + 1.1) * 0.22
+                 + sn(t) * 0.16;
+          }
+          // Pre-compute normalization so wave always fills the canvas
+          let _rawMin = Infinity, _rawMax = -Infinity;
+          for (let i = 0; i <= 300; i++) { const v = wyRaw(i / 300); if (v < _rawMin) _rawMin = v; if (v > _rawMax) _rawMax = v; }
+          const _rawMid = (_rawMin + _rawMax) / 2;
+          const _rawHalf = (_rawMax - _rawMin) / 2 || 1;
+          function wy(t, mid, amp) {
+            return mid + ((wyRaw(t) - _rawMid) / _rawHalf) * amp;
           }
 
-          this.$nextTick(() => {
-            const container = this.$refs.cyContainer;
-            if (!container) return;
-            cyInstance = cytoscape({
-              container, elements,
-              style: [
-                { selector: 'node', style: {
-                  'background-color': el => self.factionColor(el.data('faction')),
-                  'width': el => `${28 * el.data('prominence')}px`,
-                  'height': el => `${28 * el.data('prominence')}px`,
-                  'label': 'data(label)',
-                  'font-family': 'JetBrains Mono, monospace',
-                  'font-size': '10px',
-                  'color': '#1f2420',
-                  'text-valign': 'bottom',
-                  'text-margin-y': '6px',
-                  'text-outline-width': '2px',
-                  'text-outline-color': '#faf6ec',
-                  'opacity': el => el.data('ghost') ? 0.3 : 1,
-                  'border-width': '2px',
-                  'border-color': '#faf6ec',
-                }},
-                { selector: 'node:selected', style: { 'border-color': '#a8864a', 'border-width': '3px' }},
-                { selector: 'edge', style: {
-                  'line-color': el => self.relColor(el.data('type')),
-                  'width': 'data(weight)',
-                  'target-arrow-color': el => self.relColor(el.data('type')),
-                  'curve-style': 'bezier',
-                  'opacity': 0.7,
-                }},
-                { selector: 'edge:selected', style: { 'opacity': 1, 'width': el => el.data('weight') + 2 }},
-              ],
-              layout: { name: 'cose', animate: true, animationDuration: 600, nodeRepulsion: 8000, idealEdgeLength: 100, fit: true, padding: 40 },
+          const drawMM = () => {
+            const ctx = mmCtx;
+            ctx.clearRect(0, 0, MM_W, MM_H);
+            const pw = MM_W - MM_PAD.l - MM_PAD.r, px = MM_PAD.l;
+
+            // Subtle center baseline
+            ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(px, MM_MID); ctx.lineTo(px + pw, MM_MID); ctx.stroke();
+
+            // Area fill under wave
+            const areaGrad = ctx.createLinearGradient(0, MM_MID - MM_AMP, 0, MM_MID + MM_AMP + 4);
+            areaGrad.addColorStop(0, 'rgba(201,169,110,0.0)');
+            areaGrad.addColorStop(0.5, 'rgba(201,169,110,0.07)');
+            areaGrad.addColorStop(1, 'rgba(201,169,110,0.0)');
+            ctx.fillStyle = areaGrad;
+            ctx.beginPath();
+            for (let i = 0; i <= pw; i++) {
+              const t = i / pw, y = wy(t, MM_MID, MM_AMP);
+              i === 0 ? ctx.moveTo(px + i, y) : ctx.lineTo(px + i, y);
+            }
+            ctx.lineTo(px + pw, MM_MID + MM_AMP + 4); ctx.lineTo(px, MM_MID + MM_AMP + 4); ctx.closePath(); ctx.fill();
+
+            // Wave line
+            ctx.strokeStyle = 'rgba(201,169,110,0.7)'; ctx.lineWidth = 1.5;
+            ctx.shadowBlur = 4; ctx.shadowColor = 'rgba(201,169,110,0.4)';
+            ctx.beginPath();
+            for (let i = 0; i <= pw; i++) {
+              const t = i / pw, y = wy(t, MM_MID, MM_AMP);
+              i === 0 ? ctx.moveTo(px + i, y) : ctx.lineTo(px + i, y);
+            }
+            ctx.stroke(); ctx.shadowBlur = 0;
+
+            // Event dots
+            for (const ev of events) {
+              const x = px + ev.t * pw, y = wy(ev.t, MM_MID, MM_AMP);
+              if (ev.turning) {
+                ctx.fillStyle = '#C8433F';
+                ctx.shadowBlur = 4; ctx.shadowColor = '#C8433F';
+                ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+                ctx.fillRect(-2.2, -2.2, 4.4, 4.4); ctx.restore();
+                ctx.shadowBlur = 0;
+              } else {
+                ctx.fillStyle = 'rgba(245,240,232,0.8)';
+                ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+              }
+            }
+
+            // Viewport window
+            const rx = px + tl.winS * pw, rw = (tl.winE - tl.winS) * pw;
+            const rh = MM_H - MM_PAD.t - MM_PAD.b;
+            ctx.fillStyle = 'rgba(201,169,110,0.06)'; ctx.fillRect(rx, MM_PAD.t, rw, rh);
+            ctx.strokeStyle = 'rgba(201,169,110,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(rx, MM_PAD.t, rw, rh);
+            // Grab handles
+            const hH = rh * 0.5, hY = MM_PAD.t + (rh - hH) / 2;
+            ctx.fillStyle = 'rgba(201,169,110,0.7)';
+            ctx.beginPath(); ctx.roundRect ? ctx.roundRect(rx - 2.5, hY, 5, hH, 2) : ctx.rect(rx - 2.5, hY, 5, hH); ctx.fill();
+            ctx.beginPath(); ctx.roundRect ? ctx.roundRect(rx + rw - 2.5, hY, 5, hH, 2) : ctx.rect(rx + rw - 2.5, hY, 5, hH); ctx.fill();
+          };
+
+          const drawMC = () => {
+            const ctx = mcCtx;
+            ctx.clearRect(0, 0, MC_W, MC_H);
+            const pw = MC_W - MC_PAD.l - MC_PAD.r, px = MC_PAD.l;
+            const vis = events.filter(e => e.t >= tl.winS && e.t <= tl.winE);
+            const span = tl.winE - tl.winS;
+
+            // Subtle horizontal center baseline
+            ctx.strokeStyle = 'rgba(255,255,255,0.035)'; ctx.lineWidth = 1; ctx.setLineDash([]);
+            ctx.beginPath(); ctx.moveTo(px, MC_MID); ctx.lineTo(px + pw, MC_MID); ctx.stroke();
+
+            // Chapter tick marks at bottom axis
+            ctx.font = `9px 'JetBrains Mono', 'Fira Mono', monospace`;
+            ctx.textAlign = 'center';
+            const seenTicks = new Set();
+            for (const ev of vis) {
+              if (seenTicks.has(ev.chapter_index)) continue; seenTicks.add(ev.chapter_index);
+              const tN = (ev.t - tl.winS) / (tl.winE - tl.winS);
+              const x = px + tN * pw;
+              ctx.strokeStyle = 'rgba(201,169,110,0.18)'; ctx.lineWidth = 0.5;
+              ctx.beginPath(); ctx.moveTo(x, MC_H - MC_PAD.b + 4); ctx.lineTo(x, MC_H - MC_PAD.b + 10); ctx.stroke();
+              ctx.fillStyle = 'rgba(201,169,110,0.38)';
+              ctx.fillText(String(ev.chapter_index + 1), x, MC_H - MC_PAD.b + 21);
+            }
+
+            // Area fill under wave for depth
+            const areaGrad = ctx.createLinearGradient(0, MC_MID - MC_AMP * 0.5, 0, MC_MID + MC_AMP * 1.4);
+            areaGrad.addColorStop(0, 'rgba(201,169,110,0.0)');
+            areaGrad.addColorStop(0.45, 'rgba(201,169,110,0.055)');
+            areaGrad.addColorStop(1, 'rgba(201,169,110,0.0)');
+            ctx.fillStyle = areaGrad;
+            ctx.beginPath();
+            for (let i = 0; i <= pw; i++) {
+              const tN = i / pw, t = tl.winS + tN * (tl.winE - tl.winS);
+              const y = wy(t, MC_MID, MC_AMP);
+              i === 0 ? ctx.moveTo(px + i, y) : ctx.lineTo(px + i, y);
+            }
+            ctx.lineTo(px + pw, MC_MID + MC_AMP + 16); ctx.lineTo(px, MC_MID + MC_AMP + 16); ctx.closePath(); ctx.fill();
+
+            // Wave — gradient + glow
+            const waveGrad = ctx.createLinearGradient(px, 0, px + pw, 0);
+            waveGrad.addColorStop(0,   'rgba(168,124,48,0.75)');
+            waveGrad.addColorStop(0.35, 'rgba(212,172,94,1)');
+            waveGrad.addColorStop(0.65, 'rgba(212,172,94,1)');
+            waveGrad.addColorStop(1,   'rgba(168,124,48,0.75)');
+            ctx.strokeStyle = waveGrad; ctx.lineWidth = 2.5;
+            ctx.shadowBlur = 12; ctx.shadowColor = 'rgba(201,169,110,0.38)';
+            ctx.beginPath();
+            for (let i = 0; i <= pw; i++) {
+              const tN = i / pw, t = tl.winS + tN * (tl.winE - tl.winS);
+              const y = wy(t, MC_MID, MC_AMP);
+              i === 0 ? ctx.moveTo(px + i, y) : ctx.lineTo(px + i, y);
+            }
+            ctx.stroke(); ctx.shadowBlur = 0;
+
+            // Nodes, stalks, labels
+            for (const ev of vis) {
+              const tN = (ev.t - tl.winS) / (tl.winE - tl.winS);
+              const x = px + tN * pw, y = wy(ev.t, MC_MID, MC_AMP);
+              const hovered = ev.id === tl.hoveredId, turning = ev.turning;
+              const above = y > MC_MID;
+
+              // Halo ring on hover
+              if (hovered) {
+                ctx.beginPath(); ctx.arc(x, y, turning ? 16 : 14, 0, Math.PI * 2);
+                ctx.strokeStyle = turning ? 'rgba(200,67,63,0.18)' : 'rgba(201,169,110,0.2)';
+                ctx.lineWidth = 1; ctx.stroke();
+              }
+
+              // Draw node
+              if (turning) {
+                const r = hovered ? 7 : 6;
+                ctx.shadowBlur = hovered ? 22 : 12; ctx.shadowColor = '#C8433F';
+                ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+                ctx.fillStyle = hovered ? '#e05555' : 'rgba(200,67,63,0.92)';
+                ctx.strokeStyle = hovered ? 'rgba(255,130,130,0.7)' : 'rgba(255,100,100,0.4)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.rect(-r, -r, r * 2, r * 2); ctx.fill(); ctx.stroke();
+                ctx.restore();
+                ctx.shadowBlur = 0;
+              } else {
+                const r = hovered ? 6 : 5;
+                if (hovered) { ctx.shadowBlur = 14; ctx.shadowColor = 'rgba(235,220,190,0.7)'; }
+                // Outer ring
+                ctx.beginPath(); ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+                ctx.strokeStyle = hovered ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)';
+                ctx.lineWidth = 1; ctx.stroke();
+                // Fill
+                ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fillStyle = hovered ? '#f0e8d0' : 'rgba(238,228,205,0.88)';
+                ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1;
+                ctx.fill(); ctx.stroke();
+                ctx.shadowBlur = 0;
+              }
+
+              // Stalk + label — show when zoomed in enough
+              if (span < 0.82) {
+                const r = turning ? 7 : 6;
+                const stalkLen = span < 0.3 ? 48 : span < 0.55 ? 36 : 28;
+                const stalkStartY = above ? y - r - 1 : y + r + 1;
+                const labelBaseY  = above ? stalkStartY - stalkLen : stalkStartY + stalkLen;
+
+                // Stalk
+                ctx.setLineDash(turning ? [2,3] : []);
+                ctx.strokeStyle = turning ? 'rgba(200,67,63,0.35)' : 'rgba(201,169,110,0.22)';
+                ctx.lineWidth = 0.75;
+                ctx.beginPath(); ctx.moveTo(x, stalkStartY); ctx.lineTo(x, labelBaseY); ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Label text
+                const maxLen = span < 0.3 ? 32 : span < 0.55 ? 26 : 22;
+                const lbl = ev.label.length > maxLen ? ev.label.slice(0, maxLen - 1) + '…' : ev.label;
+                const fSize = span < 0.3 ? 13 : span < 0.55 ? 12 : 11;
+                ctx.font = `${fSize}px 'Cormorant Garamond', 'Palatino Linotype', Georgia, serif`;
+                const tw = ctx.measureText(lbl).width;
+
+                // Label background pill on hover
+                if (hovered) {
+                  const pad = 5, bx = x - tw / 2 - pad, bh = fSize + pad * 2;
+                  const by = above ? labelBaseY - fSize - pad : labelBaseY - pad;
+                  ctx.fillStyle = 'rgba(6,7,9,0.82)';
+                  if (ctx.roundRect) ctx.roundRect(bx, by, tw + pad * 2, bh, 3);
+                  else ctx.rect(bx, by, tw + pad * 2, bh);
+                  ctx.fill();
+                }
+
+                ctx.fillStyle = hovered
+                  ? 'rgba(255,255,255,0.96)'
+                  : turning
+                    ? 'rgba(230,120,120,0.82)'
+                    : 'rgba(218,208,185,0.72)';
+                ctx.textAlign = 'center';
+                const ty = above ? labelBaseY - 4 : labelBaseY + fSize + 2;
+                ctx.fillText(lbl, x, ty);
+              }
+            }
+          };
+
+          drawMM(); drawMC();
+
+          // Minimap mouse
+          const onMmDown = (e) => {
+            const rect = mmWrap.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const pw = MM_W - MM_PAD.l - MM_PAD.r;
+            const rx = MM_PAD.l + tl.winS * pw, rw = (tl.winE - tl.winS) * pw;
+            if (Math.abs(x - rx) < 10) tl.dragMode = 'resizeLeft';
+            else if (Math.abs(x - (rx + rw)) < 10) tl.dragMode = 'resizeRight';
+            else if (x >= rx - 4 && x <= rx + rw + 4) tl.dragMode = 'drag';
+            else {
+              const t = (x - MM_PAD.l) / pw, span = tl.winE - tl.winS;
+              tl.winS = Math.max(0, Math.min(1 - span, t - span / 2));
+              tl.winE = tl.winS + span;
+              drawMM(); drawMC(); return;
+            }
+            tl.dragStart = { x, winS: tl.winS, winE: tl.winE };
+          };
+
+          const onDocMove = (e) => {
+            if (tl.dragMode && tl.dragStart) {
+              const rect = mmWrap.getBoundingClientRect();
+              const x = e.clientX - rect.left;
+              const pw = MM_W - MM_PAD.l - MM_PAD.r;
+              const dx = (x - tl.dragStart.x) / pw, span = tl.dragStart.winE - tl.dragStart.winS;
+              if (tl.dragMode === 'drag') {
+                tl.winS = Math.max(0, Math.min(1 - span, tl.dragStart.winS + dx));
+                tl.winE = tl.winS + span;
+              } else if (tl.dragMode === 'resizeLeft') {
+                const ns = Math.max(0, tl.dragStart.winS + dx);
+                if (tl.dragStart.winE - ns > 0.08) tl.winS = ns;
+              } else {
+                const ne = Math.min(1, tl.dragStart.winE + dx);
+                if (ne - tl.dragStart.winS > 0.08) tl.winE = ne;
+              }
+              drawMM(); drawMC();
+            }
+
+            // Hover on main canvas
+            if (!mcWrap) return;
+            const mr = mcWrap.getBoundingClientRect();
+            const mx = e.clientX - mr.left, my = e.clientY - mr.top;
+            if (mx < 0 || mx > MC_W || my < 0 || my > MC_H) return;
+            const pw = MC_W - MC_PAD.l - MC_PAD.r;
+            let nearest = null, nearestDist = 38;
+            for (const ev of events.filter(ev => ev.t >= tl.winS && ev.t <= tl.winE)) {
+              const tN = (ev.t - tl.winS) / (tl.winE - tl.winS);
+              const x = MC_PAD.l + tN * pw, y = wy(ev.t, MC_MID, MC_AMP);
+              const d = Math.hypot(mx - x, my - y);
+              if (d < nearestDist) { nearest = ev; nearestDist = d; }
+            }
+            if (nearest?.id !== tl.hoveredId && !tl.overPopup) {
+              tl.hoveredId = nearest?.id ?? null;
+              drawMC();
+              if (nearest) {
+                const tN = (nearest.t - tl.winS) / (tl.winE - tl.winS);
+                const dotX = MC_PAD.l + tN * pw, dotY = wy(nearest.t, MC_MID, MC_AMP);
+                const popW = 320, popH = 300;
+                // Popup is now relative to explore-timeline-canvas; offset by minimap height
+                const mmOffset = mmWrap.clientHeight;
+                const above = dotY > MC_H / 2;
+                const px = Math.max(8, Math.min(MC_W - popW - 8, dotX - popW / 2));
+                const pyBelow = mmOffset + dotY + 28;
+                const pyAbove = mmOffset + dotY - popH - 28;
+                const py = above ? Math.max(mmOffset + 8, pyAbove) : Math.min(mmOffset + MC_H - popH - 8, pyBelow);
+                this.timeline.popupVisible = true;
+                this.timeline.popupEvent = nearest;
+                this.timeline.popupX = px;
+                this.timeline.popupY = py;
+              } else {
+                this.timeline.popupVisible = false;
+                this.timeline.popupEvent = null;
+              }
+            }
+          };
+
+          const onDocUp = () => { tl.dragMode = null; tl.dragStart = null; tl.mcDrag = null; };
+
+          // Keep popup alive while mouse is over it; dismiss on outside click
+          const popupEl = mcWrap.parentElement.querySelector('.tl-popup');
+          if (popupEl) {
+            popupEl.addEventListener('mouseenter', () => { tl.overPopup = true; });
+            popupEl.addEventListener('mouseleave', () => {
+              tl.overPopup = false;
+              if (!tl.hoveredId) { this.timeline.popupVisible = false; this.timeline.popupEvent = null; }
             });
-
-            cyInstance.on('tap', 'node', evt => { const nd = evt.target.data('nodeData'); if (nd) self.selectCharacter(nd); });
-            cyInstance.on('tap', 'edge', evt => { const ed = evt.target.data('edgeData'); if (ed) self.selectEdge(ed); });
-            cyInstance.on('tap', evt => { if (evt.target === cyInstance) { self.panelState = 'recap'; self.selectedNode = null; self.selectedEdge = null; } });
-          });
-        },
-
-        selectCharacter(node) {
-          this.selectedNode = node; this.panelState = 'character';
-          if (cyInstance) cyInstance.$(`#${CSS.escape(node.id)}`).select();
-        },
-
-        selectEdge(edge) {
-          this.selectedEdge = edge; this.panelState = 'relationship';
-          if (cyInstance) {
-            const id = edge.source + '__' + edge.target;
-            const altId = edge.target + '__' + edge.source;
-            (cyInstance.$(`#${CSS.escape(id)}`).length ? cyInstance.$(`#${CSS.escape(id)}`) : cyInstance.$(`#${CSS.escape(altId)}`)).select();
           }
+          const onDocClick = (e) => {
+            if (popupEl && !popupEl.contains(e.target) && !mcWrap.contains(e.target)) {
+              tl.overPopup = false;
+              tl.hoveredId = null;
+              this.timeline.popupVisible = false;
+              this.timeline.popupEvent = null;
+              drawMC();
+            }
+          };
+          document.addEventListener('click', onDocClick);
+
+          // Drag-to-pan on main canvas
+          const onMcDown = (e) => {
+            tl.mcDrag = { x: e.clientX, winS: tl.winS, winE: tl.winE };
+            mcWrap.style.cursor = 'grabbing';
+          };
+          const onMcMove = (e) => {
+            if (!tl.mcDrag) return;
+            const dx = (e.clientX - tl.mcDrag.x) / (MC_W - MC_PAD.l - MC_PAD.r);
+            const span = tl.mcDrag.winE - tl.mcDrag.winS;
+            tl.winS = Math.max(0, Math.min(1 - span, tl.mcDrag.winS - dx));
+            tl.winE = tl.winS + span;
+            drawMM(); drawMC();
+          };
+          const onMcUp = () => { tl.mcDrag = null; mcWrap.style.cursor = 'crosshair'; };
+
+          // Wheel scroll on main canvas
+          const onMcWheel = (e) => {
+            e.preventDefault();
+            const span = tl.winE - tl.winS;
+            const delta = (e.deltaX !== 0 ? e.deltaX : e.deltaY) / (MC_W - MC_PAD.l - MC_PAD.r) * span * 1.8;
+            tl.winS = Math.max(0, Math.min(1 - span, tl.winS + delta));
+            tl.winE = tl.winS + span;
+            drawMM(); drawMC();
+          };
+
+          mmWrap.addEventListener('mousedown', onMmDown);
+          mcWrap.addEventListener('mousedown', onMcDown);
+          mcWrap.addEventListener('mousemove', onMcMove);
+          mcWrap.addEventListener('mouseup', onMcUp);
+          mcWrap.addEventListener('wheel', onMcWheel, { passive: false });
+          document.addEventListener('mousemove', onDocMove);
+          document.addEventListener('mouseup', onDocUp);
+
+          tl.cleanup = () => {
+            mmWrap.removeEventListener('mousedown', onMmDown);
+            mcWrap.removeEventListener('mousedown', onMcDown);
+            mcWrap.removeEventListener('mousemove', onMcMove);
+            mcWrap.removeEventListener('mouseup', onMcUp);
+            mcWrap.removeEventListener('wheel', onMcWheel);
+            document.removeEventListener('mousemove', onDocMove);
+            document.removeEventListener('mouseup', onDocUp);
+            document.removeEventListener('click', onDocClick);
+          };
         },
 
-        characterConnections(charId) {
-          if (!charId || !this.graphData?.edges) return [];
-          return this.graphData.edges.filter(e => e.source === charId || e.target === charId);
-        },
       };
     }
   </script>

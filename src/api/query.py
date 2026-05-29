@@ -94,7 +94,13 @@ async def query_knowledge_graph(
     # Get the answer
     qa = KnowledgeQA(request.series_id)
     try:
-        answer = await qa.ask(request.question, up_to_chapter, top_k=request.top_k)
+        answer = await qa.ask(
+            question=request.question,
+            up_to_chapter=up_to_chapter,
+            user_id=user_id,
+            conversation_history=request.conversation_history,
+            top_k=request.top_k,
+        )
     except Exception as e:
         logger.error(f"Q&A failed for series {request.series_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate answer.")
