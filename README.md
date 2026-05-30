@@ -7,122 +7,161 @@ sdk: docker
 pinned: false
 ---
 
-# BookLens 📚
+# BookLens
 
-A single-user, spoiler-safe reading companion web app. Upload epubs, track reading progress by chapter, and ask natural language questions—the system only answers using content from chapters you've already read.
+A spoiler-safe reading companion for book series. Upload an EPUB, track your chapter, and chat with an AI that only knows what you've already read — powered by a per-series knowledge graph and hierarchical RAG retrieval.
 
-## 🎯 Core Features
+## Quick start
 
-- **Epub Ingestion**: Upload epub files, automatically parse and index chapters
-- **Series Management**: Organize books into series or track as standalones
-- **Progress Tracking**: Mark current chapter, track completion by book
-- **Spoiler-Safe Q&A**: Ask questions about the story—only get answers from chapters you've read
-- **Natural Language Search**: Semantic search powered by embeddings + LLM
+```bash
+# 1. Install deps
+poetry install
 
-## 🏗️ Tech Stack
+# 2. Configure secrets
+cp .env.example .env   # then fill in keys
 
-| Layer | Choice |
-|---|---|
-| Backend | FastAPI (Python) |
-| Epub Parsing | `ebooklib` + `beautifulsoup4` |
-| Embeddings | `sentence-transformers` (all-MiniLM-L6-v2) |
-| Vector DB | Qdrant Cloud (free tier) |
-| LLM | Claude API (claude-haiku-4-5) |
-| Frontend | Vanilla HTML/CSS/JS (single file) |
-| State | JSON file on disk |
-| Hosting | Render.com (free tier) |
+# 3. Start Neo4j (local dev)
+docker compose -f docker/docker-compose.neo4j.yml up -d
 
-## 📁 Project Structure
+# 4. Run the server
+poetry run uvicorn backend.main:app --reload
+# → http://localhost:8000
+```
+
+See [docs/SETUP.md](docs/SETUP.md) for full setup including Supabase and Neo4j.
+
+## Repo layout
 
 ```
 book-lens/
-├── src/                    # All application code
-│   ├── main.py            # FastAPI entry point
-│   ├── config.py          # Environment configuration
-│   ├── ingestion/         # Epub parsing, chunking, indexing
-│   ├── query/             # Retrieval + prompt building
-│   ├── library/           # Library state management
-│   └── static/            # Frontend HTML/CSS/JS
-├── docs/
-│   ├── meta-plan.md       # Development roadmap
-│   ├── progress/          # Phase completion reports
-│   ├── learnings/         # Domain-specific insights
-│   └── architecture/      # Architecture decision records
+├── backend/            # FastAPI backend (Python)
+│   ├── api/            # HTTP routers (library, books, query)
+│   ├── knowledge/      # KG queries, QA orchestrator, entity extractor
+│   ├── rag/            # Hierarchical chunking + pgvector retrieval
+│   ├── ingestion/      # EPUB parsing
+│   ├── library/        # Series/book CRUD
+│   ├── llm/            # Gemini client wrapper
+│   ├── config/         # Settings (pydantic-settings)
+│   └── main.py         # App entry point
+├── frontend/           # Alpine.js SPA (served as static by FastAPI)
+│   └── index.html
+├── db/                 # Supabase migrations
+│   └── migrations/
+├── docker/             # Dockerfile + docker-compose for Neo4j
+├── scripts/            # Dev-only ingestion & backfill scripts
+│   └── README.md       # What each script does
+├── docs/               # Architecture docs, setup guides, archived notebooks
+│   └── notebooks/      # Exploration notebooks (not maintained)
 ├── tests/
-│   ├── manual/            # Manual test scripts
-│   └── integration/       # End-to-end tests
-├── requirements.txt
-└── .env.example
+├── local/              # Machine-local only — gitignored
+│   ├── uploads/        # EPUB files
+│   └── data/           # Extraction outputs
+└── memory/             # Project memory docs for Claude
 ```
 
-## 🚀 Development Approach
+## Module map
 
-This project is being built **iteratively in phases** following industry best practices:
+| Module | Responsibility | Key entry points |
+|--------|---------------|-----------------|
+| `backend/api/query.py` | POST `/query` — chat endpoint | `query_knowledge_graph()` |
+| `backend/knowledge/qa.py` | Orchestrate retrieval + Gemini generation | `KnowledgeQA.ask()` |
+| `backend/knowledge/retriever.py` | Route to graph / vector / hybrid | `Retriever.retrieve()` |
+| `backend/rag/` | Hierarchical chunking + pgvector search | `ingest_book()`, `retrieve()` |
+| `backend/rag/node_store.py` | Supabase I/O for RAG nodes | `NodeStore` |
+| `backend/knowledge/query.py` | Neo4j KG queries (characters, facts) | `KnowledgeQueryEngine` |
+| `backend/knowledge/extraction_service.py` | EPUB → entities → Neo4j pipeline | `ExtractionService.extract()` |
+| `backend/ingestion/epub_parser.py` | Parse EPUB into chapters | `parse_epub()` |
+| `backend/library/manager.py` | Series/book library state | `get_series_by_id()` |
+| `frontend/index.html` | Alpine.js SPA | served at `/` |
+| `db/migrations/` | Supabase SQL migrations | run via Supabase CLI |
 
-1. **Phase 1**: Foundation + Epub Parsing
-2. **Phase 2**: Chunking Pipeline
-3. **Phase 3**: Vector Indexing (Qdrant)
-4. **Phase 4**: Library Manager + Basic API
-5. **Phase 5**: Query Engine
-6. **Phase 6**: Frontend + Polish
-7. **Phase 7**: Deployment (Optional)
+## Architecture
 
-Each phase includes:
-- ✅ Working, tested code
-- ✅ Validation against criteria
-- ✅ Documentation of learnings
-- ✅ No progression until current phase works
+### High-level system
 
-**See [docs/meta-plan.md](docs/meta-plan.md) for the complete development roadmap.**
-
-## 📖 Documentation
-
-- **[Meta-Plan](docs/meta-plan.md)**: Complete development roadmap and expert usage guide
-- **[Implementation Plan](docs/booklens_implementation_plan.md)**: Original detailed technical specification
-- **[Progress Reports](docs/progress/)**: Phase-by-phase completion status
-- **[Learnings](docs/learnings/)**: Domain-specific insights and gotchas
-- **[Architecture](docs/architecture/)**: Technical decision records
-
-## 🛠️ Setup
-
-### Quick Start
-
-```bash
-# 1. Set Python version (if using pyenv)
-pyenv local 3.11.14
-
-# 2. Install dependencies with Poetry
-poetry install
-
-# 3. Activate virtual environment
-poetry shell
-
-# 4. Copy and configure environment variables
-cp .env.example .env
-# Edit .env with your API keys
+```mermaid
+flowchart LR
+  user[Reader] -->|HTTPS| spa[frontend/ Alpine SPA]
+  spa -->|/query /library ...| api[backend/api FastAPI]
+  api --> qa[backend/knowledge KnowledgeQA]
+  qa --> rag[backend/rag retriever]
+  qa --> kg[backend/knowledge Neo4j queries]
+  rag --> pg[(Supabase pgvector\nbook_rag_*)]
+  kg --> neo[(Neo4j\nper-series graph)]
+  qa --> gemini[[Gemini\nanswer LLM]]
+  spa -.->|auth| supa[(Supabase Auth)]
 ```
 
-**See [docs/SETUP.md](docs/SETUP.md) for detailed setup instructions.**
+### Chat request flow
 
-### Development Tools
-
-- **Formatter**: Black (line-length: 100)
-- **Linter**: Ruff
-- **Type Checker**: Mypy (strict mode enabled)
-
-```bash
-poetry run black src/      # Format code
-poetry run ruff check src/ # Lint code
-poetry run mypy src/       # Type check
+```mermaid
+sequenceDiagram
+  participant U as SPA
+  participant A as backend/api/query.py
+  participant Q as KnowledgeQA
+  participant R as backend/rag.retrieve
+  participant G as KnowledgeQueryEngine
+  participant L as Gemini
+  U->>A: POST /query {series_id, question}
+  A->>A: resolve up_to_chapter from books table
+  A->>Q: ask(question, up_to_chapter, history)
+  Q->>R: retrieve(question, NodeStore, reader_chapter)
+  R-->>Q: prose passages
+  Q->>G: get_graph_context(question, up_to_chapter)
+  G-->>Q: character facts + chapter summaries
+  Q->>L: prompt(graph facts + passages + question)
+  L-->>Q: answer
+  Q-->>A: answer
+  A-->>U: {answer, sources}
 ```
 
-## 📊 Current Status
+### Book ingestion flow
 
-**Phase**: Not started
-**Last Updated**: 2026-04-11
+```mermaid
+flowchart TD
+  epub[EPUB upload] --> parse[backend/ingestion epub_parser]
+  parse --> chap[chapters]
+  chap --> rag_chunk[backend/rag.chunking\nbuild_nodes]
+  chap --> extract[backend/knowledge.extractor\nentities + relationships]
+  rag_chunk --> embed[backend/rag.embedder\nlocal bge-small]
+  embed --> store[(Supabase\nbook_rag_nodes + embeddings)]
+  extract --> dedupe[deduplicator]
+  dedupe --> neo[(Neo4j graph)]
+  extract --> gold[(Supabase Storage\ndeduped_chapters.json)]
+  gold -.->|summaries| embed
+```
 
-Check [docs/progress/](docs/progress/) for detailed phase completion reports.
+## Data stores
 
----
+| Store | What lives there | Key env vars |
+|-------|-----------------|--------------|
+| Supabase Postgres | Auth, library (books/series), RAG nodes (`book_rag_*`), legacy chunks (`book_chunks`) | `SUPABASE_URL`, `SUPABASE_KEY` |
+| Supabase Storage | Extracted chapter gold layer (`extractions/.../deduped_chapters.json`), book covers | same |
+| Neo4j | Per-series knowledge graph: characters, relationships, world facts, chapter summaries | `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` |
 
-*Built with Claude Code following iterative development best practices.*
+## External services
+
+| Service | Used for |
+|---------|---------|
+| **Gemini** (`google-genai`) | All answer generation in the app |
+| **Anthropic Claude Haiku** | Chapter summary fallback when no gold layer exists (ingestion only) |
+| **HuggingFace sentence-transformers** | Local embeddings — `BAAI/bge-small-en-v1.5` for prose chunks, `all-MiniLM-L6-v2` for KG character embeddings |
+
+## Common tasks
+
+| Task | Command |
+|------|---------|
+| Ingest a book (KG pipeline) | `poetry run python scripts/run_pipeline.py --epub local/uploads/... --series <slug>` |
+| Ingest a book (RAG vector index) | `poetry run python scripts/run_rag_ingest.py --epub ... --series ... --book-id ... --user-id ...` |
+| Re-seed dev Neo4j | `NEO4J_ENV=dev poetry run python scripts/run_kg_ingest.py --series ... --book-id ... --user-id ...` |
+| Ask a question (CLI) | `poetry run python scripts/ask.py --series ... --question "..."` |
+| Format / lint / type-check | `poetry run black backend/ && poetry run ruff check backend/ && poetry run mypy backend/` |
+| Deploy to HF Spaces | See [docs/deployment.md](docs/deployment.md) — push to the deploy repo, Spaces rebuilds from `docker/Dockerfile` |
+
+## Further reading
+
+- [docs/SETUP.md](docs/SETUP.md) — full local setup (env vars, Neo4j, Supabase schema)
+- [docs/KNOWLEDGE-QA.md](docs/KNOWLEDGE-QA.md) — how the Q&A pipeline works
+- [docs/KNOWLEDGE-GRAPH-SETUP.md](docs/KNOWLEDGE-GRAPH-SETUP.md) — Neo4j schema and entity model
+- [docs/MODEL-CONFIG.md](docs/MODEL-CONFIG.md) — how to swap models
+- [scripts/README.md](scripts/README.md) — what each script does and when to run it
