@@ -12,6 +12,21 @@ services:
       - neo4j_logs:/logs
     restart: unless-stopped
 
+  neo4j-dev:
+    image: neo4j:latest
+    container_name: booklens-neo4j-dev
+    ports:
+      - "7688:7687"   # Bolt on a different host port
+      - "7475:7474"   # Browser UI on a different host port
+    environment:
+      - NEO4J_AUTH=none
+    volumes:
+      - neo4j_dev_data:/data
+      - neo4j_dev_logs:/logs
+    restart: unless-stopped
+
 volumes:
   neo4j_data:
   neo4j_logs:
+  neo4j_dev_data:
+  neo4j_dev_logs:

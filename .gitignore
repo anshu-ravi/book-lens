@@ -355,3 +355,4 @@ uploads/
 library.json
 /knowledge/
 *.epub
+*.json

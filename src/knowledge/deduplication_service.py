@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any, Optional
 
+from src.knowledge.entity_normalizer import CanonicalRegistry
 from src.supabase_client import get_supabase_client
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ class DeduplicationService:
         self.book_id = book_id
         self.series_id = series_id
         self.client = get_supabase_client()
-        self.canonical_registry: dict[str, str] = {}
+        self.registry = CanonicalRegistry()
         self.pending_reveals: list[dict[str, Any]] = []
 
     async def deduplicate_book(self) -> None:
@@ -37,7 +38,7 @@ class DeduplicationService:
 
             # Load canonical registry for series
             await self._load_canonical_registry()
-            logger.info(f"Loaded canonical registry with {len(self.canonical_registry)} entries")
+            logger.info(f"Loaded canonical registry with {len(self.registry.to_dict())} entries")
 
             # Load raw extractions
             raw_extractions = await self._load_raw_extractions()
@@ -128,16 +129,11 @@ class DeduplicationService:
             Updated character dict with canonical name.
         """
         primary_name = char.get("name", "Unknown")
-        canonical_name = primary_name
+        canonical_name = self.registry.register(primary_name)
 
-        # Register primary name
-        self.canonical_registry[primary_name.lower()] = canonical_name
-
-        # Register aliases
+        # Register aliases so they resolve to the same canonical
         for alias in char.get("aliases", []):
-            alias_lower = alias.lower()
-            if alias_lower not in self.canonical_registry:
-                self.canonical_registry[alias_lower] = canonical_name
+            self.registry.register(alias)
 
         char["canonical_name"] = canonical_name
         return char
@@ -151,7 +147,7 @@ class DeduplicationService:
         Returns:
             Canonical name, or original if not found.
         """
-        return self.canonical_registry.get(name.lower(), name)
+        return self.registry.resolve(name)
 
     async def _load_canonical_registry(self) -> None:
         """Load canonical registry from storage (if exists)."""
@@ -160,9 +156,9 @@ class DeduplicationService:
                 f"extractions/{self.user_id}/{self.series_id}/canonical_registry.json"
             )
             content = self.client.storage.from_("extractions").download(registry_path)
-            self.canonical_registry = json.loads(content)
+            self.registry = CanonicalRegistry.from_dict(json.loads(content))
         except Exception:
-            self.canonical_registry = {}
+            self.registry = CanonicalRegistry()
 
     async def _load_raw_extractions(self) -> dict[str, Any]:
         """Load raw extractions for this book from storage.
@@ -223,7 +219,7 @@ class DeduplicationService:
                 pass
 
             # Upload registry
-            json_bytes = json.dumps(self.canonical_registry, indent=2).encode("utf-8")
+            json_bytes = json.dumps(self.registry.to_dict(), indent=2).encode("utf-8")
             self.client.storage.from_("extractions").upload(
                 path=registry_path,
                 file=json_bytes,

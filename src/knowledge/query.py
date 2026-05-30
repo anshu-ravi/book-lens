@@ -35,16 +35,18 @@ class KnowledgeQueryEngine:
             Character profile dict or None if not found.
         """
         with self.driver.session() as session:
-            # Find character by name or alias
+            # Find character by name or alias, gated by reader's chapter position
             result = session.run(
                 """
                 MATCH (c:Character {series_id: $series_id})
-                WHERE c.name = $name OR $name IN c.aliases
+                WHERE (c.name = $name OR $name IN c.aliases)
+                  AND c.first_chapter_index <= $up_to_chapter
                 RETURN c
                 LIMIT 1
                 """,
                 series_id=self.series_id,
                 name=name,
+                up_to_chapter=up_to_chapter,
             )
 
             char_record = result.single()
@@ -95,7 +97,7 @@ class KnowledgeQueryEngine:
                 """
                 MATCH (c:Character {series_id: $series_id})
                 WHERE c.name = $char_name OR $char_name IN c.aliases
-                MATCH (c)-[r]->(target:Character)
+                MATCH (c)-[r]-(target:Character)
                 WHERE r.introduced_in <= $up_to_chapter
                   AND TYPE(r) IN ['ALLY', 'ENEMY', 'FAMILY', 'ROMANCE', 'MENTOR', 'RIVAL', 'OTHER']
                 RETURN c.name as from,
@@ -114,31 +116,36 @@ class KnowledgeQueryEngine:
             return [dict(record) for record in result]
 
     def semantic_search(
-        self, query_text: str, up_to_chapter: int, top_k: int = 10
+        self, query_text: str, up_to_chapter: int, top_k: int = 10, min_score: float = 0.0
     ) -> list[dict[str, Any]]:
         """Semantic search for characters using vector similarity.
 
         Filters by:
         - First chapter introduction must be <= up_to_chapter
+        - Similarity score must be >= min_score
 
         Args:
             query_text: Search query.
             up_to_chapter: Only include characters visible by this chapter.
             top_k: Number of results to return.
+            min_score: Minimum cosine similarity score (0.0–1.0).
 
         Returns:
             List of (character_name, description, similarity_score) dicts.
         """
-        # Embed query
         query_embedding = self.embedder.embed(query_text)
 
         with self.driver.session() as session:
+            # Fetch 10x candidates from the vector index before applying the
+            # spoiler-gate WHERE filter — the index returns global top-k first,
+            # so early chapters get silently dropped without this headroom.
             result = session.run(
                 """
-                CALL db.index.vector.queryNodes('character_embeddings', $top_k, $query_embedding)
+                CALL db.index.vector.queryNodes('character_embeddings', $fetch_k, $query_embedding)
                 YIELD node, score
                 WHERE node.series_id = $series_id
                   AND node.first_chapter_index <= $up_to_chapter
+                  AND score >= $min_score
                 RETURN node.name as name,
                        node.description as description,
                        score
@@ -149,9 +156,98 @@ class KnowledgeQueryEngine:
                 query_embedding=query_embedding,
                 up_to_chapter=up_to_chapter,
                 top_k=top_k,
+                fetch_k=top_k * 10,
+                min_score=min_score,
             )
 
             return [dict(record) for record in result]
+
+    def _get_known_names(self, up_to_chapter: int) -> list[str]:
+        """Return all character names (and aliases) visible up to a chapter."""
+        with self.driver.session() as session:
+            result = session.run(
+                """
+                MATCH (c:Character {series_id: $series_id})
+                WHERE c.first_chapter_index <= $up_to_chapter
+                RETURN c.name as name, c.aliases as aliases
+                """,
+                series_id=self.series_id,
+                up_to_chapter=up_to_chapter,
+            )
+            names: list[str] = []
+            for record in result:
+                names.append(record["name"])
+                names.extend(record["aliases"] or [])
+            return names
+
+    def get_graph_context(
+        self, query_text: str, up_to_chapter: int, top_k: int = 5
+    ) -> str:
+        """Build a rich graph context string for answer generation.
+
+        Named characters found in the query are always included. Remaining
+        slots are filled by semantic search. Relationship edges between all
+        retrieved characters (both directions) are appended.
+
+        Args:
+            query_text: The user's question.
+            up_to_chapter: Spoiler gate.
+            top_k: Max total characters to include.
+
+        Returns:
+            Formatted context string ready to inject into a prompt.
+        """
+        query_lower = query_text.lower()
+
+        # Direct name match — always include characters explicitly named in the query
+        known_names = self._get_known_names(up_to_chapter)
+        named: list[dict[str, Any]] = []
+        named_set: set[str] = set()
+        for name in known_names:
+            if name.lower() in query_lower and name not in named_set:
+                char = self.get_character(name, up_to_chapter)
+                if char:
+                    named.append({"name": char["name"], "description": char.get("description", "")})
+                    named_set.add(char["name"])
+
+        # Fill remaining slots with semantic search
+        remaining = max(0, top_k - len(named))
+        semantic: list[dict[str, Any]] = []
+        if remaining > 0:
+            candidates = self.semantic_search(query_text, up_to_chapter, top_k=top_k)
+            for c in candidates:
+                if c["name"] not in named_set:
+                    semantic.append(c)
+                    if len(semantic) >= remaining:
+                        break
+
+        characters = named + semantic
+        if not characters:
+            return "No relevant characters found."
+
+        char_names = {c["name"] for c in characters}
+        lines: list[str] = []
+        for c in characters:
+            lines.append(f"{c['name']}: {c['description']}")
+
+        # Fetch relationships between retrieved characters in both directions
+        rel_lines: list[str] = []
+        seen: set[tuple[str, str, str]] = set()
+        for c in characters:
+            for rel in self.get_relationships(c["name"], up_to_chapter):
+                key = (c["name"], rel["rel_type"], rel["to"])
+                rev_key = (rel["to"], rel["rel_type"], c["name"])
+                if key not in seen and rev_key not in seen and rel["to"] in char_names:
+                    seen.add(key)
+                    rel_lines.append(
+                        f"{c['name']} —[{rel['rel_type']}]→ {rel['to']}: {rel['description']}"
+                    )
+
+        if rel_lines:
+            lines.append("\nRelationships:")
+            lines.extend(rel_lines)
+
+        return "\n".join(lines)
 
     def get_chapter_summary(self, chapter_index: int) -> Optional[str]:
         """Get summary for a specific chapter.

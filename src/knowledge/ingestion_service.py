@@ -11,6 +11,16 @@ from src.supabase_client import get_supabase_client
 logger = logging.getLogger(__name__)
 
 
+def _series_label(series_id: str) -> str:
+    """Convert a series slug to a valid Neo4j label (PascalCase, no hyphens).
+
+    "the-red-rising-saga" → "TheRedRisingSaga"
+    """
+    return "".join(
+        w.capitalize() for w in series_id.replace("-", " ").replace("_", " ").split()
+    )
+
+
 class IngestionService:
     """Ingest deduplicated knowledge into Neo4j."""
 
@@ -71,28 +81,29 @@ class IngestionService:
         extraction = chapter_data.get("extraction", {})
         chapter_label = chapter_data.get("chapter_label", f"Chapter {chapter_index}")
 
+        label = _series_label(self.series_id)
+
         with self.driver.session() as session:
             # Check if chapter already exists
             result = session.run(
-                "MATCH (ch:Chapter {name: $name, series_id: $series_id, book_id: $book_id}) RETURN ch",
+                f"MATCH (ch:Chapter:{label} {{name: $name, book_id: $book_id}}) RETURN ch",
                 name=chapter_label,
-                series_id=self.series_id,
                 book_id=self.book_id,
             )
             if result.single():
                 logger.info(f"Chapter {chapter_index} already ingested, skipping")
                 return
 
-            # Create Chapter node
+            # Create Chapter node with series label for structural isolation
             session.run(
-                """
-                CREATE (ch:Chapter {
+                f"""
+                CREATE (ch:Chapter:{label} {{
                     name: $name,
                     series_id: $series_id,
                     book_id: $book_id,
                     chapter_index: $index,
                     summary: $summary
-                })
+                }})
                 """,
                 name=chapter_label,
                 series_id=self.series_id,
@@ -122,24 +133,24 @@ class IngestionService:
             chapter_index: Chapter index.
         """
         name = char.get("canonical_name", char.get("name", "Unknown"))
+        label = _series_label(self.series_id)
 
-        # Check if character exists
+        # Check if character exists (scoped by series label)
         result = session.run(
-            "MATCH (c:Character {name: $name, series_id: $series_id}) RETURN c",
+            f"MATCH (c:Character:{label} {{name: $name}}) RETURN c",
             name=name,
-            series_id=self.series_id,
         )
 
         if result.single():
             return  # Character already exists
 
-        # Create character node with embedding
+        # Create character node with series label for structural isolation
         description = char.get("description", "")
         embedding = self.embedder.embed(description) if description else None
 
         session.run(
-            """
-            CREATE (c:Character {
+            f"""
+            CREATE (c:Character:{label} {{
                 name: $name,
                 series_id: $series_id,
                 aliases: $aliases,
@@ -147,7 +158,7 @@ class IngestionService:
                 description: $description,
                 embedding: $embedding,
                 first_chapter_index: $first_chapter
-            })
+            }})
             """,
             name=name,
             series_id=self.series_id,
@@ -172,15 +183,21 @@ class IngestionService:
         char_b = rel.get("character_b", "Unknown")
         rel_type = rel.get("type", "UNKNOWN")
         description = rel.get("description", "")
+        moments = rel.get("moments", [])
+        label = _series_label(self.series_id)
 
-        # Create relationship edge
+        # MERGE relationship — safe to re-run; appends unique moments on match
         cypher = f"""
-        MATCH (a:Character {{name: $char_a, series_id: $series_id}})
-        MATCH (b:Character {{name: $char_b, series_id: $series_id}})
-        CREATE (a)-[:{rel_type} {{
-            description: $description,
-            first_chapter: $first_chapter
-        }}]->(b)
+        MATCH (a:Character:{label} {{name: $char_a}})
+        MATCH (b:Character:{label} {{name: $char_b}})
+        MERGE (a)-[r:{rel_type}]->(b)
+        ON CREATE SET r.description = $description,
+                      r.introduced_in = $introduced_in,
+                      r.moments = $moments
+        ON MATCH SET  r.introduced_in = CASE
+                          WHEN $introduced_in < r.introduced_in
+                          THEN $introduced_in ELSE r.introduced_in END,
+                      r.moments = [x IN r.moments + $moments WHERE NOT x IN r.moments]
         """
 
         try:
@@ -188,12 +205,12 @@ class IngestionService:
                 cypher,
                 char_a=char_a,
                 char_b=char_b,
-                series_id=self.series_id,
                 description=description,
-                first_chapter=chapter_index,
+                introduced_in=chapter_index,
+                moments=moments,
             )
         except Exception as e:
-            logger.warning(f"Failed to create relationship {char_a}-{rel_type}-{char_b}: {e}")
+            logger.warning(f"Failed to merge relationship {char_a}-{rel_type}-{char_b}: {e}")
 
     async def _process_pending_reveals(self) -> None:
         """Process identity reveals (same character under different names)."""
