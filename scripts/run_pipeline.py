@@ -7,7 +7,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.knowledge.pipeline import KnowledgePipeline
+from backend.knowledge.pipeline import KnowledgePipeline
 
 
 def main() -> None:

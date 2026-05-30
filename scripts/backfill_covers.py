@@ -15,8 +15,8 @@ from pathlib import Path
 # Allow imports from src/
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import settings
-from src.ingestion.cover_extractor import extract_cover, fetch_cover_open_library
+from backend.config import settings
+from backend.ingestion.cover_extractor import extract_cover, fetch_cover_open_library
 
 
 def main() -> None:

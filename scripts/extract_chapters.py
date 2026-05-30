@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fpdf import FPDF
-from src.ingestion.epub_parser import parse_epub
+from backend.ingestion.epub_parser import parse_epub
 
 # Common typographic Unicode → ASCII substitutions
 _UNICODE_MAP = str.maketrans(

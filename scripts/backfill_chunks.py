@@ -3,9 +3,9 @@
 import asyncio
 import sys
 
-from src.ingestion.epub_parser import parse_epub
-from src.knowledge.chunk_store import ChunkStore
-from src.supabase_client import get_supabase_client
+from backend.ingestion.epub_parser import parse_epub
+from backend.knowledge.chunk_store import ChunkStore
+from backend.supabase_client import get_supabase_client
 
 # ── Book to backfill ──────────────────────────────────────────────────────────
 USER_ID = "d5203e02-a3d8-4b9b-ba4e-1b08c8ebdc46"

@@ -18,8 +18,8 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.config import ModelConfig
-from src.supabase_client import get_supabase_client
+from backend.config import ModelConfig
+from backend.supabase_client import get_supabase_client
 from google import genai
 
 logging.basicConfig(

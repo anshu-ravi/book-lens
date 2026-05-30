@@ -6,7 +6,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from src.knowledge.query import KnowledgeQueryEngine
+from backend.knowledge.query import KnowledgeQueryEngine
 
 
 def main() -> None:

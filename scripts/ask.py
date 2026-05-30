@@ -7,7 +7,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from src.knowledge.qa import KnowledgeQA
+from backend.knowledge.qa import KnowledgeQA
 
 
 async def main() -> None:

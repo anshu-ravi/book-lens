@@ -16,9 +16,9 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.knowledge.extraction_service import ExtractionService
-from src.models import Chapter
-from src.supabase_client import get_supabase_client
+from backend.knowledge.extraction_service import ExtractionService
+from backend.models import Chapter
+from backend.supabase_client import get_supabase_client
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

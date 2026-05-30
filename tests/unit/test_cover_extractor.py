@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import ebooklib
 import pytest
 
-from src.ingestion.cover_extractor import extract_cover
+from backend.ingestion.cover_extractor import extract_cover
 
 
 def _make_item(

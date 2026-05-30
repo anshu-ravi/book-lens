@@ -7,8 +7,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.knowledge.extractor import Extractor
-from src.ingestion.epub_parser import parse_epub
+from backend.knowledge.extractor import Extractor
+from backend.ingestion.epub_parser import parse_epub
 
 
 def main() -> None:

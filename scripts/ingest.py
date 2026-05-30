@@ -6,8 +6,8 @@ import sys
 
 from dotenv import load_dotenv
 
-from src.knowledge.deduplicator import Deduplicator
-from src.knowledge.ingestor import Ingestor
+from backend.knowledge.deduplicator import Deduplicator
+from backend.knowledge.ingestor import Ingestor
 
 
 def main() -> None:
