@@ -355,3 +355,7 @@ local/
 library.json
 /knowledge/
 *.epub
+
+# SvelteKit
+frontend-svelte/.svelte-kit/
+frontend-svelte/build/
