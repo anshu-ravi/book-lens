@@ -71,7 +71,7 @@ Respond with a single JSON object, no other text, shaped exactly like this:
       ],
       "aliases": [
         {
-          "other_designator": "<string, a designator this one corefers with>",
+          "other_designator": "<string, the designator of ANOTHER entity>",
           "edge_type": "stated" | "inferable",
           "cite_para_id": <int, in this chapter>
         }
@@ -79,6 +79,16 @@ Respond with a single JSON object, no other text, shaped exactly like this:
     }
   ]
 }
+
+An alias records that two designators denote the same entity, so a later
+chapter's reveal can connect to an earlier chapter's name. other_designator
+MUST be the exact designator of another entity in this same response's
+entities array, or a designator already present in the prior registry you
+were given. Pronouns ("I", "he", "she", "they") and bare descriptive phrases
+("my wife", "the older man") are not designators and must never appear as
+other_designator. If you intend to link two surface forms of the same
+character, emit BOTH as their own entries in entities and alias them to each
+other. An entity that merely appears in first person needs no alias at all.
 
 Only cite paragraph ids that appear in this chapter's input. Only report entities,
 attributes, and aliases that are stated or clearly inferable from this chapter's

@@ -331,6 +331,84 @@ def test_malformed_response_raises_and_writes_nothing(iconn):
     assert not ch_dir.is_dir() or list(ch_dir.iterdir()) == []
 
 
+def test_malformed_first_response_rerolls_and_succeeds_on_second(iconn):
+    """A stochastic formatting slip on attempt 1 should not kill the run -- attempt 2
+    reuses the same prompt and, if it parses and validates, the chapter completes."""
+    _seed_book(iconn)
+    good = _auto_responder()
+    seen_chapter_0 = {"count": 0}
+
+    def responder(messages, system):
+        payload = json.loads(messages[0].content)
+        if payload.get("chapter_label") == "Chapter 0":
+            seen_chapter_0["count"] += 1
+            if seen_chapter_0["count"] == 1:
+                return "not valid json, malformed on purpose"
+        return good(messages, system)
+
+    llm = FakeLLM(responder=responder)
+    result = passes.run_chapter_pass(iconn, llm, "b1")
+
+    assert result.chapters_processed == NUM_CHAPTERS
+    assert result.rerolls == 1
+    assert seen_chapter_0["count"] == 2  # the model was actually called again, not just re-parsed
+
+    rows = iconn.execute(
+        "SELECT * FROM digest WHERE book_id='b1' AND level='chapter' AND chapter_idx=0"
+    ).fetchall()
+    assert len(rows) == 1  # exactly one digest written for the chapter, not a partial + a retry
+
+
+def test_chapter_failing_twice_raises_and_writes_nothing(iconn):
+    _seed_book(iconn)
+
+    def always_bad(messages, system):
+        return "not valid json, malformed on purpose"
+
+    llm = FakeLLM(responder=always_bad)
+    with pytest.raises(ValueError):
+        passes.run_chapter_pass(iconn, llm, "b1")
+
+    assert iconn.execute("SELECT 1 FROM digest WHERE book_id='b1'").fetchone() is None
+    assert len(llm.calls) == 2  # both attempts actually called the model
+
+
+def test_run_with_no_failures_reports_zero_rerolls(iconn):
+    _seed_book(iconn)
+    llm = FakeLLM(responder=_auto_responder())
+    result = passes.run_chapter_pass(iconn, llm, "b1")
+    assert result.rerolls == 0
+
+
+def test_alias_to_unknown_designator_rerolls_then_raises_if_still_bad(iconn):
+    """_insert_entities' coreference check is a ValueError too, so it must trigger a re-roll."""
+    _seed_book(iconn)
+    call_count = {"n": 0}
+
+    def responder(messages, system):
+        call_count["n"] += 1
+        payload = json.loads(messages[0].content)
+        first_para_id = payload["paragraphs"][0]["para_id"]
+        entities = [
+            {
+                "designator": "Beta",
+                "node_kind": "named",
+                "cite_para_id": first_para_id,
+                "aliases": [
+                    {"other_designator": "NeverIntroduced", "edge_type": "stated", "cite_para_id": first_para_id}
+                ],
+            }
+        ]
+        return json.dumps({"digest_markdown": VALID_CHAPTER_DIGEST_MD, "entities": entities})
+
+    llm = FakeLLM(responder=responder)
+    with pytest.raises(ValueError):
+        passes.run_chapter_pass(iconn, llm, "b1")
+
+    assert call_count["n"] == 2
+    assert iconn.execute("SELECT 1 FROM entity_node WHERE book_id='b1'").fetchone() is None
+
+
 def test_malformed_response_preserves_earlier_chapters(iconn):
     _seed_book(iconn)
     good = _auto_responder()

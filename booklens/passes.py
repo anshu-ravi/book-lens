@@ -56,6 +56,7 @@ class PassResult:
     edges_created: int = 0
     attrs_created: int = 0
     calls_made: int = 0
+    rerolls: int = 0
 
 
 def _now() -> str:
@@ -273,37 +274,50 @@ def run_chapter_pass(
             registry=registry,
             paragraphs=paragraphs,
         )
-        response = llm.complete(bundle.messages, system=bundle.system)
-        result.calls_made += 1
-
-        # Parse before touching disk or the DB -- a malformed response must
-        # leave nothing behind, not a half-written chapter.
-        extraction = prompts.parse_chapter_response(response.text, valid_para_ids=para_ids)
-
         digest_path = paths.digests_dir(sha256) / "ch" / f"{chapter_idx:04d}.md"
 
-        if existing is not None:
-            _delete_digest(iconn, book_id, "chapter", chapter_idx, None)
-            _delete_chapter_entities(iconn, book_id, sorted(para_ids))
+        # A malformed or unvalidatable response is retried once with a fresh
+        # model call, since these are stochastic formatting slips, not
+        # deterministic ones. Any other exception (budget, transport) is not
+        # a candidate for retry and propagates immediately.
+        max_attempts = 2
+        for attempt in range(1, max_attempts + 1):
+            response = llm.complete(bundle.messages, system=bundle.system)
+            result.calls_made += 1
+            try:
+                extraction = prompts.parse_chapter_response(response.text, valid_para_ids=para_ids)
 
-        try:
-            nodes, edges, attrs = _insert_entities(iconn, book_id, ch["end_seq"], extraction.entities)
-            _insert_digest_row(
-                iconn,
-                book_id=book_id,
-                level="chapter",
-                chapter_idx=chapter_idx,
-                part_label=None,
-                source_start_seq=ch["start_seq"],
-                source_end_seq=ch["end_seq"],
-                path=str(digest_path),
-                generator=getattr(llm, "model", "unknown"),
-                prompt_hash=bundle.prompt_hash,
-            )
-            _write_digest_file(digest_path, extraction.digest_markdown)
-        except Exception:
-            iconn.rollback()
-            raise
+                if existing is not None:
+                    _delete_digest(iconn, book_id, "chapter", chapter_idx, None)
+                    _delete_chapter_entities(iconn, book_id, sorted(para_ids))
+
+                nodes, edges, attrs = _insert_entities(iconn, book_id, ch["end_seq"], extraction.entities)
+                _insert_digest_row(
+                    iconn,
+                    book_id=book_id,
+                    level="chapter",
+                    chapter_idx=chapter_idx,
+                    part_label=None,
+                    source_start_seq=ch["start_seq"],
+                    source_end_seq=ch["end_seq"],
+                    path=str(digest_path),
+                    generator=getattr(llm, "model", "unknown"),
+                    prompt_hash=bundle.prompt_hash,
+                )
+                _write_digest_file(digest_path, extraction.digest_markdown)
+            except Exception as exc:
+                # Roll back before the retry so a partially-written first
+                # attempt can never bleed into the second.
+                iconn.rollback()
+                if isinstance(exc, ValueError) and attempt < max_attempts:
+                    result.rerolls += 1
+                    logger.warning(
+                        "chapter %s (%r) failed on attempt %d, retrying: %s",
+                        chapter_idx, ch["label"], attempt, exc,
+                    )
+                    continue
+                raise
+            break
         iconn.commit()
 
         result.chapters_processed += 1
@@ -327,8 +341,12 @@ def _rollup_one(
     target_label: str,
     source_rows: list[sqlite3.Row],
     digest_path: Path,
-) -> None:
-    """Build one part or book digest from its source digests' markdown, never raw text."""
+) -> int:
+    """Build one part or book digest from its source digests' markdown, never raw text.
+
+    Retries once on a malformed/unvalidatable response, same as the chapter
+    pass; returns the number of re-rolls it took (0 or 1).
+    """
     source_digests = [_read_digest_file(r["path"]) for r in source_rows]
     source_start_seq = min(r["source_start_seq"] for r in source_rows)
     source_end_seq = max(r["source_end_seq"] for r in source_rows)
@@ -336,28 +354,40 @@ def _rollup_one(
     bundle = prompts.build_rollup_prompt(
         book_id=book_id, level=level, target_label=target_label, source_digests=source_digests
     )
-    response = llm.complete(bundle.messages, system=bundle.system)
-    digest_markdown = prompts.parse_rollup_response(response.text)
 
-    _delete_digest(iconn, book_id, level, chapter_idx, part_label)
-    try:
-        _insert_digest_row(
-            iconn,
-            book_id=book_id,
-            level=level,
-            chapter_idx=chapter_idx,
-            part_label=part_label,
-            source_start_seq=source_start_seq,
-            source_end_seq=source_end_seq,
-            path=str(digest_path),
-            generator=getattr(llm, "model", "unknown"),
-            prompt_hash=bundle.prompt_hash,
-        )
-        _write_digest_file(digest_path, digest_markdown)
-    except Exception:
-        iconn.rollback()
-        raise
+    max_attempts = 2
+    rerolls = 0
+    for attempt in range(1, max_attempts + 1):
+        response = llm.complete(bundle.messages, system=bundle.system)
+        try:
+            digest_markdown = prompts.parse_rollup_response(response.text)
+
+            _delete_digest(iconn, book_id, level, chapter_idx, part_label)
+            _insert_digest_row(
+                iconn,
+                book_id=book_id,
+                level=level,
+                chapter_idx=chapter_idx,
+                part_label=part_label,
+                source_start_seq=source_start_seq,
+                source_end_seq=source_end_seq,
+                path=str(digest_path),
+                generator=getattr(llm, "model", "unknown"),
+                prompt_hash=bundle.prompt_hash,
+            )
+            _write_digest_file(digest_path, digest_markdown)
+        except Exception as exc:
+            iconn.rollback()
+            if isinstance(exc, ValueError) and attempt < max_attempts:
+                rerolls += 1
+                logger.warning(
+                    "rollup %s/%r failed on attempt %d, retrying: %s", level, target_label, attempt, exc
+                )
+                continue
+            raise
+        break
     iconn.commit()
+    return rerolls
 
 
 def run_rollups(
@@ -390,7 +420,7 @@ def run_rollups(
     for part_label in part_labels:
         rows = [r for r in chapter_digests if r["part_label"] == part_label]
         digest_path = paths.digests_dir(sha256) / "part" / f"{_slugify_part(part_label)}.md"
-        _rollup_one(
+        rerolls = _rollup_one(
             iconn,
             llm,
             book_id=book_id,
@@ -401,7 +431,8 @@ def run_rollups(
             source_rows=rows,
             digest_path=digest_path,
         )
-        result.calls_made += 1
+        result.calls_made += rerolls + 1
+        result.rerolls += rerolls
         result.digests_written += 1
         row = _existing_digest(iconn, book_id, "part", None, part_label)
         part_digest_rows.append(row)
@@ -410,7 +441,7 @@ def run_rollups(
     book_source_rows = part_digest_rows if part_digest_rows else chapter_digests
     if book_source_rows:
         digest_path = paths.digests_dir(sha256) / "book.md"
-        _rollup_one(
+        rerolls = _rollup_one(
             iconn,
             llm,
             book_id=book_id,
@@ -421,7 +452,8 @@ def run_rollups(
             source_rows=book_source_rows,
             digest_path=digest_path,
         )
-        result.calls_made += 1
+        result.calls_made += rerolls + 1
+        result.rerolls += rerolls
         result.digests_written += 1
         _report(on_progress, ProgressEvent(level="book", label=book_id, skipped=False))
 
@@ -449,4 +481,5 @@ def run_book(
         edges_created=chapter_result.edges_created,
         attrs_created=chapter_result.attrs_created,
         calls_made=chapter_result.calls_made + rollup_result.calls_made,
+        rerolls=chapter_result.rerolls + rollup_result.rerolls,
     )

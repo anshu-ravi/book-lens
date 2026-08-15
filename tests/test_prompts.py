@@ -95,6 +95,23 @@ def test_chapter_and_rollup_prompt_hashes_differ():
     assert prompts.CHAPTER_PROMPT_HASH != prompts.ROLLUP_PROMPT_HASH
 
 
+def test_chapter_template_requires_other_designator_to_be_a_real_entity():
+    template = prompts._CHAPTER_SYSTEM_TEMPLATE
+    assert "entities array" in template
+    assert "prior registry" in template
+
+
+def test_chapter_template_forbids_pronouns_and_descriptive_phrases_as_aliases():
+    template = prompts._CHAPTER_SYSTEM_TEMPLATE
+    assert '"I"' in template
+    assert "not designators" in template
+
+
+def test_chapter_template_explains_what_aliases_are_for():
+    template = prompts._CHAPTER_SYSTEM_TEMPLATE
+    assert "same entity" in template
+
+
 # -- chapter response parsing --------------------------------------------------
 
 

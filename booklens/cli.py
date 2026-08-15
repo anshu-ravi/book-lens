@@ -125,7 +125,8 @@ def cmd_digest(args: argparse.Namespace) -> int:
     print(f"chapters_processed={result.chapters_processed} chapters_skipped={result.chapters_skipped}")
     print(f"digests_written={result.digests_written} entities_created={result.entities_created} "
           f"edges_created={result.edges_created} attrs_created={result.attrs_created}")
-    print(f"calls_made={llm.calls_made} tokens_used={llm.tokens_used} cost_usd={llm.cost_usd:.4f}")
+    print(f"calls_made={llm.calls_made} rerolls={result.rerolls} tokens_used={llm.tokens_used} "
+          f"cost_usd={llm.cost_usd:.4f}")
     return 0
 
 
