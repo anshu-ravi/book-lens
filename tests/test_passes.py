@@ -67,9 +67,13 @@ def _seed_book(iconn, book_id="b1", book_order=1, with_front=False, part_labels=
     return next_idx  # index of the first body chapter
 
 
-VALID_DIGEST_MD = (
-    "---\nseq: 1 | book: x | label: \"x\" | pov: x | location: x\n"
-    "entities: []\nintroduces: []\nsource_paras: [1, 2]\n---\n"
+VALID_CHAPTER_DIGEST_MD = (
+    "---\nbook_id: x\nchapter_idx: 0\nchapter_label: x\npart_label: x\n---\n"
+    "## Events\n- invented\n## State changes\n- invented\n## Open questions\n- invented\n"
+)
+
+VALID_ROLLUP_DIGEST_MD = (
+    "---\nbook_id: x\nlevel: part\ntarget_label: x\n---\n"
     "## Events\n- invented\n## State changes\n- invented\n## Open questions\n- invented\n"
 )
 
@@ -96,9 +100,9 @@ def _auto_responder(entities_by_chapter_label=None):
                     a.setdefault("cite_para_id", first_para_id)
                 for al in e.get("aliases", []):
                     al.setdefault("cite_para_id", first_para_id)
-            return json.dumps({"digest_markdown": VALID_DIGEST_MD, "entities": entities})
+            return json.dumps({"digest_markdown": VALID_CHAPTER_DIGEST_MD, "entities": entities})
         else:
-            return json.dumps({"digest_markdown": VALID_DIGEST_MD})
+            return json.dumps({"digest_markdown": VALID_ROLLUP_DIGEST_MD})
 
     return responder
 
@@ -138,7 +142,7 @@ def test_run_chapter_pass_writes_one_digest_per_chapter(iconn):
         from pathlib import Path
 
         assert Path(r["path"]).is_file()
-        assert Path(r["path"]).read_text() == VALID_DIGEST_MD
+        assert Path(r["path"]).read_text() == VALID_CHAPTER_DIGEST_MD
         assert r["schema_version"] == db.SCHEMA_VERSION
         assert r["prompt_hash"] == prompts.CHAPTER_PROMPT_HASH
 
@@ -297,7 +301,7 @@ def test_changed_prompt_hash_marks_exactly_those_chapters_stale(iconn, monkeypat
     def responder2(messages, system):
         payload = json.loads(messages[0].content)
         first_para_id = payload["paragraphs"][0]["para_id"]
-        return json.dumps({"digest_markdown": VALID_DIGEST_MD, "entities": []})
+        return json.dumps({"digest_markdown": VALID_CHAPTER_DIGEST_MD, "entities": []})
 
     llm2 = FakeLLM(responder=responder2)
     result = passes.run_chapter_pass(iconn, llm2, "b1", resume=True)

@@ -90,9 +90,13 @@ def _seed_two_book_series(iconn):
     return books
 
 
-VALID_DIGEST_MD = (
-    "---\nseq: 1 | book: x | label: \"x\" | pov: x | location: x\n"
-    "entities: []\nintroduces: []\nsource_paras: [1, 2]\n---\n"
+VALID_CHAPTER_DIGEST_MD = (
+    "---\nbook_id: x\nchapter_idx: 0\nchapter_label: x\npart_label: x\n---\n"
+    "## Events\n- invented\n## State changes\n- invented\n## Open questions\n- invented\n"
+)
+
+VALID_ROLLUP_DIGEST_MD = (
+    "---\nbook_id: x\nlevel: part\ntarget_label: x\n---\n"
     "## Events\n- invented\n## State changes\n- invented\n## Open questions\n- invented\n"
 )
 
@@ -102,8 +106,8 @@ def _responder(messages, system):
     entities, so this fixture stays focused purely on text leakage, not entity logic."""
     payload = json.loads(messages[0].content)
     if "paragraphs" in payload:
-        return json.dumps({"digest_markdown": VALID_DIGEST_MD, "entities": []})
-    return json.dumps({"digest_markdown": VALID_DIGEST_MD})
+        return json.dumps({"digest_markdown": VALID_CHAPTER_DIGEST_MD, "entities": []})
+    return json.dumps({"digest_markdown": VALID_ROLLUP_DIGEST_MD})
 
 
 @pytest.fixture

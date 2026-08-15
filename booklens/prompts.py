@@ -17,6 +17,9 @@ _VALID_EDGE_TYPES = {"stated", "inferable"}
 
 _DIGEST_SECTION_HEADERS = ("## Events", "## State changes", "## Open questions")
 
+_CHAPTER_FRONT_MATTER_KEYS = ("book_id", "chapter_idx", "chapter_label", "part_label")
+_ROLLUP_FRONT_MATTER_KEYS = ("book_id", "level", "target_label")
+
 _CHAPTER_SYSTEM_TEMPLATE = """\
 You are building a spoiler-safe digest of one chapter for a reading companion app.
 
@@ -42,10 +45,21 @@ Hard limits on digest_markdown, regardless of chapter length:
 - The entire digest body (everything after the front matter) must stay under
   roughly 250 words, no matter how long or eventful the chapter was.
 
+The digest_markdown front matter is exactly these four fields, in this order,
+delimited by "---" lines, copied from the values given to you in the user
+payload -- do not decide their values and do not invent any other field:
+
+---
+book_id: <the book_id given to you>
+chapter_idx: <the chapter_idx given to you>
+chapter_label: <the chapter_label given to you>
+part_label: <the part_label given to you>
+---
+
 Respond with a single JSON object, no other text, shaped exactly like this:
 
 {
-  "digest_markdown": "<a markdown digest with YAML-ish front matter followed by "
+  "digest_markdown": "<the front matter above, followed by "
                       "'## Events', '## State changes', and '## Open questions' sections>",
   "entities": [
     {
@@ -85,10 +99,21 @@ of how many source digests you were given: at most 5 bullets under
 "## Open questions", each a short clause rather than a full sentence, and the
 entire digest body under roughly 250 words.
 
+The digest_markdown front matter is exactly these three fields, in this order,
+delimited by "---" lines, copied from the values given to you in the user
+payload -- do not decide their values and do not invent any other field. Note
+there is no single chapter_idx at this level; do not include one.
+
+---
+book_id: <the book_id given to you>
+level: <the level given to you>
+target_label: <the target_label given to you>
+---
+
 Respond with a single JSON object, no other text, shaped exactly like this:
 
 {
-  "digest_markdown": "<a markdown digest with YAML-ish front matter followed by "
+  "digest_markdown": "<the front matter above, followed by "
                       "'## Events', '## State changes', and '## Open questions' sections>"
 }
 """
@@ -225,10 +250,32 @@ def _require_cite(cite_para_id: int, valid_para_ids: set[int], where: str) -> No
         )
 
 
-def _validate_digest_markdown(markdown: str, where: str) -> None:
+def _validate_digest_markdown(markdown: str, where: str, front_matter_keys: tuple[str, ...]) -> None:
+    """Check the required '## ...' sections and the exact front-matter key set for this digest kind."""
     for header in _DIGEST_SECTION_HEADERS:
         if header not in markdown:
             raise ValueError(f"{where}: digest_markdown is missing required section {header!r}")
+
+    parts = markdown.split("---", 2)
+    if len(parts) < 3:
+        raise ValueError(f"{where}: digest_markdown is missing '---'-delimited front matter")
+    front_matter = parts[1]
+
+    found_keys = []
+    for line in front_matter.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        key = line.split(":", 1)[0].strip()
+        found_keys.append(key)
+
+    missing = [k for k in front_matter_keys if k not in found_keys]
+    extra = [k for k in found_keys if k not in front_matter_keys]
+    if missing or extra:
+        raise ValueError(
+            f"{where}: front matter keys must be exactly {list(front_matter_keys)}, "
+            f"got {found_keys!r} (missing {missing!r}, extra {extra!r})"
+        )
 
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", re.DOTALL)
@@ -254,14 +301,17 @@ def parse_chapter_response(raw_text: str, *, valid_para_ids: set[int]) -> Chapte
     silently move on and the gap would be invisible.
     """
     try:
-        obj = json.loads(_strip_code_fence(raw_text))
+        # strict=False: the digest_markdown value is a multi-line markdown document
+        # and models don't always escape embedded newlines as \n. Every structural,
+        # type, and citation check below still runs unchanged on the parsed object.
+        obj = json.loads(_strip_code_fence(raw_text), strict=False)
     except json.JSONDecodeError as exc:
         raise ValueError(f"chapter response is not valid JSON: {exc}") from exc
     if not isinstance(obj, dict):
         raise ValueError(f"chapter response must be a JSON object, got {type(obj).__name__}")
 
     digest_markdown = _require_str(obj, "digest_markdown", "chapter response")
-    _validate_digest_markdown(digest_markdown, "chapter response")
+    _validate_digest_markdown(digest_markdown, "chapter response", _CHAPTER_FRONT_MATTER_KEYS)
 
     raw_entities = obj.get("entities")
     if not isinstance(raw_entities, list):
@@ -321,12 +371,12 @@ def parse_chapter_response(raw_text: str, *, valid_para_ids: set[int]) -> Chapte
 def parse_rollup_response(raw_text: str) -> str:
     """Strictly parse a rollup call's JSON response, returning the digest markdown body."""
     try:
-        obj = json.loads(_strip_code_fence(raw_text))
+        obj = json.loads(_strip_code_fence(raw_text), strict=False)
     except json.JSONDecodeError as exc:
         raise ValueError(f"rollup response is not valid JSON: {exc}") from exc
     if not isinstance(obj, dict):
         raise ValueError(f"rollup response must be a JSON object, got {type(obj).__name__}")
 
     digest_markdown = _require_str(obj, "digest_markdown", "rollup response")
-    _validate_digest_markdown(digest_markdown, "rollup response")
+    _validate_digest_markdown(digest_markdown, "rollup response", _ROLLUP_FRONT_MATTER_KEYS)
     return digest_markdown
