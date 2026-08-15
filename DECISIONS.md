@@ -106,6 +106,30 @@ SEVRO AU BARCA/GOBLIN           → alias pair, stated
 
 **Rule:** where a cast list exists, seed the identity graph from it and let the progressive pass extend it. Where none exists, fall back to extraction only. Red Rising books 2 and 3 both ship one, so the dev corpus exercises both paths.
 
+### Back matter is a spoiler hazard: one EPUB is not one book's text
+
+**Decision:** classify every chapter as `body`, `front`, or `excerpt` at ingest, and have the tool layer filter `kind != 'excerpt'` in the SQL `WHERE` clause alongside the cutoff. Excerpt text is never served, at any ceiling, ever.
+
+**Why — found empirically during Phase 0, not anticipated by the original design.** Publisher back matter embeds the opening chapters of the *next* book. Measured across the dev corpus:
+
+| EPUB | Trailing chapter | Paragraphs of another book |
+|---|---|---|
+| Red Rising | `Excerpt from Golden Son` | 146 |
+| Golden Son | `Excerpt from Morning Star` | 23 |
+| Morning Star | `Excerpt from Iron Gold` | 884 |
+
+Because `global_seq = book_order * 1_000_000 + spine_idx * 1000 + para_idx`, that text sits at the **top of the current book's own range**. So a reader who marks "finished Red Rising" gets a ceiling that makes Golden Son's opening chapters fully searchable, citable, and quotable — a direct violation of the one invariant, produced by correct seq arithmetic over a wrong assumption.
+
+**The wrong assumption was that one EPUB contains one book's text.** It contains one book's text plus advertising for the next one. Note that Morning Star carries 884 paragraphs of *Iron Gold* — this is not a token teaser, it is a substantial chunk of a later volume sitting below the ceiling of anyone who finished the book.
+
+**Contrast with front matter, deliberately.** The decision immediately above says front matter is seed data and must not be quarantined, because publishers place it to be read first. Back matter is the mirror image: publishers place it to be read *last*, and specifically to make you want the next book. Same structural argument, opposite conclusion. The two decisions are consistent, not in tension.
+
+**Rule:** a trailing run of chapters whose label matches an excerpt pattern is `excerpt`, and once one is found, every subsequent chapter is also `excerpt` — publishers follow a preview with ads, reading-list pages, and sometimes further previews.
+
+**Bias toward over-exclusion.** Wrongly hiding real text is a visible bug someone reports; wrongly serving the next book's opening is a silent spoiler nobody catches. Ingest prints what it quarantined so a misclassification is obvious to the operator.
+
+**[open]** — classification is by chapter label plus trailing position. This is sufficient and testable on the dev corpus, but a book whose back matter is unlabelled would defeat it. Revisit if a real file does that.
+
 ### Parser gotchas observed in real files
 
 - **Parse the OPF with a real XML parser, never regex.** Attribute order is not guaranteed — a pattern assuming `id` precedes `href` silently fails on files that emit `href` first.
