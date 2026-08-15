@@ -158,6 +158,7 @@ def test_completion_shuts_down_the_agent_loop(monkeypatch):
     # [] means isolation; None would mean "load everything" (CLI default) - the opposite intent.
     assert options.setting_sources == []
     assert options.skills == []
+    assert options.thinking == {"type": "disabled"}
 
 
 def test_successful_completion_concatenates_text_blocks_and_reads_usage(monkeypatch):

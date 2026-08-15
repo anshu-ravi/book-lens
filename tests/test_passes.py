@@ -432,6 +432,51 @@ def test_run_book_runs_chapter_pass_then_rollups(iconn):
     assert iconn.execute("SELECT 1 FROM digest WHERE book_id='b1' AND level='part'").fetchone() is not None
 
 
+# -- on_progress callback ----------------------------------------------------------
+
+
+def test_on_progress_fires_once_per_processed_chapter_and_rollup(iconn):
+    _seed_book(iconn, part_labels=["Part One", "Part One", "Part Two"])
+    llm = FakeLLM(responder=_auto_responder())
+    events = []
+    passes.run_book(iconn, llm, "b1", on_progress=events.append)
+
+    chapter_events = [e for e in events if e.level == "chapter"]
+    part_events = [e for e in events if e.level == "part"]
+    book_events = [e for e in events if e.level == "book"]
+    assert len(chapter_events) == NUM_CHAPTERS
+    assert all(not e.skipped for e in chapter_events)
+    assert {e.label for e in part_events} == {"Part One", "Part Two"}
+    assert len(book_events) == 1
+
+
+def test_on_progress_reports_resumed_chapters_as_skipped(iconn):
+    _seed_book(iconn)
+    llm = FakeLLM(responder=_auto_responder())
+    passes.run_chapter_pass(iconn, llm, "b1")
+
+    llm2 = FakeLLM(responder=_auto_responder())
+    events = []
+    passes.run_chapter_pass(iconn, llm2, "b1", resume=True, on_progress=events.append)
+
+    assert len(events) == NUM_CHAPTERS
+    assert all(e.skipped for e in events)
+
+
+def test_on_progress_exception_does_not_abort_the_pass_or_lose_digests(iconn):
+    _seed_book(iconn)
+    llm = FakeLLM(responder=_auto_responder())
+
+    def bad_callback(event):
+        raise RuntimeError("operator's printer is on fire")
+
+    result = passes.run_chapter_pass(iconn, llm, "b1", on_progress=bad_callback)
+
+    assert result.chapters_processed == NUM_CHAPTERS
+    rows = iconn.execute("SELECT COUNT(*) c FROM digest WHERE book_id='b1' AND level='chapter'").fetchone()
+    assert rows["c"] == NUM_CHAPTERS
+
+
 def test_run_book_resume_true_skips_completed_and_still_refreshes_rollups(iconn):
     _seed_book(iconn)
     llm = FakeLLM(responder=_auto_responder())

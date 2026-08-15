@@ -10,7 +10,9 @@ import json
 import pytest
 
 from booklens import cli
+from booklens.llm.fake import FakeLLM
 from tests.test_ingest import _simple_epub, _with_excerpt_epub
+from tests.test_passes import _auto_responder
 
 
 @pytest.fixture
@@ -230,3 +232,97 @@ def test_cast_is_stub(data_dir, capsys):
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     assert out["cast"] == []
+
+
+# -- digest -----------------------------------------------------------------
+
+
+def test_digest_default_provider_is_fake_and_fails_cleanly_without_a_traceback(data_dir, capsys):
+    """The default fake provider has no scripted response, so the pass fails on unparseable
+    output -- but it must fail with a clean message, never a traceback, and never call the SDK."""
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    rc = _run(["digest", "sample-book"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error" in err.lower()
+
+
+def test_digest_runs_book_and_reports_progress(data_dir, capsys, monkeypatch):
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "get_provider", lambda name, **kw: FakeLLM(responder=_auto_responder()))
+
+    rc = _run(["digest", "sample-book"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "chapter" in out
+    assert "chapters_processed=3" in out
+    assert "calls_made=" in out
+
+
+def test_digest_json_suppresses_progress_lines_and_reports_totals(data_dir, capsys, monkeypatch):
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "get_provider", lambda name, **kw: FakeLLM(responder=_auto_responder()))
+
+    rc = _run(["digest", "sample-book", "--json"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["chapters_processed"] == 3
+    assert out["llm_calls_made"] > 0
+    assert "llm_cost_usd" in out
+
+
+def test_digest_no_resume_reprocesses_everything(data_dir, capsys, monkeypatch):
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "get_provider", lambda name, **kw: FakeLLM(responder=_auto_responder()))
+    _run(["digest", "sample-book"])
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "get_provider", lambda name, **kw: FakeLLM(responder=_auto_responder()))
+    rc = _run(["digest", "sample-book", "--no-resume", "--json"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["chapters_processed"] == 3
+    assert out["chapters_skipped"] == 0
+
+
+def test_digest_resume_skips_already_digested_chapters(data_dir, capsys, monkeypatch):
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "get_provider", lambda name, **kw: FakeLLM(responder=_auto_responder()))
+    _run(["digest", "sample-book"])
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "get_provider", lambda name, **kw: FakeLLM(responder=_auto_responder()))
+    rc = _run(["digest", "sample-book", "--json"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["chapters_processed"] == 0
+    assert out["chapters_skipped"] == 3
+
+
+def test_digest_budget_exceeded_reports_partial_progress_not_a_traceback(data_dir, capsys, monkeypatch):
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    monkeypatch.setattr(cli, "get_provider", lambda name, **kw: FakeLLM(responder=_auto_responder()))
+
+    rc = _run(["digest", "sample-book", "--max-calls", "1"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error" in err.lower()
+    assert "partial progress" in err.lower()

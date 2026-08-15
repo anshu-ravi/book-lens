@@ -6,16 +6,42 @@ for how causality is enforced and tested.
 
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from booklens import causal, db, paths, prompts
 from booklens.llm.base import LLM
 
+logger = logging.getLogger(__name__)
+
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+@dataclass(frozen=True)
+class ProgressEvent:
+    """One unit of pass work finishing, reported to an operator after its transaction commits."""
+
+    level: str  # "chapter", "part", or "book"
+    label: str
+    skipped: bool
+
+
+ProgressCallback = Callable[[ProgressEvent], None]
+
+
+def _report(on_progress: ProgressCallback | None, event: ProgressEvent) -> None:
+    """Call the progress callback, if any, without letting it affect the pass."""
+    if on_progress is None:
+        return
+    try:
+        on_progress(event)
+    except Exception:
+        logger.exception("on_progress callback raised; ignoring")
 
 
 @dataclass
@@ -198,7 +224,12 @@ def _insert_entities(
 
 
 def run_chapter_pass(
-    iconn: sqlite3.Connection, llm: LLM, book_id: str, *, resume: bool = True
+    iconn: sqlite3.Connection,
+    llm: LLM,
+    book_id: str,
+    *,
+    resume: bool = True,
+    on_progress: ProgressCallback | None = None,
 ) -> PassResult:
     """Walk every non-excerpt chapter front to back, producing one digest + entity set each.
 
@@ -226,6 +257,7 @@ def run_chapter_pass(
             and existing["schema_version"] == db.SCHEMA_VERSION
         ):
             result.chapters_skipped += 1
+            _report(on_progress, ProgressEvent(level="chapter", label=ch["label"], skipped=True))
             continue
 
         window = causal.CausalWindow(iconn, max_seq=ch["end_seq"])
@@ -279,6 +311,7 @@ def run_chapter_pass(
         result.entities_created += nodes
         result.edges_created += edges
         result.attrs_created += attrs
+        _report(on_progress, ProgressEvent(level="chapter", label=ch["label"], skipped=False))
 
     return result
 
@@ -327,7 +360,9 @@ def _rollup_one(
     iconn.commit()
 
 
-def run_rollups(iconn: sqlite3.Connection, llm: LLM, book_id: str) -> PassResult:
+def run_rollups(
+    iconn: sqlite3.Connection, llm: LLM, book_id: str, *, on_progress: ProgressCallback | None = None
+) -> PassResult:
     """Build part digests from chapter digests, then a book digest from part digests.
 
     Always regenerates -- rollups only read already-written digest files, so
@@ -370,6 +405,7 @@ def run_rollups(iconn: sqlite3.Connection, llm: LLM, book_id: str) -> PassResult
         result.digests_written += 1
         row = _existing_digest(iconn, book_id, "part", None, part_label)
         part_digest_rows.append(row)
+        _report(on_progress, ProgressEvent(level="part", label=part_label, skipped=False))
 
     book_source_rows = part_digest_rows if part_digest_rows else chapter_digests
     if book_source_rows:
@@ -387,14 +423,22 @@ def run_rollups(iconn: sqlite3.Connection, llm: LLM, book_id: str) -> PassResult
         )
         result.calls_made += 1
         result.digests_written += 1
+        _report(on_progress, ProgressEvent(level="book", label=book_id, skipped=False))
 
     return result
 
 
-def run_book(iconn: sqlite3.Connection, llm: LLM, book_id: str, *, resume: bool = True) -> PassResult:
+def run_book(
+    iconn: sqlite3.Connection,
+    llm: LLM,
+    book_id: str,
+    *,
+    resume: bool = True,
+    on_progress: ProgressCallback | None = None,
+) -> PassResult:
     """Run the chapter pass, then rollups, over one book."""
-    chapter_result = run_chapter_pass(iconn, llm, book_id, resume=resume)
-    rollup_result = run_rollups(iconn, llm, book_id)
+    chapter_result = run_chapter_pass(iconn, llm, book_id, resume=resume, on_progress=on_progress)
+    rollup_result = run_rollups(iconn, llm, book_id, on_progress=on_progress)
 
     return PassResult(
         book_id=book_id,

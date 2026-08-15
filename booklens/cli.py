@@ -11,7 +11,8 @@ import json
 import sys
 from pathlib import Path
 
-from booklens import db, ingest, paths, progress, tools
+from booklens import db, ingest, passes, paths, progress, tools
+from booklens.llm.base import BudgetedLLM, BudgetExceeded, FatalLLMError, get_provider
 
 
 def _print(result, as_json: bool) -> None:
@@ -83,6 +84,48 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         skipped_empty = manifest.get("skipped_empty_chapters", [])
         if skipped_empty:
             print(f"  chapters with zero extracted paragraphs (not stored): {skipped_empty}")
+    return 0
+
+
+def cmd_digest(args: argparse.Namespace) -> int:
+    """Run the progressive digest + entity pass over a book, printing per-chapter progress."""
+    iconn, _pconn = _open_dbs()
+    llm = BudgetedLLM(get_provider(args.provider), max_calls=args.max_calls)
+
+    count = 0
+
+    def on_progress(event) -> None:
+        nonlocal count
+        count += 1
+        status = "skipped" if event.skipped else "done"
+        print(f"[{count}] {event.level} {event.label!r} -- {status}")
+
+    progress_cb = None if args.json else on_progress
+
+    try:
+        result = passes.run_book(iconn, llm, args.book_id, resume=args.resume, on_progress=progress_cb)
+    except (BudgetExceeded, FatalLLMError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        print(
+            f"partial progress: {count} chapter/part/book unit(s) reported before the failure "
+            "-- already-written digests are safe to resume from",
+            file=sys.stderr,
+        )
+        return 1
+
+    payload = dict(result.__dict__)
+    payload["llm_calls_made"] = llm.calls_made
+    payload["llm_tokens_used"] = llm.tokens_used
+    payload["llm_cost_usd"] = llm.cost_usd
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    print(f"chapters_processed={result.chapters_processed} chapters_skipped={result.chapters_skipped}")
+    print(f"digests_written={result.digests_written} entities_created={result.entities_created} "
+          f"edges_created={result.edges_created} attrs_created={result.attrs_created}")
+    print(f"calls_made={llm.calls_made} tokens_used={llm.tokens_used} cost_usd={llm.cost_usd:.4f}")
     return 0
 
 
@@ -228,6 +271,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--force", action="store_true")
     p_ingest.add_argument("--json", action="store_true")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_digest = sub.add_parser("digest", help="run the progressive digest + entity pass over a book")
+    p_digest.add_argument("book_id")
+    p_digest.add_argument("--provider", default=None, help="'fake' (default) or 'claude-sdk'")
+    p_digest.add_argument("--max-calls", type=int, default=200)
+    p_digest.add_argument("--no-resume", dest="resume", action="store_false", default=True)
+    p_digest.add_argument("--json", action="store_true")
+    p_digest.set_defaults(func=cmd_digest)
 
     p_books = sub.add_parser("books", help="list ingested books")
     p_books.add_argument("--json", action="store_true")

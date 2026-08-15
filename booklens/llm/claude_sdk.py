@@ -88,6 +88,8 @@ class ClaudeSDKProvider:
             max_turns=2,
             setting_sources=[],
             skills=[],
+            # Measured cheaper, faster, and no worse on extraction quality; see implementation-notes.md.
+            thinking={"type": "disabled"},
         )
         try:
             text, stop_reason, usage, model_used, cost_usd = asyncio.run(self._run(prompt, options))
