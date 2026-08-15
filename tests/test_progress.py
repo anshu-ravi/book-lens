@@ -121,13 +121,22 @@ def test_ceiling_for_with_no_progress_is_zero(pconn, iconn):
     assert progress.ceiling_for(pconn, iconn) == 0
 
 
-def test_readable_ranges_merges_and_sorts(pconn, iconn):
+def test_readable_ranges_is_a_true_union(pconn, iconn):
     progress.set_position(pconn, iconn, "b2", status="finished")
     progress.set_position(pconn, iconn, "b1", status="reading", chapter_idx=0)
     ranges = progress.readable_ranges(pconn, iconn)
-    # b1 ceiling 1000999, b2 ceiling 2001999 -> two disjoint [0, ceiling] ranges
-    # that merge into one because both start at 0.
-    assert ranges == [(0, 2001999)]
+    # b1's range floors at its own book_order * 1_000_000, not 0, so the two
+    # stay disjoint -- this is exactly the union DECISIONS.md section 4 calls for.
+    assert ranges == [(1000000, 1000999), (2000000, 2001999)]
+
+
+def test_readable_ranges_merges_overlapping_books(pconn, iconn):
+    # Contrived but valid: b1's ceiling reaches into b2's own floor, so the
+    # two per-book ranges overlap and the merge step collapses them into one.
+    progress.reset_ceiling(pconn, "b1", 2000500)
+    progress.set_position(pconn, iconn, "b2", status="reading", chapter_idx=0)
+    ranges = progress.readable_ranges(pconn, iconn)
+    assert ranges == [(1000000, 2000999)]
 
 
 def test_readable_ranges_empty_when_nothing_read(pconn, iconn):

@@ -89,8 +89,8 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 def cmd_books(args: argparse.Namespace) -> int:
     """List the library with the reader's standing in each book."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    books = t.list_books()
+    with tools.Tools(iconn, pconn) as t:
+        books = t.list_books()
     _print(books, args.json)
     return 0
 
@@ -101,8 +101,8 @@ def cmd_progress(args: argparse.Namespace) -> int:
     prog = progress.set_position(
         pconn, iconn, args.book_id, status=args.status, chapter_idx=args.chapter
     )
-    t = tools.Tools(iconn, pconn)
-    chapters = t.list_chapters(args.book_id)["chapters"]
+    with tools.Tools(iconn, pconn) as t:
+        chapters = t.list_chapters(args.book_id)["chapters"]
     resolved_label = chapters[-1]["label"] if chapters else None
 
     result = {
@@ -124,8 +124,8 @@ def cmd_progress(args: argparse.Namespace) -> int:
 def cmd_chapters(args: argparse.Namespace) -> int:
     """List the chapters the reader has begun."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.list_chapters(args.book_id, part=args.part)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.list_chapters(args.book_id, part=args.part)
     _print(result, args.json)
     return 0
 
@@ -133,8 +133,8 @@ def cmd_chapters(args: argparse.Namespace) -> int:
 def cmd_read(args: argparse.Namespace) -> int:
     """Print raw text for a chapter range."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.read_raw(args.book_id, args.from_ch, args.to_ch)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.read_raw(args.book_id, args.from_ch, args.to_ch)
     if args.json:
         print(json.dumps(result, indent=2))
         return 0
@@ -148,8 +148,8 @@ def cmd_read(args: argparse.Namespace) -> int:
 def cmd_search(args: argparse.Namespace) -> int:
     """Search the text the reader has already read."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.search(args.query, book=args.book, regex=args.regex)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.search(args.query, book=args.book, regex=args.regex)
     if args.json:
         print(json.dumps(result, indent=2))
         return 0
@@ -164,8 +164,8 @@ def cmd_search(args: argparse.Namespace) -> int:
 def cmd_first_seen(args: argparse.Namespace) -> int:
     """Report where something was first encountered."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.first_seen(args.entity)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.first_seen(args.entity)
     _print(result, args.json)
     return 0
 
@@ -173,12 +173,12 @@ def cmd_first_seen(args: argparse.Namespace) -> int:
 def cmd_context(args: argparse.Namespace) -> int:
     """Expand the passage around a citation."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    try:
-        result = t.context(args.citation_id, window=args.window)
-    except ValueError as exc:
-        print(f"error: {exc}")
-        return 1
+    with tools.Tools(iconn, pconn) as t:
+        try:
+            result = t.context(args.citation_id, window=args.window)
+        except ValueError as exc:
+            print(f"error: {exc}")
+            return 1
     if args.json:
         print(json.dumps(result, indent=2))
         return 0
@@ -193,8 +193,8 @@ def cmd_context(args: argparse.Namespace) -> int:
 def cmd_cast(args: argparse.Namespace) -> int:
     """Show the cast as the reader knows it."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.cast(book=args.book)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.cast(book=args.book)
     _print(result, args.json)
     return 0
 
@@ -202,13 +202,13 @@ def cmd_cast(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = {
-        "data_dir": str(paths.data_dir()),
-        "schema_version": db.SCHEMA_VERSION,
-        "book_count": len(t.list_books()),
-        "ceiling_seq": progress.ceiling_for(pconn, iconn),
-    }
+    with tools.Tools(iconn, pconn) as t:
+        result = {
+            "data_dir": str(paths.data_dir()),
+            "schema_version": db.SCHEMA_VERSION,
+            "book_count": len(t.list_books()),
+            "ceiling_seq": progress.ceiling_for(pconn, iconn),
+        }
     _print(result, args.json)
     return 0
 

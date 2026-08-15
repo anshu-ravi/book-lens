@@ -327,7 +327,12 @@ def test_context_raises_on_bogus_citation_id(tmp_path):
 
 def test_raising_ceiling_reveals_previously_hidden_rows(tmp_path):
     """Proves the earlier "no leak" assertions aren't vacuously true because
-    retrieval is simply broken and never returns anything."""
+    retrieval is simply broken and never returns anything.
+
+    `low` and `high` each own a uniquely-named temp table, so `low` stays
+    valid even after `high` is constructed on the same connection -- this is
+    the natural read order, not a workaround for shared-table interference.
+    """
     iconn, pconn, meta = build_fixture(tmp_path)
     ch0_end = meta["books"]["rr1"]["chapters"][0]["end_seq"]
     ch2_end = meta["books"]["rr1"]["chapters"][-1]["end_seq"]
@@ -335,21 +340,27 @@ def test_raising_ceiling_reveals_previously_hidden_rows(tmp_path):
     progress.reset_ceiling(pconn, "rr1", ch0_end)
     progress.reset_ceiling(pconn, "rr2", 0)
     low = tools.Tools(iconn, pconn)
-    low_chapters = low.list_chapters("rr1")["chapters"]
-    assert len(low_chapters) == 1
 
     progress.reset_ceiling(pconn, "rr1", ch2_end)
     high = tools.Tools(iconn, pconn)
+
+    low_chapters = low.list_chapters("rr1")["chapters"]
+    assert len(low_chapters) == 1
+    low_search = low.search("lorem")["results"]
+    low_first_seen = low.first_seen(ENTITY_TOKEN)
+
     high_chapters = high.list_chapters("rr1")["chapters"]
     assert len(high_chapters) == NUM_CHAPTERS
     assert len(high_chapters) > len(low_chapters)
 
-    low_search = low.search("lorem")["results"]
     high_search = high.search("lorem")["results"]
     assert len(high_search) > len(low_search)
 
-    assert low.first_seen(ENTITY_TOKEN) == {"result": "NOT_YET_SEEN"}
+    assert low_first_seen == {"result": "NOT_YET_SEEN"}
     assert high.first_seen(ENTITY_TOKEN)["result"] == "FOUND"
+
+    # low must still be unaffected after high's queries too.
+    assert low.list_chapters("rr1")["chapters"] == low_chapters
 
 
 # -- "never display counts of unknown things" --------------------------------

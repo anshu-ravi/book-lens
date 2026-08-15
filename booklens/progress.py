@@ -1,7 +1,6 @@
 """Per-book reading position and the spoiler ceiling watermark.
 
-See `docs/implementation-notes.md` for how position and ceiling differ, and for
-the Phase 0 limits of `readable_ranges`.
+See `docs/implementation-notes.md` for how position and ceiling differ.
 """
 
 from __future__ import annotations
@@ -156,15 +155,28 @@ def reset_ceiling(
 def readable_ranges(
     pconn: sqlite3.Connection, iconn: sqlite3.Connection
 ) -> list[tuple[int, int]]:
-    """Merged readable spans across all books; unread books contribute nothing.
+    """Merged per-book readable spans, a true union that can have gaps.
 
-    Not yet consumed by the tool layer, and not yet a true union — see
-    `docs/implementation-notes.md`.
+    Each book with progress contributes `[book_order * 1_000_000, ceiling_seq]`
+    -- its own floor, not zero. Unread books (`ceiling_seq == 0`) and books
+    whose ceiling hasn't reached their own floor contribute nothing.
     """
     rows = pconn.execute(
-        "SELECT ceiling_seq FROM book_progress WHERE ceiling_seq > 0"
+        "SELECT book_id, ceiling_seq FROM book_progress WHERE ceiling_seq > 0"
     ).fetchall()
-    ranges = sorted((0, r["ceiling_seq"]) for r in rows)
+
+    ranges = []
+    for r in rows:
+        book = iconn.execute(
+            "SELECT book_order FROM book WHERE id = ?", (r["book_id"],)
+        ).fetchone()
+        if book is None:
+            continue  # book no longer in the index; nothing to contribute
+        book_start = book["book_order"] * 1_000_000
+        if r["ceiling_seq"] < book_start:
+            continue
+        ranges.append((book_start, r["ceiling_seq"]))
+    ranges.sort()
     if not ranges:
         return []
 
