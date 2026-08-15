@@ -87,7 +87,7 @@ class ClaudeSDKProvider:
             skills=[],
         )
         try:
-            text, stop_reason, usage, model_used = asyncio.run(self._run(prompt, options))
+            text, stop_reason, usage, model_used, cost_usd = asyncio.run(self._run(prompt, options))
         except Exception as exc:
             if self._is_fatal(exc):
                 raise FatalLLMError(str(exc)) from exc
@@ -100,14 +100,18 @@ class ClaudeSDKProvider:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             model=model_used or self.model,
+            cost_usd=cost_usd,
         )
 
-    async def _run(self, prompt: str, options) -> tuple[str, str | None, dict | None, str | None]:
-        """Drive query() to completion, concatenating assistant text and taking the last usage seen."""
+    async def _run(
+        self, prompt: str, options
+    ) -> tuple[str, str | None, dict | None, str | None, float | None]:
+        """Drive query() to completion, concatenating assistant text and taking the last usage/cost seen."""
         text_parts: list[str] = []
         usage = None
         stop_reason = None
         model_used = None
+        cost_usd = None
         async for message in self._query(prompt=prompt, options=options):
             if isinstance(message, self._AssistantMessage):
                 for block in message.content:
@@ -119,13 +123,19 @@ class ClaudeSDKProvider:
             elif isinstance(message, self._ResultMessage):
                 usage = message.usage or usage
                 stop_reason = message.stop_reason or stop_reason
-        return "".join(text_parts), stop_reason, usage, model_used
+                cost_usd = getattr(message, "total_cost_usd", None) or cost_usd
+        return "".join(text_parts), stop_reason, usage, model_used, cost_usd
 
     def _extract_token_counts(self, usage: dict | None) -> tuple[int | None, int | None]:
-        """Read token counts out of the SDK's usage dict defensively; never invent a number."""
+        """Sum reported + cached input tokens (uncached alone wildly understates real input); never invent a number when usage is absent."""
         if not usage:
             return None, None
-        return usage.get("input_tokens"), usage.get("output_tokens")
+        input_tokens = (
+            usage.get("input_tokens", 0)
+            + usage.get("cache_creation_input_tokens", 0)
+            + usage.get("cache_read_input_tokens", 0)
+        )
+        return input_tokens, usage.get("output_tokens", 0)
 
     def _is_fatal(self, exc: Exception) -> bool:
         """Auth and malformed-request errors never succeed on retry; classify them fatal."""

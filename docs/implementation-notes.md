@@ -31,6 +31,10 @@ Two separate ideas, kept apart in `progress.py`:
 - **Current position** (`status`, `position_chapter_idx`) is where the reader physically is right now. It can move backward freely — someone re-reading chapter 3 is "at" chapter 3.
 - **Spoiler ceiling** (`ceiling_seq`) is a watermark of what the reader has been exposed to. It only moves forward, because knowledge doesn't un-happen. A reader who finished book 3 and flips back to re-read book 1 still knows book-3 material. Only `reset_ceiling` can lower it, and that is an explicit user action.
 
+## Setting a book cascades to earlier books in the series
+
+`set_position` assumes a series is read in order: marking a book `reading` or `finished` also advances every book in the same `series_id` with a lower `book_order` to `finished`, raising each one's ceiling to its own last body chapter. `unread` never cascades -- it only affects the book being set. The watermark rule still governs every ceiling the cascade touches: it takes `max(existing_ceiling, that book's own finish point)`, so a book already exposed further (via an earlier cascade or an explicit `reset_ceiling`) is never pulled backward. The cascade is the default because no one reads volume 3 without volume 2; the union-of-ranges machinery underneath is unchanged and still what actually enforces the cutoff -- `reset_ceiling` remains the only way to express "I genuinely skipped this one," and is now the only way to reach that state once a later book has been marked read.
+
 ## `readable_ranges` is a true union
 
 Each book with progress contributes `[book_order * 1_000_000, ceiling_seq]` — its own floor, not zero — so a reader who finished book 3 but skipped book 2 gets two disjoint ranges, and book 2's paragraphs sit in the gap between them, unreachable by any tool. Unread books, and any book whose `ceiling_seq` hasn't reached its own floor, contribute nothing. Adjacent or overlapping per-book ranges still merge (this basically never happens between two different books in practice, since a book's real content ends far short of the next book's `1_000_000`-wide floor, but the merge step is still correct if it did).

@@ -121,8 +121,11 @@ def _blob(result) -> str:
 def test_skipped_middle_book_never_surfaces(tmp_path):
     iconn, pconn, meta = build_three_book_fixture(tmp_path)
     _finish(pconn, iconn, "b1")
-    # b2 left unread entirely.
+    # Finishing b3 cascades b1 and b2 to finished (no one reads a series out
+    # of order); reset_ceiling is the only way to express "genuinely skipped
+    # book 2" once that cascade has run.
     _finish(pconn, iconn, "b3")
+    progress.reset_ceiling(pconn, "b2", 0)
     t = tools.Tools(iconn, pconn)
 
     saw_b1 = False
@@ -195,8 +198,10 @@ def test_ranges_merge_when_overlapping(tmp_path):
 def test_context_does_not_cross_gap_into_skipped_book(tmp_path):
     iconn, pconn, meta = build_three_book_fixture(tmp_path)
     _finish(pconn, iconn, "b1")
-    # b2 skipped.
+    # Finishing b3 cascades b2 to finished too; reset_ceiling reconstructs the
+    # genuinely-skipped-book-2 state the cascade would otherwise foreclose.
     _finish(pconn, iconn, "b3")
+    progress.reset_ceiling(pconn, "b2", 0)
     t = tools.Tools(iconn, pconn)
 
     # A citation inside the skipped book is simply unreadable.

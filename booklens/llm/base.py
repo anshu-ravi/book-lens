@@ -29,6 +29,7 @@ class Response:
     input_tokens: int | None
     output_tokens: int | None
     model: str | None
+    cost_usd: float | None = None
 
 
 class LLM(Protocol):
@@ -77,6 +78,7 @@ class BudgetedLLM:
         self.sleep_fn = sleep_fn
         self.calls_made = 0
         self.tokens_used = 0
+        self.cost_usd = 0.0
 
     def complete(
         self,
@@ -108,6 +110,7 @@ class BudgetedLLM:
                 self.sleep_fn(self.backoff_base_seconds * (2 ** (attempt - 1)))
                 continue
             self.tokens_used += (response.input_tokens or 0) + (response.output_tokens or 0)
+            self.cost_usd += response.cost_usd or 0.0
             return response
 
 

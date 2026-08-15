@@ -85,8 +85,13 @@ def test_import_booklens_llm_succeeds_without_the_sdk_installed():
     import booklens.llm.claude_sdk  # noqa: F401
 
 
-def test_missing_sdk_raises_clear_actionable_error():
-    """Selecting claude-sdk without the package installed names the extra to install."""
+def test_missing_sdk_raises_clear_actionable_error(monkeypatch):
+    """Selecting claude-sdk without the package installed names the extra to install.
+
+    claude_agent_sdk is installed in this venv, so absence is simulated by forcing its
+    import to fail rather than by relying on the environment.
+    """
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", None)
     with pytest.raises(FatalLLMError, match="pip install"):
         ClaudeSDKProvider()
 
@@ -180,6 +185,35 @@ def test_successful_completion_concatenates_text_blocks_and_reads_usage(monkeypa
     assert response.model == "claude-sonnet"
     assert captured["options"].system_prompt == "be terse"
     assert captured["prompt"] == "hello"
+
+
+def test_input_tokens_sum_uncached_and_cached_and_cost_is_read_from_result(monkeypatch):
+    """A real usage dict reports uncached input separately from cache creation/read; all three must be summed."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    real_shaped_usage = {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 2106,
+        "cache_read_input_tokens": 13405,
+        "output_tokens": 4,
+    }
+    _install_fake_sdk_module(
+        monkeypatch,
+        [
+            AssistantMessage(content=[TextBlock("hi")], model="m", stop_reason="end_turn", usage=None),
+            ResultMessage(
+                usage=real_shaped_usage,
+                total_cost_usd=0.0167235,
+                stop_reason="end_turn",
+            ),
+        ],
+    )
+
+    provider = ClaudeSDKProvider()
+    response = provider.complete([Message("user", "hello")])
+
+    assert response.input_tokens == 2 + 2106 + 13405
+    assert response.output_tokens == 4
+    assert response.cost_usd == 0.0167235
 
 
 def test_usage_absent_yields_none_token_counts_not_invented_numbers(monkeypatch):

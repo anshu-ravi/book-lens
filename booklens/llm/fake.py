@@ -61,6 +61,7 @@ class FakeLLM:
             input_tokens=sum(len(m.content.split()) for m in messages),
             output_tokens=len(text.split()),
             model=self.model,
+            cost_usd=None,
         )
 
 

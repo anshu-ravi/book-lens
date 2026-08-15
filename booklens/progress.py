@@ -82,6 +82,26 @@ def _book_max_end_seq(iconn: sqlite3.Connection, book_id: str) -> int:
     return row["m"]
 
 
+def _series_and_order(iconn: sqlite3.Connection, book_id: str) -> tuple[str, int]:
+    """A book's series and its order within that series."""
+    row = iconn.execute(
+        "SELECT series_id, book_order FROM book WHERE id = ?", (book_id,)
+    ).fetchone()
+    return row["series_id"], row["book_order"]
+
+
+def _earlier_books_in_series(
+    iconn: sqlite3.Connection, book_id: str
+) -> list[str]:
+    """Every book in the same series with a strictly lower `book_order`."""
+    series_id, book_order = _series_and_order(iconn, book_id)
+    rows = iconn.execute(
+        "SELECT id FROM book WHERE series_id = ? AND book_order < ?",
+        (series_id, book_order),
+    ).fetchall()
+    return [r["id"] for r in rows]
+
+
 def set_position(
     pconn: sqlite3.Connection,
     iconn: sqlite3.Connection,
@@ -93,7 +113,11 @@ def set_position(
     """Move the reader to a position, dragging the ceiling forward if needed.
 
     `chapter_idx` is the chapter just completed. The ceiling only ever rises
-    here; moving backward leaves it where it was.
+    here; moving backward leaves it where it was. Setting a book to `reading`
+    or `finished` also cascades: no one reads a series out of order, so every
+    earlier book in the same series is advanced to `finished` too (watermark
+    rule still applies -- their ceilings only rise, never lower). `unread`
+    does not cascade.
     """
     if status not in ("unread", "reading", "finished"):
         raise ValueError(f"invalid status {status!r}")
@@ -127,6 +151,26 @@ def set_position(
         (book_id, status, chapter_idx, new_ceiling, _now()),
     )
     pconn.commit()
+
+    if status in ("reading", "finished"):
+        for earlier_id in _earlier_books_in_series(iconn, book_id):
+            earlier = get_progress(pconn, earlier_id)
+            earlier_candidate = _book_max_end_seq(iconn, earlier_id)
+            earlier_ceiling = max(earlier.ceiling_seq, earlier_candidate)
+            pconn.execute(
+                """
+                INSERT INTO book_progress(book_id, status, position_chapter_idx, ceiling_seq, updated_at)
+                VALUES (?, 'finished', ?, ?, ?)
+                ON CONFLICT(book_id) DO UPDATE SET
+                    status = 'finished',
+                    position_chapter_idx = excluded.position_chapter_idx,
+                    ceiling_seq = excluded.ceiling_seq,
+                    updated_at = excluded.updated_at
+                """,
+                (earlier_id, earlier.position_chapter_idx, earlier_ceiling, _now()),
+            )
+        pconn.commit()
+
     return get_progress(pconn, book_id)
 
 
