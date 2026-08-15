@@ -18,7 +18,7 @@ _DEFAULT_TEMPERATURE = 0.0
 
 
 class ClaudeSDKProvider:
-    """LLM provider backed by the Claude Agent SDK's `query()`, driven as a single-turn, tool-free call.
+    """LLM provider backed by the Claude Agent SDK's `query()`, driven as a tool-free call that yields one assistant response.
 
     `max_tokens` and `temperature` are accepted for protocol compatibility but ignored:
     Claude Code's `query()` does not expose either knob.
@@ -82,7 +82,8 @@ class ClaudeSDKProvider:
             system_prompt=system,
             model=self.model,
             allowed_tools=[],
-            max_turns=1,
+            # max_turns=1 fails every call; unset works but is ~27x slower. 2 is the minimum that succeeds.
+            max_turns=2,
             setting_sources=[],
             skills=[],
         )
@@ -137,7 +138,12 @@ class ClaudeSDKProvider:
         )
         return input_tokens, usage.get("output_tokens", 0)
 
+    _FATAL_MESSAGE_MARKERS = ("reached maximum number of turns",)
+
     def _is_fatal(self, exc: Exception) -> bool:
-        """Auth and malformed-request errors never succeed on retry; classify them fatal."""
+        """True for errors that will fail identically on every retry."""
         name = type(exc).__name__.lower()
-        return "auth" in name or "invalid" in name or "malformed" in name
+        if "auth" in name or "invalid" in name or "malformed" in name:
+            return True
+        message = str(exc).lower()
+        return any(marker in message for marker in self._FATAL_MESSAGE_MARKERS)

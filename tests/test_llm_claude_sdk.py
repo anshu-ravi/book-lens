@@ -153,7 +153,7 @@ def test_completion_shuts_down_the_agent_loop(monkeypatch):
 
     options = captured["options"]
     assert options.allowed_tools == []
-    assert options.max_turns == 1
+    assert options.max_turns == 2
     # [] means isolation; None would mean "load everything" (CLI default) - the opposite intent.
     assert options.setting_sources == []
     assert options.skills == []
@@ -252,6 +252,24 @@ def test_auth_error_from_sdk_is_classified_fatal_and_not_retried(monkeypatch):
         pass
 
     _install_fake_sdk_module(monkeypatch, messages=[], raises=AuthenticationError("invalid credentials"))
+
+    provider = ClaudeSDKProvider()
+    with pytest.raises(FatalLLMError):
+        provider.complete([Message("user", "hello")])
+
+
+def test_turn_limit_error_from_sdk_is_classified_fatal_and_not_retried(monkeypatch):
+    """A ProcessError whose message reports the turn limit is deterministic, not transient, so it must be fatal."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    class ProcessError(Exception):
+        pass
+
+    _install_fake_sdk_module(
+        monkeypatch,
+        messages=[],
+        raises=ProcessError("Claude Code returned an error result: Reached maximum number of turns (1)"),
+    )
 
     provider = ClaudeSDKProvider()
     with pytest.raises(FatalLLMError):
