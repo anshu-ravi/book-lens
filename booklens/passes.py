@@ -161,18 +161,39 @@ def _insert_digest_row(
     )
 
 
+_MAX_LISTED_DESIGNATORS = 20
+
+
+def _format_available_designators(this_chapter: list[str], registry_count: int) -> str:
+    """Render the designators a rejected alias could validly have pointed at, for the error message."""
+    shown = this_chapter[:_MAX_LISTED_DESIGNATORS]
+    elided = len(this_chapter) - len(shown)
+    listed = ", ".join(repr(d) for d in shown) if shown else "(none)"
+    if elided > 0:
+        listed += f", and {elided} more"
+    return (
+        f"this chapter's declared entities were: {listed}; "
+        f"the prior registry ({registry_count} designators) was also consulted"
+    )
+
+
 def _insert_entities(
     iconn: sqlite3.Connection, book_id: str, chapter_end_seq: int, entities: list[prompts.EntityRecord]
 ) -> tuple[int, int, int]:
     """Write a chapter's freshly extracted entities, stamped at this chapter's seq.
 
-    Aliases resolve `other_designator` against nodes already written by THIS
-    same call plus the registry passed into the prompt -- a reveal can only
-    ever point backward or to something introduced in the same breath.
+    Two passes over `entities`: first every entity gets a node (order in the
+    response array carries no meaning, so a later entry may alias an earlier
+    one and vice versa), then attributes and aliases are inserted against the
+    now-complete map. Aliases still resolve `other_designator` only against
+    nodes from THIS call or the prior registry -- a bare alias string can
+    never conjure a node.
     """
     designator_to_node_id: dict[str, int] = {}
+    registry_count = 0
     for r in iconn.execute("SELECT id, designator FROM entity_node WHERE book_id = ?", (book_id,)):
         designator_to_node_id[r["designator"]] = r["id"]
+        registry_count += 1
 
     nodes_created = 0
     edges_created = 0
@@ -192,6 +213,9 @@ def _insert_entities(
             designator_to_node_id[entity.designator] = node_id
             nodes_created += 1
 
+    for entity in entities:
+        node_id = designator_to_node_id[entity.designator]
+
         for attr in entity.attributes:
             iconn.execute(
                 """
@@ -210,7 +234,8 @@ def _insert_entities(
                 # inventing a node for it, same principle as citations.
                 raise ValueError(
                     f"alias for {entity.designator!r} refers to unknown designator "
-                    f"{alias.other_designator!r} -- not in the registry or this chapter's new entities"
+                    f"{alias.other_designator!r}, which is not declared anywhere -- "
+                    + _format_available_designators([e.designator for e in entities], registry_count)
                 )
             iconn.execute(
                 """
@@ -316,6 +341,17 @@ def run_chapter_pass(
                         chapter_idx, ch["label"], attempt, exc,
                     )
                     continue
+                # Final attempt failed -- dump the raw response so it can be
+                # inspected, without letting a dump failure mask the real error.
+                try:
+                    diag_path = paths.failed_response_path(sha256, chapter_idx)
+                    diag_path.write_text(response.text, encoding="utf-8")
+                    logger.warning(
+                        "chapter %s (%r) failed on final attempt; raw response written to %s",
+                        chapter_idx, ch["label"], diag_path,
+                    )
+                except Exception:
+                    logger.exception("failed to write diagnostic response dump for chapter %s", chapter_idx)
                 raise
             break
         iconn.commit()

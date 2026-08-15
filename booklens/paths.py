@@ -52,6 +52,13 @@ def digests_dir(sha256: str) -> Path:
     return d
 
 
+def failed_response_path(sha256: str, chapter_idx: int) -> Path:
+    """Where a chapter's raw model response is dumped when the pass exhausts its retries."""
+    d = digests_dir(sha256) / "failed"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"ch{chapter_idx:04d}.txt"
+
+
 def series_dir() -> Path:
     """Holds the user-editable series definitions."""
     d = data_dir() / "series"

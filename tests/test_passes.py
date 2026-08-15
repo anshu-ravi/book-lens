@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from booklens import causal, db, passes, prompts
+from booklens import causal, db, passes, paths, prompts
 from booklens.llm.base import BudgetedLLM, BudgetExceeded, Message
 from booklens.llm.fake import FakeLLM
 
@@ -239,6 +239,85 @@ def test_alias_to_unknown_designator_raises(iconn):
         passes.run_chapter_pass(iconn, llm, "b1")
 
 
+def test_alias_resolves_to_entity_declared_later_in_same_response(iconn):
+    """The bug this brief fixes: alias resolution must not depend on array order.
+
+    'narrator' comes first in entities[] and aliases to 'Darrow', which is
+    only declared later in the SAME response. This must resolve, not raise --
+    against the old single-pass implementation this test fails.
+    """
+    _seed_book(iconn)
+    entities_by_chapter = {
+        "Chapter 0": [
+            {
+                "designator": "narrator",
+                "node_kind": "unnamed",
+                "aliases": [{"other_designator": "Darrow", "edge_type": "stated"}],
+            },
+            {
+                "designator": "Darrow",
+                "node_kind": "named",
+            },
+        ],
+    }
+    llm = FakeLLM(responder=_auto_responder(entities_by_chapter))
+    result = passes.run_chapter_pass(iconn, llm, "b1")
+
+    assert result.entities_created == 2
+    edge = iconn.execute("SELECT * FROM entity_edge").fetchone()
+    assert edge is not None
+    narrator = iconn.execute(
+        "SELECT id FROM entity_node WHERE book_id='b1' AND designator='narrator'"
+    ).fetchone()
+    darrow = iconn.execute(
+        "SELECT id FROM entity_node WHERE book_id='b1' AND designator='Darrow'"
+    ).fetchone()
+    assert edge["src_node_id"] == narrator["id"]
+    assert edge["dst_node_id"] == darrow["id"]
+
+
+def test_alias_to_unknown_designator_message_names_available_designators(iconn):
+    _seed_book(iconn)
+    entities_by_chapter = {
+        "Chapter 0": [
+            {
+                "designator": "Beta",
+                "node_kind": "named",
+                "aliases": [{"other_designator": "NeverIntroduced", "edge_type": "stated"}],
+            },
+            {"designator": "Gamma", "node_kind": "named"},
+        ],
+    }
+    llm = FakeLLM(responder=_auto_responder(entities_by_chapter))
+    with pytest.raises(ValueError) as excinfo:
+        passes.run_chapter_pass(iconn, llm, "b1")
+
+    message = str(excinfo.value)
+    assert "Beta" in message
+    assert "Gamma" in message
+    assert "registry" in message
+
+
+def test_alias_resolves_against_earlier_chapter_registry(iconn):
+    _seed_book(iconn)
+    entities_by_chapter = {
+        "Chapter 0": [{"designator": "Alpha", "node_kind": "named"}],
+        "Chapter 1": [
+            {
+                "designator": "Beta",
+                "node_kind": "named",
+                "aliases": [{"other_designator": "Alpha", "edge_type": "stated"}],
+            }
+        ],
+    }
+    llm = FakeLLM(responder=_auto_responder(entities_by_chapter))
+    result = passes.run_chapter_pass(iconn, llm, "b1")
+
+    assert result.entities_created == 2
+    edge = iconn.execute("SELECT * FROM entity_edge").fetchone()
+    assert edge is not None
+
+
 # -- resume / staleness -----------------------------------------------------------
 
 
@@ -371,6 +450,22 @@ def test_chapter_failing_twice_raises_and_writes_nothing(iconn):
 
     assert iconn.execute("SELECT 1 FROM digest WHERE book_id='b1'").fetchone() is None
     assert len(llm.calls) == 2  # both attempts actually called the model
+
+
+def test_chapter_failing_twice_writes_diagnostic_response_dump(iconn):
+    _seed_book(iconn)
+
+    def always_bad(messages, system):
+        return "not valid json, malformed on purpose, twice"
+
+    llm = FakeLLM(responder=always_bad)
+    with pytest.raises(ValueError):
+        passes.run_chapter_pass(iconn, llm, "b1")
+
+    sha256 = iconn.execute("SELECT sha256 FROM book WHERE id='b1'").fetchone()["sha256"]
+    diag_path = paths.failed_response_path(sha256, 0)
+    assert diag_path.is_file()
+    assert diag_path.read_text() == "not valid json, malformed on purpose, twice"
 
 
 def test_run_with_no_failures_reports_zero_rerolls(iconn):
