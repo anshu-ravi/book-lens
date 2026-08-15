@@ -1,0 +1,12 @@
+# Derived state: databases, digests, manifests. Contains derivative works of
+# copyrighted books and must never be committed. Rebuild with `rm -rf data/ && reimport`.
+data/
+
+# The dev-corpus EPUBs themselves.
+uploads/
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
