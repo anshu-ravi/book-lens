@@ -193,3 +193,59 @@ def test_register_regexp_bad_pattern_does_not_raise(tmp_path):
     db.register_regexp(conn)
     row = conn.execute("SELECT 'hello world' REGEXP '(unclosed' AS m").fetchone()
     assert row["m"] == 0
+
+
+# -- schema version guard (SCHEMA_VERSION=3: digest/entity tables) -----------
+
+
+def test_v3_tables_exist_after_init(tmp_path):
+    conn = _make_index_conn(tmp_path)
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"digest", "entity_node", "entity_edge", "entity_attr"} <= tables
+
+
+def test_init_index_rejects_pre_v3_database(tmp_path):
+    """A database already initialized under an older schema (has 'book' but
+    lacks the digest/entity tables) must be rejected, not silently patched up."""
+    path = tmp_path / "index.db"
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    # Hand-build a v2-shaped database: book/chapter/para with their v2 columns,
+    # but none of the v3 digest/entity tables.
+    conn.executescript(
+        """
+        CREATE TABLE book(
+          id TEXT PRIMARY KEY, sha256 TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+          author TEXT, source_path TEXT NOT NULL, series_id TEXT NOT NULL,
+          book_order INTEGER NOT NULL, sequence_tier TEXT NOT NULL, label_tier TEXT NOT NULL,
+          ingested_at TEXT NOT NULL, UNIQUE(series_id, book_order)
+        );
+        CREATE TABLE chapter(
+          book_id TEXT NOT NULL, chapter_idx INTEGER NOT NULL, label TEXT NOT NULL,
+          part_label TEXT, start_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'body', PRIMARY KEY(book_id, chapter_idx)
+        );
+        CREATE TABLE para(
+          id INTEGER PRIMARY KEY, book_id TEXT NOT NULL, spine_idx INTEGER NOT NULL,
+          para_idx INTEGER NOT NULL, global_seq INTEGER NOT NULL UNIQUE,
+          chapter_idx INTEGER NOT NULL, chapter_label TEXT NOT NULL, text TEXT NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'body'
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    reopened = sqlite3.connect(str(path))
+    reopened.row_factory = sqlite3.Row
+    with pytest.raises(db.SchemaVersionError, match="delete"):
+        db.init_index(reopened)
+
+
+def test_init_index_on_fresh_database_never_raises(tmp_path):
+    """A brand-new, never-initialized file is not 'stale' -- it just gets the
+    current schema, v3 tables included."""
+    conn = _make_index_conn(tmp_path)  # must not raise
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"book", "digest", "entity_node", "entity_edge", "entity_attr"} <= tables
