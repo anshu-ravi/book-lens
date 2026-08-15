@@ -18,7 +18,7 @@ _DEFAULT_TEMPERATURE = 0.0
 
 
 class ClaudeSDKProvider:
-    """LLM provider backed by the Claude Agent SDK's `query()`, driven as a tool-free call that yields one assistant response.
+    """LLM provider backed by the Claude Agent SDK's `query()`, driven with `tools=[]` as a tool-free call that yields one assistant response.
 
     `max_tokens` and `temperature` are accepted for protocol compatibility but ignored:
     Claude Code's `query()` does not expose either knob.
@@ -81,8 +81,10 @@ class ClaudeSDKProvider:
             env=env,
             system_prompt=system,
             model=self.model,
+            tools=[],
             allowed_tools=[],
-            # max_turns=1 fails every call; unset works but is ~27x slower. 2 is the minimum that succeeds.
+            # max_turns is off by one: 1 always fails as "reached maximum number of turns",
+            # 2 is what permits the single assistant turn a call actually makes.
             max_turns=2,
             setting_sources=[],
             skills=[],

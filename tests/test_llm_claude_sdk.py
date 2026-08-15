@@ -152,6 +152,7 @@ def test_completion_shuts_down_the_agent_loop(monkeypatch):
     provider.complete([Message("user", "hello")])
 
     options = captured["options"]
+    assert options.tools == []
     assert options.allowed_tools == []
     assert options.max_turns == 2
     # [] means isolation; None would mean "load everything" (CLI default) - the opposite intent.
