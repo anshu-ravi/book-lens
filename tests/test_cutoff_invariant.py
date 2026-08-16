@@ -14,7 +14,7 @@ import re
 
 import pytest
 
-from booklens import db, progress, tools
+from booklens import context, db, progress, tools
 from tests.test_tools import (
     ENTITY_TOKEN,
     NUM_CHAPTERS,
@@ -235,6 +235,80 @@ def test_adversarial_fuzz_no_tracebacks_no_leaks(tmp_path):
         result = t.context("rr1:0:p0", window=window)
         _assert_no_rows_above_ceiling(result, ceiling)
         _assert_no_sentinel_leak(result, ceiling)
+
+
+# -- two series sharing a book_order must stay fully isolated ----------------
+
+
+def test_cross_series_same_book_order_never_leaks(tmp_path):
+    """Two different series' volume-1 books occupy the identical global_seq
+    range (book_order=1 for both). A reader partway through series A's book 1
+    must never see series B's book 1, even though B is a different series
+    entirely and untouched by A's progress.
+
+    Regression test for the bug this branch fixes: `global_seq` carries no
+    series component, so the two books' paragraphs interleave one-to-one by
+    value, and an unscoped readable-range predicate let A's ceiling admit B's
+    rows purely by numeric coincidence.
+    """
+    iconn = db.connect_index(tmp_path / "index.db")
+    pconn = db.connect_progress(tmp_path / "progress.db")
+
+    A_TOKEN = "SERIES_A_TOKEN_KX91"
+    B_TOKEN = "SERIES_B_SPOILER_TOKEN_QZ44"
+
+    for series_id, book_id, token in (("sA", "a1", A_TOKEN), ("sB", "b1", B_TOKEN)):
+        iconn.execute(
+            """
+            INSERT INTO book(id, sha256, title, author, source_path, series_id,
+                              book_order, sequence_tier, label_tier, ingested_at)
+            VALUES (?, ?, ?, 'Auth', '/x.epub', ?, 1, 'S1', 'L1', '2026-01-01')
+            """,
+            (book_id, f"sha-{book_id}", f"Book {book_id}", series_id),
+        )
+        for ch in range(NUM_CHAPTERS):
+            para_rows = []
+            for p in range(PARAS_PER_CHAPTER):
+                gseq = db.global_seq(1, ch, p)  # both books use book_order=1
+                text = f"lorem {book_id} chapter {ch} paragraph {p} ipsum {token}"
+                iconn.execute(
+                    """
+                    INSERT INTO para(book_id, spine_idx, para_idx, global_seq,
+                                      chapter_idx, chapter_label, text)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (book_id, ch, p, gseq, ch, f"Chapter {ch}", text),
+                )
+                para_rows.append(gseq)
+            start, end = para_rows[0], para_rows[-1]
+            iconn.execute(
+                """
+                INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq)
+                VALUES (?, ?, ?, NULL, ?, ?)
+                """,
+                (book_id, ch, f"Chapter {ch}", start, end),
+            )
+    iconn.commit()
+
+    # Reader is partway through series A's book 1; series B's book 1 is untouched.
+    a1_ceiling = db.global_seq(1, 1, PARAS_PER_CHAPTER - 1)
+    progress.reset_ceiling(pconn, "a1", a1_ceiling)
+
+    t = tools.Tools(iconn, pconn)
+
+    assert t.read_raw("b1", 0, NUM_CHAPTERS - 1)["paragraphs"] == []
+    assert t.search(B_TOKEN)["results"] == []
+    assert t.search(B_TOKEN, regex=True)["results"] == []
+    assert t.first_seen(B_TOKEN) == {"result": "NOT_YET_SEEN"}
+    assert t.list_chapters("b1")["chapters"] == []
+
+    with pytest.raises(ValueError):
+        t.context(tools.format_citation_id("b1", 0, 0))
+
+    assembled = context.assemble(t)
+    assert B_TOKEN not in assembled.text
+    assert "b1:" not in assembled.text
+    assert A_TOKEN in assembled.text  # sanity: A itself is genuinely readable
 
 
 # -- ceiling unreachable from the public API ---------------------------------

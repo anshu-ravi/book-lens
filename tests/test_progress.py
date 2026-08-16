@@ -130,16 +130,17 @@ def test_readable_ranges_is_a_true_union(pconn, iconn):
     ranges = progress.readable_ranges(pconn, iconn)
     # b1's range floors at its own book_order * 1_000_000, not 0, so the two
     # stay disjoint -- this is exactly the union DECISIONS.md section 4 calls for.
-    assert ranges == [(1000000, 1000999), (2000000, 2001999)]
+    assert sorted(ranges) == [("b1", 1000000, 1000999), ("b2", 2000000, 2001999)]
 
 
-def test_readable_ranges_merges_overlapping_books(pconn, iconn):
-    # Contrived but valid: b1's ceiling reaches into b2's own floor, so the
-    # two per-book ranges overlap and the merge step collapses them into one.
+def test_readable_ranges_does_not_merge_overlapping_books(pconn, iconn):
+    # Contrived but valid: b1's ceiling reaches into b2's own floor. Each book
+    # still gets its own span, scoped by book_id -- merging is gone, since a
+    # merged interval can no longer tell two same-book_order series apart.
     progress.reset_ceiling(pconn, "b1", 2000500)
     progress.set_position(pconn, iconn, "b2", status="reading", chapter_idx=0)
     ranges = progress.readable_ranges(pconn, iconn)
-    assert ranges == [(1000000, 2000999)]
+    assert sorted(ranges) == [("b1", 1000000, 2000500), ("b2", 2000000, 2000999)]
 
 
 def test_readable_ranges_empty_when_nothing_read(pconn, iconn):
