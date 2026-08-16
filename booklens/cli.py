@@ -11,8 +11,11 @@ import json
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from booklens import chat, context, db, ingest, passes, paths, progress, tools
-from booklens.llm.base import BudgetedLLM, BudgetExceeded, FatalLLMError, get_provider
+from booklens.llm.base import (BudgetedLLM, BudgetExceeded, FatalLLMError,
+                               get_provider)
 
 
 def _print(result, as_json: bool) -> None:
@@ -331,6 +334,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     """Assemble the argument parser and its subcommands."""
+    load_dotenv()
     parser = argparse.ArgumentParser(prog="booklens")
     sub = parser.add_subparsers(dest="command", required=True)
 
