@@ -1,6 +1,6 @@
 """The progressive digest and entity pass: one batch job, front to back, per book.
 
-See DECISIONS.md section 11 for the overall shape and `docs/implementation-notes.md`
+See DECISIONS.md Appendix A for the overall shape and `docs/implementation-notes.md`
 for how causality is enforced and tested.
 """
 

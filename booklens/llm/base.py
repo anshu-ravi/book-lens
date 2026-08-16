@@ -1,6 +1,6 @@
 """Provider-agnostic LLM protocol, response types, and the budget guard.
 
-Providers differ most at the tool-calling boundary (see DECISIONS.md section 12),
+Providers differ most at the tool-calling boundary (see DECISIONS.md section 13),
 so `complete` is shaped to grow a `tools` parameter later without breaking callers.
 """
 

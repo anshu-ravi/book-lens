@@ -7,7 +7,7 @@ of the normal `pytest -q` suite; every other test file in this project uses
 
 The point of these three calls is narrow: prove the real model's output
 satisfies the strict JSON contract in booklens/prompts.py and stays within
-the compression budget DECISIONS.md section 10 requires -- not to evaluate
+the compression budget DECISIONS.md Appendix A requires -- not to evaluate
 summarization quality exhaustively.
 """
 
@@ -74,7 +74,7 @@ def test_real_chapter_digest_parses_and_compresses(real_llm, rr_book):
     every citation must resolve inside the chapter, and the digest must be
     meaningfully shorter than the chapter it summarizes.
 
-    Compression ratio: DECISIONS.md section 10 targets 20-40x book-level, ~1.5KB
+    Compression ratio: DECISIONS.md Appendix A targets 20-40x book-level, ~1.5KB
     against ~60KB raw for an interlude. A single chapter is smaller, so this
     test uses a looser but still meaningful bound: the digest body must be
     under half the chapter's own word count, AND under the prompt's explicit
@@ -111,7 +111,7 @@ def test_real_chapter_digest_parses_and_compresses(real_llm, rr_book):
     digest_words = _digest_word_count(extraction.digest_markdown)
     assert digest_words < chapter_word_count, (
         f"digest ({digest_words} words) was not shorter than its chapter "
-        f"({chapter_word_count} words) -- compression defect, see DECISIONS.md section 10"
+        f"({chapter_word_count} words) -- compression defect, see DECISIONS.md Appendix A"
     )
     assert digest_words <= 300, f"digest ({digest_words} words) exceeded the ~250-word target with slack"
 

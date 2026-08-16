@@ -40,16 +40,16 @@ Eval golden sets can quote these books freely, including post-cutoff material, b
 ## Architecture in one screen
 
 ```
-EPUB ──► one-time batch ingest ──► index.db + digests/ ──► bounded tool layer ──► agent ──► audit ──► answer
-                                          ▲                        ▲
-                                    every row tagged          ceiling injected
-                                    with global_seq           server-side
+EPUB ──► one-time batch ingest ──► index.db ──► bounded tool layer ──► context assembly ──► model ──► audit ──► answer
+                                       ▲                 ▲                    ▲
+                                 every row tagged   ceiling injected    the whole readable
+                                 with global_seq    server-side         set, raw, oldest-first
 ```
 
 - **Ingest** runs once per book, front-to-back, offline, resumable. Not lazy, not on-demand.
 - **Tools** apply `WHERE global_seq <= :ceiling` in SQL. The ceiling comes from session state and is *never* a model-supplied argument.
-- **Agent** reads digests to orient, then drills into raw paragraphs to answer.
-- **Audit** checks every factual claim against retrieved **raw text only** — never against digests.
+- **Context assembly** puts the *entire* readable set in context, raw, oldest-first. No digests, no retrieval step. See `DECISIONS.md` section 7 — it supersedes the digest pyramid, and the digest and entity passes are dormant.
+- **Audit** checks every factual claim against the assembled **raw text only**.
 
 ## How work gets done
 
@@ -94,16 +94,20 @@ A subagent should never have to infer the design. If the brief isn't specific en
 
 ## Stack
 
-Python. `zipfile` + `lxml` for EPUB (skip `ebooklib`, it's thin over the same thing). SQLite with FTS5 for storage and lexical search. Claude Agent SDK for the agent loop, behind a provider abstraction so OpenRouter can be swapped in. FastAPI + HTMX or a small React front end at Phase 4.
+Python. `zipfile` + `lxml` for EPUB (skip `ebooklib`, it's thin over the same thing). SQLite with FTS5 for storage and lexical search. **OpenRouter with `openai/gpt-5.6-luna` is the default provider**, behind the existing `LLM` protocol; the Claude Agent SDK adapter stays as an alternative. FastAPI + HTMX or a small React front end at Phase 4.
+
+`OPENROUTER_API_KEY` comes from the environment. Never read `.env` contents — key names may be enumerated, values never.
 
 Do not add a vector database. If semantic search is needed, use `sqlite-vec` in the same file, as a ranking aid inside `search` — never as a substitute for reading the text. See section 5 of `DECISIONS.md` for why.
 
 ## Build order
 
-- **Phase 0** — ingest + schema + bounded tools + cutoff invariant tests. CLI only. Run against the dev corpus (Red Rising #1–2).
-- **Phase 1** — progress model, multi-book, the progressive digest + entity pass.
-- **Phase 2** — citation-grounded generation, entailment auditor, strictness settings, both eval harnesses.
-- **Phase 3** — first-appearance index, cast screen, hybrid retrieval, session recaps.
+- **Phase 0** — ingest + schema + bounded tools + cutoff invariant tests. CLI only. Run against the dev corpus (Red Rising #1–2). *Done.*
+- **Phase 1** — progress model, multi-book. *Done.* The digest and entity passes also shipped here and are now dormant; see `DECISIONS.md` Appendix A.
+- **Phase 2 — the core feature.** Split into two shipping steps:
+  - **V1** — `booklens chat --book red-rising --chapter N`. Multi-turn terminal REPL, ceiling fixed at launch. Context assembly over the full readable set, OpenRouter provider, citation-grounded answers in conversational prose, `--debug` for tokens/cost/citations, `booklens credits`. One new mechanical test: the assembler never emits above the ceiling. Red Rising book 1 only. **Auditor, golden sets, and cross-book are deliberately out** — V1 exists to be *used*, and on a finished book a leak costs nothing while teaching us how bad parametric leakage actually is.
+  - **V1.1** — Golden Son and Morning Star, the entailment auditor, and both eval harnesses.
+- **Phase 3** — Story So Far / cast screen, first-appearance index, session recaps. Deferred deliberately: the question-answering loop has to work first. Reviving this is what un-dormants the digest and entity passes.
 - **Phase 4** — local web UI.
 
-Build the eval harnesses in Phase 2, not last. Spoiler safety cannot be eyeballed.
+Ship the eval harnesses at V1.1, before anything is built on top of the answering path. Spoiler safety cannot be eyeballed.

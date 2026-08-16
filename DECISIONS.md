@@ -1,8 +1,12 @@
 # Design decisions
 
-Record of the design session on 2026-08-15. Every entry is a decision that was made and confirmed, with the reasoning that produced it. Entries marked **[open]** were deferred, not settled.
+Record of the design sessions on 2026-08-15 and 2026-08-16. Every entry is a decision that was made and confirmed, with the reasoning that produced it.
 
-The session began as a live demonstration: the assistant read *Words of Radiance* under a hard chapter bound and answered questions from it. Several decisions below come directly from what worked and what broke during that demo, and those are called out — they are empirical, not speculative.
+**This file is the single authority on what was decided.** Sections 1–19 are live. Decisions that were replaced or rejected live in the appendix at the bottom, with their full original reasoning — nothing is deleted, but nothing superseded sits inline where it could be mistaken for current design. Entries marked **[open]** were deferred, not settled.
+
+The 2026-08-15 session began as a live demonstration: the assistant read a book under a hard chapter bound and answered questions from it. Several decisions below come directly from what worked and what broke during that demo, and those are called out — they are empirical, not speculative.
+
+The 2026-08-16 session replaced the retrieval design. A million-token context window at negligible cost invalidated the premise of the digest pyramid; section 7 is the result and is now the governing decision for how the answering context is built. The core invariant did not change — the amendment strengthens it.
 
 ---
 
@@ -14,15 +18,15 @@ The session began as a live demonstration: the assistant read *Words of Radiance
 
 **The invariant:** No token above the reader's cutoff is ever placed in an answering model context, for any reason, at any stage.
 
-**Refined form (after the digest design):** Every derived artifact must be tagged with the `global_seq` at which its content became knowable, and must have been generated from a context containing nothing above that seq. Ingest-time contexts are throwaway and isolated; it is the *answering* context that must stay bounded.
+**Refined form:** Every derived artifact must be tagged with the `global_seq` at which its content became knowable, and must have been generated from a context containing nothing above that seq. Ingest-time contexts are throwaway and isolated; it is the *answering* context that must stay bounded.
 
-**What this rules out:** whole-book summarization at ingest, chapter summaries generated with knowledge of later chapters, embeddings computed with cross-chapter context, and any "here's what this book is about" preamble. All of them launder future text into present answers.
+**What this rules out:** whole-book summarization served to a mid-book reader, chapter summaries generated with knowledge of later chapters, embeddings computed with cross-chapter context, and any "here's what this book is about" preamble. All of them launder future text into present answers.
 
 ## 2. The guard applies to meta-conversation
 
 **Decision:** The spoiler guard wraps every conversation with the user, including ones about the app's own architecture, data model, and evaluation.
 
-**Why:** This is the most expensive lesson of the session. While explaining the entity-graph design, the assistant spoiled a character reveal — by stating that an edge existed between two specific identity components, and by attaching an epithet drawn from training data rather than from retrieved text. The SQL filter was never applied to the design conversation, because it was "just architecture talk."
+**Why:** This is the most expensive lesson of the first session. While explaining the entity-graph design, the assistant spoiled a character reveal — by stating that an edge existed between two specific identity components, and by attaching an epithet drawn from training data rather than from retrieved text. The SQL filter was never applied to the design conversation, because it was "just architecture talk."
 
 **Consequences for the build:**
 
@@ -34,7 +38,7 @@ The session began as a live demonstration: the assistant read *Words of Radiance
 
 **Decision:** Parse both `content.opf` (spine) and `toc.ncx` (labels). **Spine order is the only ground truth for sequence.**
 
-**Why:** Chapter numbers in titles do not correspond to document order. In *Words of Radiance*, the book interleaves Prologue / Part headers / numbered chapters / Interludes / Epilogue — "Chapter 58" is not the 58th document, and interludes I-9 through I-11 sit at spine positions 78–80.
+**Why:** Chapter numbers in titles do not correspond to document order. Books interleave Prologue / Part headers / numbered chapters / Interludes / Epilogue, so "Chapter 58" is routinely not the 58th document.
 
 **Decision:** Segment to **paragraph** granularity, not fixed-size chunks. Paragraphs are natural units, cheap, and give exact citations.
 
@@ -95,7 +99,7 @@ There are two separate ladders, because sequence and labels fail independently.
 
 **Considered and rejected:** a concern that a Dramatis Personae could describe characters using titles or allegiances they only acquire later in that same book, and so should not inherit its physical spine position. Inspection of Golden Son's cast list found no such case — every entry reflects state as of the book's first page, and the deliberately withheld entry (`ARES — Terrorist Leader, color unknown`) shows the editorial care involved. The structural argument settles it: publishers place front matter there to be read first, so spoiling the book in it would defeat its purpose. Cross-book leakage is handled automatically, since book 2's front matter sits at a seq above all of book 1.
 
-**Positive use:** a Dramatis Personae is publisher-supplied seed data for the identity graph, in exactly the shape section 9 needs — explicit `stated` alias pairs plus canonical names, affiliations, and family relations, all correctly timestamped at the book's start.
+**Positive use:** a Dramatis Personae is publisher-supplied seed data for the identity graph, in exactly the shape section 11 needs — explicit `stated` alias pairs plus canonical names, affiliations, and family relations, all correctly timestamped at the book's start.
 
 ```
 VIRGINIA AU AUGUSTUS/MUSTANG    → alias pair, stated
@@ -150,8 +154,8 @@ Because `global_seq = book_order * 1_000_000 + spine_idx * 1000 + para_idx`, tha
 **Why:** A reader may have finished book 3, skipped book 2, and be re-reading book 1. The readable set is genuinely non-contiguous. Support an explicit "haven't read this one" so a mid-series book is never assumed.
 
 ```
-{ "way-of-kings":      {"status": "finished"},
-  "words-of-radiance": {"status": "reading", "position": 80} }
+{ "book-one": {"status": "finished"},
+  "book-two": {"status": "reading", "position": 80} }
 ```
 
 **Decision:** Separate **current position** from **spoiler ceiling**. The ceiling is a watermark that only moves forward unless the user explicitly resets it.
@@ -200,19 +204,21 @@ ORDER BY rank LIMIT 40;
 | Tantivy / Meilisearch | Legitimate upgrade if lexical *quality* (typo tolerance, fuzzy name matching) becomes the limiter. `tantivy-py` keeps the zero-server property. |
 | Plain files + ripgrep | What the demo actually used. Genuinely fine for Phase 0. |
 
-**Decision:** Add `sqlite-vec` in the same file when semantic search is wanted — same transaction, same exact filter, no second system. Vectors are a ranking aid inside `search`, never a substitute for reading text.
+**Decision:** Add `sqlite-vec` in the same file if semantic search is ever wanted — same transaction, same exact filter, no second system. Vectors would be a ranking aid inside `search`, never a substitute for reading text. Section 7 makes this unlikely to be needed.
 
-## 6. Retrieval: agentic tools, not vector RAG
+## 6. Retrieval: bounded tools, not vector RAG
 
-**Decision:** Give the model bounded tools and let it search agentically. Do not build a chunk-and-embed RAG pipeline.
+**Amended 2026-08-16.** Section 7 puts the entire readable set in context, so there is normally nothing left to retrieve and **the primary answering path is non-agentic**. The tools below remain built, tested, and correct; they back the context assembler, the CLI, and any future screen, and they stay available to the model for exact-quote pulls. What changed is that answering no longer *depends* on the model driving a search loop. The reasoning against vector RAG is unaffected and is why no embedding index was ever built.
+
+**Decision:** Give the model bounded tools rather than a chunk-and-embed RAG pipeline.
 
 **Why — empirical.** Every question in the demo needed a different retrieval strategy:
 
 | Question | What actually answered it |
 |---|---|
-| "Summarise interludes I-9 to I-11" | Sequential full read of three known documents |
+| "Summarise these three interludes" | Sequential full read of three known documents |
 | "Has this character been mentioned before?" | Lexical search for a name *and* physical descriptors across a bounded range, then negative-result verification |
-| "What are the orders / Surges / Lashings?" | Entity search across two books, then targeted expansion of ~20 hits |
+| "What are these terms of art?" | Entity search across two books, then targeted expansion of ~20 hits |
 
 Vector similarity is mediocre at all three. The "mentioned before" question would have failed outright — the answer hinged on the *absence* of a name plus the presence of a distinctive physical descriptor, which is lexical, not semantic. It also required reading surrounding context to reject a false positive where the word appeared as a metaphor rather than as a name.
 
@@ -222,7 +228,6 @@ Vector similarity is mediocre at all three. The "mentioned before" question woul
 list_books()                       → books + progress in each
 list_chapters(book, part=None)     → TOC labels ≤ ceiling only
 read_raw(book, from_ch, to_ch)     → full text, hard-clamped to ceiling
-read_digest(book, chapter|part)    → digest markdown, refused if seq > ceiling
 search(query, book=None, regex=False) → paragraph hits ≤ ceiling, with citation IDs
 first_seen(entity)                 → earliest ≤ ceiling occurrence, or NOT_YET_SEEN
 context(citation_id, window=3)     → expand around a hit
@@ -233,13 +238,45 @@ cast(book=None)                    → identity components as of ceiling
 
 **Decision:** When a request is clamped, tools return an explicit marker: `{"truncated_at": "Ch 58", "reason": "reading position"}`. The model learns that a boundary exists without learning what is past it.
 
-**Decision:** Tools read files and rows. Nothing is embedded into a system prompt or a vector index by default. (Explicitly confirmed by the user.)
+## 7. Context assembly: the readable set, whole
 
-## 7. The second leak vector: the model already knows the book
+**Decision (2026-08-16, supersedes the digest pyramid — see Appendix A):** the answering context is the entire readable set, raw, and nothing else.
+
+> Every paragraph at or below the reader's cutoff, in ascending `global_seq` order, excluding `kind = 'excerpt'`. No digests. No summaries. No retrieval step.
+
+**Why this is a strengthening of the invariant, not a relaxation of it.** The context window becomes `WHERE global_seq <= :ceiling` materialised. There is no derived artifact whose seq tag could be wrong, no digest that might have absorbed emphasis from a later chapter, and no search step that could miss a paragraph that was below the ceiling all along. Safety stops being a property distributed across four granularities of artifact and becomes one query whose result you can assert on directly.
+
+**Why it became possible.** The digest pyramid's compression argument assumed context was the scarce resource. At 1M tokens for cents (section 13), it is not. Measured: Red Rising's body is 3,684 paragraphs, 664k characters, ~166k tokens — and chapter 20 sits at ~64k of that. Golden Son is comparable. Both books complete is ~366k against a 1,050k window, and the full six-book series is roughly 1.05M, reachable only by someone who has finished it, at which point there is nothing left to bound.
+
+**Decision — assemble oldest-first and place an explicit cache breakpoint at the cutoff.** GPT-5.6 and newer support explicit prompt-cache breakpoints with a minimum 30-minute TTL, versus automatic caching whose TTL is unspecified and historically short.
+
+```
+[ raw paragraphs, ascending global_seq, up to the cutoff ]  ← stable prefix
+[ system instructions                                    ]  ← stable prefix
+────────────────────────────────────────────────────────── cache breakpoint
+[ conversation so far ]                                     ← volatile suffix
+[ the new question    ]                                     ← volatile suffix
+```
+
+The API is stateless: every turn re-sends the whole context. Cache matching is a **literal prefix from the first token**, so one changed character early forfeits the entire saving. The ceiling only ever moves forward (section 4), so advancing it appends and the cached prefix survives a whole reading session. This ordering is an architectural constraint, not a preference — nothing volatile goes before the breakpoint, no timestamps, no per-question preamble, no reordering.
+
+At chapter 20 this is the difference between ~1.3¢ and ~0.13¢ per turn — pennies, honestly, at single-book scale. It matters at full-series size and it matters for latency now.
+
+**Decision — inject paragraph anchors inline.** Each paragraph carries its citation ID (`[rr:15:p07]`) in the assembled text, so section 8's generation contract survives unchanged and citations still resolve to raw paragraph IDs.
+
+**Decision — the assembler is built on the existing bounded query layer in `tools.py`, not on a new SQL path.** There must remain exactly one place where the cutoff `WHERE` clause lives. The invariant tests extend to the assembler: for random ceilings, no paragraph in the assembled string may have `global_seq > ceiling`, and no `excerpt` paragraph may appear at any ceiling.
+
+**Decision — exceed the window and it raises.** If the assembled context exceeds the window minus headroom, fail loudly. Do not silently degrade to digests, drop the oldest book, or truncate. This follows the project's existing rule for extractors, and for the same reason: a silent fallback makes a capacity problem indistinguishable from a correct answer. When it first fires on a real library, the degradation gets designed against that actual case.
+
+**[open]** — whether 300k+ tokens of raw prose actually answers better than digest-plus-search. This is the one claim in the amendment that is reasoned rather than measured. A 1M window is not 1M tokens of usable attention. The probe: run the same question set against both paths over the dev corpus and compare.
+
+## 8. The second leak vector: the model already knows the book
 
 **Decision:** Assume parametric leakage will happen and defend against it structurally.
 
-**Why:** The model has these books in its weights. Even with perfect retrieval it will helpfully add what a term "actually means" from training data. This is not preventable by prompting — and it demonstrably happened during this very session (see section 2).
+**Why:** The model has these books in its weights — Luna's knowledge cutoff is February 2026, and the dev corpus long predates it. Even with a perfectly bounded context the model will helpfully add what a term "actually means" from training data. This is not preventable by prompting, and it demonstrably happened during the design session itself (see section 2).
+
+**This is the leak that section 7 does *not* close.** Section 7 guarantees what is in the context. It guarantees nothing about where the answer came from.
 
 **Defense in depth:**
 
@@ -250,39 +287,48 @@ cast(book=None)                    → identity components as of ceiling
 | Entailment audit | Parametric leakage, hallucination | High |
 | System prompt | Tone, refusal style | Low — do not rely on it |
 
-**Decision — generation contract:** every factual claim carries a citation ID from the retrieved set (`[rr2:78:p14]`). This alone cuts leakage substantially, because it reframes the task from *recall* to *summarise these passages*.
+**Decision — generation contract:** every factual claim carries a citation ID from the assembled context (`[rr2:78:p14]`). This alone cuts leakage substantially, because it reframes the task from *recall* to *summarise these passages*.
 
-**Decision — audit pass:** a second, cheap model call sees the draft answer and the retrieved passages **only**, and performs a pure entailment check: for each factual claim, is it supported by the supplied passages? Unsupported claims are stripped or the answer is regenerated.
+**Decision — audit pass:** a second, cheap model call sees the draft answer and the assembled passages **only**, and performs a pure entailment check: for each factual claim, is it supported? Unsupported claims are stripped or the answer is regenerated.
 
-**Why this works:** the auditor needs no knowledge of the book. It is checking text against text. That makes it cheap, model-agnostic, and able to catch leakage that no amount of instruction-following would. Run it on a small fast model.
+**Why this works:** the auditor needs no knowledge of the book. It is checking text against text. That makes it cheap, model-agnostic, and able to catch leakage that no amount of instruction-following would.
 
-**Decision — the auditor grounds against RAW TEXT ONLY, never digests.** This is critical. A digest is model-generated and can be wrong; if the auditor may validate against a digest, a hallucination in the digest becomes an *unfalsifiable* hallucination in the answer. Digests sit outside the trust boundary.
+**Decision — the auditor grounds against RAW TEXT ONLY.** Under section 7 this is satisfied by construction, since the answering context contains nothing but raw text. It remains a rule because any future reintroduction of derived artifacts must not quietly break it: a hallucination in a model-generated artifact that is allowed to validate an answer becomes an *unfalsifiable* hallucination.
 
-## 8. Spoiler policy
+## 9. Spoiler policy
 
-**Decision:** "No spoilers" is a user setting with three levels, because every possible response to an unanswerable question leaks something different.
+**Decision (revised 2026-08-16):** there is **one** response behavior when the read text does not answer a question. No strictness levels, no setting.
 
-| Level | Response when text doesn't answer | Leak | Usefulness |
-|---|---|---|---|
-| Loose | "Not answered by Chapter 58" | Implies it *is* answered later | Highest |
-| **Balanced (default)** | "Nothing in what you've read addresses this" | Ambiguous between never / later | Good |
-| Paranoid | Declines without characterising | Minimal | Lowest |
+> "Nothing in what you've read covers this."
 
-The demo used the Loose phrasing throughout.
+**Why the three-level design was dropped:** it was speculative, and only one level was defensible. *Loose* ("that isn't answered by chapter 20") leaks by construction — it confirms that an answer exists ahead, every time it fires. *Paranoid* declines without characterising, which is barely usable. Neither earned the configuration surface, the testing burden, or the extra prompt paths. The rejected levels are recorded in Appendix B.
 
-**Decision:** Triage spoiler-seeking questions **before** retrieval, not after. "Does X ever happen?" is asking the system to look forward; detect and decline rather than retrieve-then-filter.
+**Decision:** Triage spoiler-seeking questions **before** answering, not after. "Does X ever happen?" is asking the system to look forward; detect and decline rather than answer-then-filter.
 
 **Decision:** Inference from read material is allowed but must be **labelled** — "this connects things you've read; the text hasn't stated it."
 
 **Why:** Connecting two descriptions the reader has already encountered is analysis, not spoiling. But inference is a gradient, and labelling lets the reader decide how much they want. The demo did this successfully when linking two unnamed appearances of the same character by shared physical description.
 
-## 9. Character reveals and the identity graph
+## 10. Answer voice
+
+**Decision (2026-08-16, user's, chosen from worked samples):** answers are **conversational prose** — the register of a friend who has read exactly as far as you have. Not a report, not a briefing.
+
+- No headers, no bullet dumps, no bolded label-and-colon lines.
+- Citations sit inline at the end of the sentence they support, unobtrusively.
+- Do not regurgitate the text verbatim. Synthesise. Quote only when the exact phrasing carries the answer.
+- What the text has not yet established is folded into the prose naturally ("that's still being tested rather than explained"), never surfaced as a "Not yet known" section — that would be a completeness indicator, which section 11 forbids.
+
+**Why it is in the decision record rather than only in a prompt file:** it has a safety consequence. Free paraphrase is the style most likely to drift from its sources, since the model is composing rather than staying close to the page. The citation contract in section 8 is what holds it honest, which is an argument for keeping citations even where the auditor is deferred.
+
+## 11. Character reveals and the identity graph
+
+**Status: deferred to Phase 3, not superseded.** The design below is unchanged and correct. Its consumers — the cast screen and identity-aware retrieval — are deferred until the core question-answering loop works, so the code that implements it sits dormant. Reviving the cast screen revives this.
 
 **The problem:** A naive entity index is keyed on surface strings, but a reveal is precisely the moment two surface strings turn out to be one person. If the index knows `A == B` and B is a later reveal, then "who is A?" leaks it.
 
 **Decision:** Model identity as a **time-filtered graph**.
 
-- **Nodes** are *designators*, not characters — every distinct way the text refers to someone. Described-but-unnamed figures get synthetic nodes (`unnamed:azish-crescent-man@wok:8`).
+- **Nodes** are *designators*, not characters — every distinct way the text refers to someone. Described-but-unnamed figures get synthetic nodes (`unnamed:man-in-grey-coat@b1:8`).
 - **Edges** are coreference assertions, each carrying `revealed_at_seq` (earliest point the link is derivable) and a type: `stated` vs `inferable`.
 - **At query time**, compute connected components using only edges with `revealed_at_seq <= ceiling`.
 
@@ -298,13 +344,173 @@ entity_attr(node_id, kind, value, first_seq, cite_para_id)
 
 **Decision:** Reveal timestamps come free from **generating in reading order**. At chapter *N*, the extractor sees the registry as of *N−1* plus chapter *N*'s text, and nothing else. A model that never saw *N+1* cannot backdate a reveal.
 
-**Decision — no negative-space leaks.** Never render completeness indicators ("1 of 3 aliases known"), counts of unknowns, or progress meters over hidden data. Absence must be invisible.
+**Decision — no negative-space leaks.** Never render completeness indicators ("1 of 3 aliases known"), counts of unknowns, or progress meters over hidden data. Absence must be invisible. **This rule is not deferred** — it binds the answer voice in section 10 today.
 
 **Retroactive recontextualisation** (chapter 70 reveals the chapter 3 POV was someone else) needs no special handling — the edge is stamped at 70, so before that, chapter 3's POV remains its own node. That it falls out of the model for free is a signal the model is right.
 
 **Decision:** Build a **"cast as you know it"** screen — every component at the current ceiling, with designators, known attributes, and last appearance. It must be backed by the *same* `cast` tool the model uses, not a separate code path, or the two will diverge and the screen becomes a place a leak can hide.
 
-## 10. The digest pyramid
+## 12. Ingest is upfront and batch, not incremental
+
+**Decision:** The extraction pipeline runs **once, at import, over the whole book, before the user asks anything.**
+
+**Clarification that caused confusion in the first session:** "progressive/causal" describes the *generation order inside the batch job* — it walks chapters front to back so each artifact's context contains nothing above its own seq. It does **not** mean lazy or on-demand generation as the reader advances.
+
+**Setting reading progress is a pure read-side filter over a fully-built index** — change one integer, get a different view. Zero generation cost, instant.
+
+**Properties:** one-time, offline, resumable, checkpointed per chapter. Can run overnight across a whole shelf and never blocks a query.
+
+**Amended 2026-08-16:** under section 7 the only thing ingest must produce is paragraphs, seq tags, labels, and classification. The LLM-driven passes — chapter digests, part and book rollups, entity and alias extraction — are dormant along with their consumers. Ingest for a new book is now pure parsing with no model calls at all.
+
+## 13. Model and authentication
+
+**Decision (2026-08-16):** `openai/gpt-5.6-luna-20260709` via **OpenRouter** is the default provider.
+
+**Why the change from the Claude subscription:** section 7 needs a window that holds an entire series, which the Agent SDK path does not have. The provider abstraction built for exactly this reason is what made the swap cheap.
+
+**Verified 2026-08-16:** 1,050,000-token context, 128k max output, released 2026-07-09, knowledge cutoff February 2026. Text/image/file in, text out. Supports tools, structured outputs, reasoning effort, and seed. `gpt-5.6-luna-pro` is the *same underlying model* served with `reasoning.mode: pro` — one adapter with a per-role knob, not a second integration.
+
+**Pricing, from the models API.** There is a tier boundary that matters:
+
+| Tier | Input | Output | Cached read | Cache write |
+|---|---|---|---|---|
+| ≤ 272k tokens | $0.10/M | $0.60/M | $0.01/M | $0.125/M |
+| > 272k tokens | $0.20/M | $0.90/M | ~$0.02/M | — |
+
+Both model pages were flagged "50% off" when checked, so list price is double these. At list, a cached question over both Red Rising books costs roughly 1.4¢ under the boundary and 3.6¢ over it; a 30-question session is under $0.50 either way.
+
+**Consequence: cost is not a design constraint, and the 272k boundary is not worth contorting the design to respect.** It is recorded so a future cost surprise is diagnosable, not as a budget to engineer against.
+
+**Decision — model roles:**
+
+- **Answering** → Luna Pro (`reasoning.mode: pro`) over the full readable set.
+- **Auditing** → plain Luna at low reasoning effort. Cheap, supports structured outputs, and entailment is not a reasoning task.
+- **Ingestion** → heuristics and regex. No LLM for parsing, ever.
+
+**Decision — credentials are read from the environment and never from disk.** `OPENROUTER_API_KEY` comes from the process environment. `.env` file *contents* are never read by tooling or by an assistant working on this repo; key names may be enumerated, values never. See the global guidance file for the standing rule.
+
+**Findings on the Claude subscription path, retained (verified August 2026):**
+
+- Agent SDK usage and `claude -p` currently **draw from the subscription's usage limits**. A local single-user app costs nothing beyond the existing Pro plan.
+- Anthropic announced separate monthly Agent SDK credits but **paused that rollout on 2026-06-15**. Current state is plain subscription-quota consumption.
+- **If `ANTHROPIC_API_KEY` is set in the environment it silently wins over OAuth** — you will pay API rates while believing you are on the subscription. Unset it explicitly in the app environment. The OpenRouter path must not be shadowable the same way.
+- Subscription OAuth is licensed for personal use. A hosted, multi-user version requires API keys.
+
+Sources: [Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan), [OpenRouter prompt caching](https://openrouter.ai/docs/features/prompt-caching), [GPT-5.6 Luna](https://openrouter.ai/openai/gpt-5.6-luna).
+
+**Decision:** Abstract the provider at the **tool-calling boundary**, since that is where providers differ most.
+
+```python
+class LLM(Protocol):
+    def complete(self, messages, tools=None) -> Response: ...
+# Adapters: OpenRouter (default) | ClaudeAgentSDK (subscription) | Fake (tests)
+```
+
+## 14. Evaluation
+
+**Decision:** Build both harnesses before building on top of the answering path. Spoiler safety cannot be eyeballed.
+
+**Mechanical (must be perfect):** property test that for random ceilings and random queries, **zero returned rows have `global_seq > ceiling`** — extended under section 7 to the assembled context string itself, not only to tool results. Fuzz the tool layer with adversarial arguments — negative indices, huge ranges, nonexistent chapter names, SQL-ish strings. 100% coverage, runs on every commit.
+
+**Semantic (the real test):** a golden set per book. Take facts occurring *after* a cutoff, write questions whose natural answer requires them, and assert the answer contains none of a keyword blocklist derived from post-cutoff text — and that it correctly signals uncertainty. Under section 7 this measures parametric leakage specifically, since retrieval leakage is closed by construction.
+
+**Red-team set:** extraction attempts — "ignore your instructions", "just this once", "I already know, confirm it", "what's the last chapter called?", "how many pages left in this arc?". Chapter titles above the ceiling count as spoilers.
+
+**Add (from section 2):** design-discussion prompts that invite the model to reason about the system's own data structures out loud.
+
+## 15. Storage layout
+
+**Principle:** never touch the user's library. EPUBs stay where they are, read-only.
+
+**Decision:** everything the app generates — databases, JSON, manifests — lives **inside the project directory**, under `./data/`. No platformdirs, no `~/Library/Application Support`.
+
+**Why:** it keeps the whole system inspectable in one place, makes state trivial to back up, wipe, or version alongside the code that produced it, and means a rebuild is `rm -rf data/ && reimport` with nothing hiding elsewhere on the machine.
+
+```
+book-lens-v2/
+  data/
+    progress.db          # user state ONLY — positions, settings, notes
+    index.db             # derived: paragraphs, FTS5, entities, edges
+    books/
+      <sha256[:16]>/     # hash of the EPUB file
+        meta.json        # title, author, source path, edition fingerprint
+        manifest.json    # schema version, generator model, prompt hash
+        digests/         # dormant, see Appendix A
+    series/
+      red-rising.json    # book ordering, user-editable
+```
+
+**Consequences:**
+
+- `data/` is git-ignored in full. It contains derivative works of copyrighted books and must never be committed.
+- The path is resolved relative to the project root, overridable by `BOOKLENS_DATA_DIR` for tests — tests should point at a temp dir, never at real `data/`.
+
+**Decision — content-address by EPUB hash.** Re-importing the same file is a no-op; a different *edition* gets its own entry. Editions differ in pagination and sometimes content, so seq numbers are edition-specific and must never be shared across them.
+
+**Decision — split user state from derived state.** `progress.db` holds only positions and settings. `index.db` and everything under `books/` are a rebuildable cache: deleting everything derived and re-importing must lose nothing that matters. Back up `progress.db`; treat the rest as disposable.
+
+**Decision — version and invalidate explicitly.** `manifest.json` records generator model ID, a hash of any prompt used, and a schema version, so changing a prompt marks exactly which artifacts are stale.
+
+**Decision — if this ever syncs across devices, sync `progress.db` ONLY.** Derived artifacts are derivative works of copyrighted text; shipping them to a server or between users is redistribution in a way a local cache is not. Progress and settings sync; each device regenerates its own index from the user's own file.
+
+**Repo location:** `~/Documents/Workspace/Projects/book-lens-v2`. The user's book library lives elsewhere (`~/Documents/Books/Fiction:NonFiction/`) and is read-only input.
+
+## 16. Development corpus
+
+**Decision:** develop and test against books the user has **finished**, so a leak during development is harmless.
+
+**Primary: Red Rising #1–2.** **Secondary: Mistborn #1–2.** Both pairs are in the library directory.
+
+**Why two books, not one:** two volumes is the minimum that exercises the cross-book logic that most of this design exists to serve — `global_seq` spanning volumes, per-book progress state, the union-of-ranges readable set. A single-book corpus would let all of that pass untested. V1 ships on book 1 alone to get something usable in hand; V1.1 extends to Golden Son and Morning Star immediately after.
+
+**Why not the Stormlight Archive:** the user is mid-way through *Words of Radiance*. It is explicitly excluded from fixtures, docstrings, eval cases, and design examples. Mistborn also gives the ingest parser a second structural shape to handle, since it carries chapter epigraphs.
+
+Eval golden sets may quote the dev corpus freely, including post-cutoff material — asserting that the app does *not* surface it is the entire point of a golden set.
+
+## 17. How implementation work is dispatched
+
+**Decision:** the top-level agent does reasoning, design, decomposition, and review; **implementation is always delegated to a Sonnet 5 subagent** with a self-contained brief (files, contract, applicable invariants, verification, out-of-scope).
+
+**Decision:** parallel subagents only where work genuinely splits — independent modules, no shared files, no cross-dependencies. Serial is the default; parallelism is an exception that must be justified rather than manufactured.
+
+**Decision:** feature work follows the `/git-workflow` skill with one modification — **merge directly to main instead of opening a PR.**
+
+Operational detail lives in `CLAUDE.md`, including the scoping note that stops a subagent from reading the delegation rule and trying to delegate onward.
+
+## 18. Known hard parts
+
+1. **Position resolution ambiguity** — "I finished Part 3" did not tell us whether the following interludes were read (they were not). Mitigated by the dropdown, but always confirm the resolved boundary and default conservative.
+2. **Parametric leakage is never fully solved.** The auditor makes it rare, not impossible, and section 7 does nothing about it. Say so in the UI — "best effort, not a guarantee" buys far more trust than a silent failure.
+3. **Negative results are expensive.** Proving "this character was never mentioned before" required searching several descriptor variants across two books and manually rejecting a false positive. Section 7 helps here — the whole readable set is present rather than sampled — but the model should still report its search scope so the user can judge a negative claim.
+4. **Cross-series knowledge** — deliberately out of scope. Per-series libraries with a hard wall between them.
+5. **Non-linear narratives** — multiple timelines, flashbacks, unreliable ordering. Spine order is the only defensible definition of "read so far". Accept and document it.
+6. **Long-context attention is not the same as long-context capacity.** Section 7's `[open]` item. A 1M window does not mean 1M tokens are equally attended to, and the failure mode is quiet — a plausible answer that missed the relevant passage.
+
+## 19. Open questions **[open]**
+
+- Whether 300k+ tokens of raw prose answers better than digest-plus-search (section 7). The one unmeasured claim in the current design.
+- How to detect and handle omnibus editions and box sets, where one EPUB contains several books.
+- Whether `inferable` coreference edges should be surfaced to the user as "the app thinks these may be the same person", or kept internal. Surfacing is more useful; it also risks nudging.
+- Whether to support user-authored notes and corrections that participate in retrieval, and how to seq-tag them.
+- What happens when a series genuinely exceeds the context window (section 7's raise). Deliberately left undesigned until a real case exists.
+
+---
+
+# Appendix: superseded and rejected decisions
+
+Kept in full. Nothing here is current design. Each entry says what replaced it and why it is worth keeping.
+
+## A. The digest pyramid — superseded 2026-08-16 by section 7
+
+**Replaced by:** putting the entire readable set in context raw.
+
+**Why it went:** the pyramid was a *cost* mechanism, never a safety one — the argument below is explicitly about 20–40× compression making fifty chapters fit where three would. A million-token window at cents per question removed that premise entirely.
+
+**What was measured before it was retired.** 26 chapter digests were generated against real Red Rising text. They were correct, correctly bounded, and appropriately thin — `## Events` lines like "Dancer explains the Sons of Ares" are routing pointers, which is exactly what the design below asked for ("digests route, raw text answers"). The failure was not in the digests. It was that the drill-down step reconstructs, lossily and slowly, something that can now simply be handed over whole.
+
+**Why it is kept:** this machinery is what a series exceeding the context window would need (section 7's raise), and what the Story So Far screen would need if revived. `passes.py`, `causal.py`, `prompts.py`, the `digest` CLI command, and their tests remain in the tree, dormant and unwired, still passing. The causal generation ordering is genuinely hard and should not be rebuilt from scratch.
+
+---
 
 **Decision:** Precompute structured digests at multiple granularities and serve the coarsest one that is fully below the ceiling.
 
@@ -317,34 +523,32 @@ L0  raw paragraphs     source range: itself
 
 **Serving rule:** use the coarsest artifact whose **entire source range** lies at or below the ceiling; degrade to finer granularity at the boundary.
 
-**Worked example** at the demo's position (book 1 finished, book 2 through Ch 58 + three interludes):
+**Worked example** at the demo's position (book 1 finished, book 2 partway):
 
 | Range | Served as | ~Tokens |
 |---|---|---|
 | Book 1 (finished) | 1 book digest | 2k |
-| Book 2 Parts 1–3 | 3 part digests | 4k |
+| Book 2 early parts | 3 part digests | 4k |
 | Book 2 recent chapters | 4 chapter digests | 2k |
 | Above ceiling | nothing | 0 |
 
-~8k tokens for a bounded picture of ~500k words. The rule is self-correcting: mid-book, the book digest is disqualified because its source range exceeds the ceiling, and the system automatically falls back to chapter digests plus raw text. No special-casing.
+~8k tokens for a bounded picture of ~500k words. The rule is self-correcting: mid-book, the book digest is disqualified because its source range exceeds the ceiling, and the system automatically falls back to chapter digests plus raw text.
 
-**Why digests matter beyond cost:** one interlude was 60 KB raw; a digest is ~1.5 KB. That is 20–40× compression, which changes *what is possible* — fifty chapters in context instead of three. Arc-level questions ("where is this character's storyline now?") are diffuse across many chapters and raw retrieval handles them badly.
+**Why digests mattered beyond cost:** one interlude was 60 KB raw; a digest is ~1.5 KB. That is 20–40× compression, which changes *what is possible* — fifty chapters in context instead of three. Arc-level questions are diffuse across many chapters and raw retrieval handles them badly.
 
 **Decision — book digests must be rolled up causally.** A book-1 digest is composed from book-1 part digests, themselves from book-1 chapter digests. Never generated by a model that has seen book 2.
 
-**Why:** A book-1 summary written with knowledge of books 2–4 is contaminated even when every sentence is factually about book 1. It foregrounds the character who becomes important and lingers on the object that pays off later. **Emphasis is a spoiler channel.**
+**Why:** A book-1 summary written with knowledge of books 2–4 is contaminated even when every sentence is factually about book 1. It foregrounds the character who becomes important and lingers on the object that pays off later. **Emphasis is a spoiler channel.** This argument survives its parent decision and is the reason the dormant code must not be naively regenerated.
 
-**Decision — digests route, raw text answers.** The agent reads digests to orient and locate, then drills to raw paragraphs to answer. Digests are the map; paragraphs are the territory. Citations always resolve to raw paragraph IDs.
+**Decision — digests route, raw text answers.** The agent reads digests to orient and locate, then drills to raw paragraphs to answer. Citations always resolve to raw paragraph IDs.
 
-**Why:** The demo's hardest answers turned on exact phrasing — specific physical descriptors and a quoted line of dialogue. No digest preserves that.
+**Decision:** Every digest records the paragraph-ID range it was derived from.
 
-**Decision:** Every digest records the paragraph-ID range it was derived from, so the agent can hop digest-claim → source text in one step.
-
-**Digest format** — designed for routing and querying, not for reading:
+**Digest format:**
 
 ```markdown
 ---
-seq: 78 | book: wor | label: "..." | pov: ... | location: ...
+seq: 78 | book: b1 | label: "..." | pov: ... | location: ...
 entities: [...]        # node IDs
 introduces: [...]      # terms/concepts first appearing here
 source_paras: [12043, 12310]
@@ -354,153 +558,32 @@ source_paras: [12043, 12310]
 ## Open questions
 ```
 
-Structured front-matter makes digests filterable (`entities`, `introduces`, `pov`), turning them into a genuine index rather than prose blobs.
+**Free feature (lost with the pyramid):** "recap since you last read" was just the digests between the previous watermark and the current one. Under section 7 this needs a different mechanism if it is ever wanted.
 
-**Free feature:** "recap since you last read" is just the digests between the previous watermark and the current one.
+## B. Three-level spoiler strictness — superseded 2026-08-16 by section 9
 
-## 11. Ingest is upfront and batch, not incremental
+**Replaced by:** a single response behavior.
 
-**Decision:** The entire pipeline runs **once, at import, over the whole book, before the user asks anything.**
+**Why it went:** the levels were speculative and only one was defensible. The user's call, on review: "Loose and Paranoid are just additional fillers that aren't really needed."
 
-**Clarification that caused confusion in the session:** "progressive/causal" describes the *generation order inside the batch job* — it walks chapters front to back so each artifact's context contains nothing above its own seq. It does **not** mean lazy or on-demand generation as the reader advances.
+**Decision (superseded):** "No spoilers" is a user setting with three levels, because every possible response to an unanswerable question leaks something different.
 
-Import a book, and the job processes every document front-to-back in one pass: chapter digests, part digests, book digest, and the full entity graph including every edge and its reveal timestamp, all the way to the last page. It then sits complete on disk.
+| Level | Response when text doesn't answer | Leak | Usefulness |
+|---|---|---|---|
+| Loose | "Not answered by Chapter 58" | Implies it *is* answered later | Highest |
+| **Balanced (default)** | "Nothing in what you've read addresses this" | Ambiguous between never / later | Good |
+| Paranoid | Declines without characterising | Minimal | Lowest |
 
-**Setting reading progress is a pure read-side filter over a fully-built index** — change one integer, get a different view. Zero generation cost, instant.
+The demo used the Loose phrasing throughout, which is part of why it felt good and part of why it leaked.
 
-**Properties:** one-time, offline, resumable, checkpointed per chapter. Can run overnight across a whole shelf and never blocks a query.
+## C. Budget-filled-backwards context assembly — rejected 2026-08-16, never built
 
-**One pass produces everything:**
+**Proposed:** fill a token budget with raw text walking backwards from the ceiling, and degrade to digests for everything older than where the budget ran out. Recency-weighted, graceful under long series, and it degraded to the digest pyramid's serving rule at the boundary.
 
-```
-for chapter in spine_order:
-    ctx = registry_state(≤ chapter-1) + raw_text(chapter)
-    → chapter digest                      [seq = chapter]
-    → new entities, aliases, attributes   [seq = chapter]
-    → append to registry
-rollup parts → part digests   (from chapter digests only)
-rollup books → book digests   (from part digests only)
-```
+**Rejected for two reasons.**
 
-## 12. Model and authentication
+**It breaks section 8's trust boundary.** It places raw text and model-generated digests in the same answering context. The auditor grounds against raw text only, so a claim the model sourced from a digest has nothing to check against — the auditor must either strip a probably-fine claim or be allowed to validate against digests, which is the exact failure section 8 exists to prevent.
 
-**Decision:** Build on the Claude Agent SDK under the existing Claude Pro subscription for personal local use; keep a provider abstraction so OpenRouter can be swapped in.
+**It solves a problem this corpus does not have.** The full six-book Red Rising series is roughly 1.05M tokens against a 1,050k window, and is only reachable by a reader who has finished it. The complexity bought nothing.
 
-**Findings (verified during the session, August 2026):**
-
-- Agent SDK usage and `claude -p` (non-interactive Claude Code) currently **draw from the subscription's usage limits**. A local single-user app costs nothing beyond the existing Pro plan.
-- Anthropic announced separate monthly Agent SDK credits (Pro $20/mo, Max 5x $100, Max 20x $200) but **paused that rollout on 2026-06-15**. Current state is plain subscription-quota consumption. Re-check before relying on it long term.
-- **If `ANTHROPIC_API_KEY` is set in the environment it silently wins over OAuth** — you will pay API rates while believing you are on the subscription. Unset it explicitly in the app environment.
-- Subscription OAuth is licensed for personal use. A hosted, multi-user version requires API keys; there is active enforcement pressure against third-party subscription auth. Personal local tool is comfortably inside the line.
-
-Sources: [Agent SDK with your Claude plan](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan), [Agent SDK overview](https://code.claude.com/docs/en/agent-sdk/overview), [reporting on third-party OAuth restrictions](https://alternativeto.net/news/2026/2/anthropic-officially-bans-using-subscription-authentication-for-third-party-claude-use).
-
-**Decision:** Abstract the provider at the **tool-calling boundary**, since that is where providers differ most.
-
-```python
-class LLM(Protocol):
-    def complete(self, messages, tools=None) -> Response: ...
-# Adapters: ClaudeAgentSDK (subscription) | AnthropicAPI | OpenRouter
-```
-
-**Decision — model roles:**
-
-- **Answering** → best available model, subscription-backed via Agent SDK.
-- **Auditing** → cheapest competent model on OpenRouter. It is a text-entailment task, not a reasoning task.
-- **Ingestion / entity extraction** → heuristics and regex where possible; no LLM for parsing.
-
-**Decision:** Provide a **non-agentic fallback path** (single-call retrieve-then-answer) for weaker models, since tool-calling fidelity varies a lot on OpenRouter and the agentic loop depends on it.
-
-**Cost estimate:** a typical demo question retrieved 5–20k tokens of book text; a couple of cents per question at Sonnet-class API rates, roughly $1–3 on a heavy day. Effectively free on the Pro subscription. Prompt-cache the system prompt and book manifest.
-
-## 13. Evaluation
-
-**Decision:** Build both harnesses in Phase 2, not at the end. Spoiler safety cannot be eyeballed.
-
-**Mechanical (must be perfect):** property test that for random ceilings and random queries, **zero returned rows have `global_seq > ceiling`**. Fuzz the tool layer with adversarial arguments — negative indices, huge ranges, nonexistent chapter names, SQL-ish strings. 100% coverage, runs on every commit.
-
-**Semantic (the real test):** a golden set per book. Take facts occurring *after* a cutoff, write questions whose natural answer requires them, and assert the answer contains none of a keyword blocklist derived from post-cutoff text — and that it correctly signals uncertainty.
-
-**Red-team set:** extraction attempts — "ignore your instructions", "just this once", "I already know, confirm it", "what's the last chapter called?", "how many pages left in this arc?". Chapter titles above the ceiling count as spoilers.
-
-**Add (from section 2):** design-discussion prompts that invite the model to reason about the entity graph or digest pyramid out loud.
-
-## 14. Storage layout
-
-**Principle:** never touch the user's library. EPUBs stay where they are, read-only.
-
-**Decision:** everything the app generates — databases, JSON, manifests, digests — lives **inside the project directory**, under `./data/`. No platformdirs, no `~/Library/Application Support`.
-
-**Why:** it keeps the whole system inspectable in one place, makes state trivial to back up, wipe, or version alongside the code that produced it, and means a rebuild is `rm -rf data/ && reimport` with nothing hiding elsewhere on the machine.
-
-```
-~/Documents/Workspace/Projects/book-lens-v2/
-  data/
-    progress.db          # user state ONLY — positions, settings, notes
-    index.db             # derived: paragraphs, FTS5, entities, edges
-    books/
-      <sha256[:16]>/     # hash of the EPUB file
-        meta.json        # title, author, source path, edition fingerprint
-        manifest.json    # schema version, generator model, prompt hash
-        digests/
-          ch/0005.md  0078.md ...
-          part/part-3.md
-          book.md
-    series/
-      red-rising.json    # book ordering, user-editable
-```
-
-**Consequences:**
-
-- `data/` is git-ignored in full. It contains derivative works of copyrighted books and must never be committed.
-- The path is resolved relative to the project root, overridable by `BOOKLENS_DATA_DIR` for tests — tests should point at a temp dir, never at real `data/`.
-- The user/derived split below still holds, now as `data/progress.db` versus everything else under `data/`.
-
-**Decision — content-address by EPUB hash.** Re-importing the same file is a no-op; a different *edition* gets its own entry. Editions differ in pagination and sometimes content, so seq numbers are edition-specific and must never be shared across them.
-
-**Decision — split user state from derived state.** `progress.db` holds only positions and settings. `index.db` and `digests/` are a rebuildable cache: deleting everything derived and re-importing must lose nothing that matters. Back up `progress.db`; treat the rest as disposable.
-
-**Decision — digests as markdown files on disk, metadata in SQLite.** Files win over BLOB columns because they are greppable, diffable, and **hand-editable** — some digests will be wrong and you want to fix them in an editor. A `digest(book, seq, path, source_para_range, version)` table keeps lookups indexed.
-
-**Decision — version and invalidate explicitly.** `manifest.json` records generator model ID, a hash of the digest prompt, and a schema version, so changing the prompt marks exactly which chapters are stale and re-runs only those.
-
-**Decision — if this ever syncs across devices, sync `progress.db` ONLY.** Digests are derivative works of copyrighted text; shipping them to a server or between users is redistribution in a way a local cache is not. Progress and settings sync; each device regenerates its own index from the user's own file. Keep the boundary clean now even though it is single-machine today.
-
-**Repo location:** `~/Documents/Workspace/Projects/book-lens-v2`. The user's book library lives elsewhere (`~/Documents/Books/Fiction:NonFiction/`) and is read-only input.
-
-## 15. Development corpus
-
-**Decision:** develop and test against books the user has **finished**, so a leak during development is harmless.
-
-**Primary: Red Rising #1–2.** **Secondary: Mistborn #1–2.** Both pairs are in the library directory.
-
-**Why two books, not one:** two volumes is the minimum that exercises the cross-book logic that most of this design exists to serve — `global_seq` spanning volumes, per-book progress state, the union-of-ranges readable set, and book-level digest rollup. A single-book corpus would let all of that pass untested.
-
-**Why not the Stormlight Archive:** the user is mid-way through *Words of Radiance*. It is explicitly excluded from fixtures, docstrings, eval cases, and design examples. Mistborn also gives the ingest parser a second structural shape to handle, since it carries chapter epigraphs.
-
-Eval golden sets may quote the dev corpus freely, including post-cutoff material — asserting that the app does *not* surface it is the entire point of a golden set.
-
-## 16. How implementation work is dispatched
-
-**Decision:** the top-level agent does reasoning, design, decomposition, and review; **implementation is always delegated to a Sonnet 5 subagent** with a self-contained brief (files, contract, applicable invariants, verification, out-of-scope).
-
-**Decision:** parallel subagents only where work genuinely splits — independent modules, no shared files, no cross-dependencies. Serial is the default; parallelism is an exception that must be justified rather than manufactured.
-
-**Decision:** feature work follows the `/git-workflow` skill with one modification — **merge directly to main instead of opening a PR.**
-
-Operational detail lives in `CLAUDE.md`, including the scoping note that stops a subagent from reading the delegation rule and trying to delegate onward.
-
-## 17. Known hard parts
-
-1. **Position resolution ambiguity** — "I finished Part 3" did not tell us whether the following interludes were read (they were not). Mitigated by the dropdown, but always confirm the resolved boundary and default conservative.
-2. **Parametric leakage is never fully solved.** The auditor makes it rare, not impossible. Say so in the UI — "best effort, not a guarantee" buys far more trust than a silent failure. Demonstrated live in this very session.
-3. **Negative results are expensive.** Proving "this character was never mentioned before" required searching several descriptor variants across two books and manually rejecting a false positive. Budget for multi-round agentic search, and have the model **report its search scope** so the user can judge a negative claim.
-4. **Cross-series knowledge** — deliberately out of scope. Per-series libraries with a hard wall between them.
-5. **Non-linear narratives** — multiple timelines, flashbacks, unreliable ordering. Spine order is the only defensible definition of "read so far". Accept and document it.
-
-## 18. Open questions **[open]**
-
-- How to detect and handle omnibus editions and box sets, where one EPUB contains several books.
-- Whether `inferable` coreference edges should be surfaced to the user as "the app thinks these may be the same person", or kept internal. Surfacing is more useful; it also risks nudging.
-- How much detail a book-level digest should retain to stay useful at book 5+ without becoming a second corpus.
-- Whether to support user-authored notes and corrections that participate in retrieval, and how to seq-tag them.
+**Recorded so it is not reinvented.** It is a genuinely appealing design and it came back twice during the session that rejected it.
