@@ -10,3 +10,8 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+
+# Secrets. Never committed, never read by tooling -- key names only.
+.env
+.env.*
+!.env.example
