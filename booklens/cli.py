@@ -243,6 +243,22 @@ def cmd_cast(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_credits(args: argparse.Namespace) -> int:
+    """Report the configured OpenRouter key's remaining balance."""
+    from dataclasses import asdict
+
+    from booklens.llm.base import TransientLLMError
+    from booklens.llm.openrouter import get_credits
+
+    try:
+        credits = asdict(get_credits())
+    except (FatalLLMError, TransientLLMError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    _print(credits, args.json)
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
@@ -331,6 +347,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_status = sub.add_parser("status", help="show data dir, schema, and ceiling info")
     p_status.add_argument("--json", action="store_true")
     p_status.set_defaults(func=cmd_status)
+
+    p_credits = sub.add_parser("credits", help="show remaining OpenRouter credit balance")
+    p_credits.add_argument("--json", action="store_true")
+    p_credits.set_defaults(func=cmd_credits)
 
     return parser
 
