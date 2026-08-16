@@ -1,14 +1,17 @@
 """The bounded tool layer: the only way an answering model touches book text.
 
-Every query filters on the ceiling in SQL. See `docs/implementation-notes.md`.
+Every query filters on the readable ranges in SQL. See `docs/implementation-notes.md`.
 """
 
 from __future__ import annotations
 
 import re
 import sqlite3
+import uuid
 
 from booklens import db, progress
+
+_TABLE_NAME_RE = re.compile(r"^readable_range_[0-9a-f]{32}$")
 
 _CITATION_RE = re.compile(r"^(?P<book>[^:]+):(?P<spine>\d+):p(?P<para>\d+)$")
 
@@ -88,18 +91,50 @@ def _row_to_para_dict(row: sqlite3.Row) -> dict:
 
 
 class Tools:
-    """Bounded retrieval, fixed to the ceiling captured when it was constructed.
+    """Bounded retrieval, fixed to the readable ranges captured when it was constructed.
 
-    No method takes the ceiling as an argument, so nothing a model asks for can
-    raise it.
+    No method takes the ceiling or a range as an argument, so nothing a model
+    asks for can raise it.
     """
 
     def __init__(self, iconn: sqlite3.Connection, pconn: sqlite3.Connection):
-        """Bind to the reader's current ceiling for the life of this object."""
+        """Bind to the reader's current readable ranges for the life of this object."""
         self._iconn = iconn
         self._pconn = pconn
         self._ceiling = progress.ceiling_for(pconn, iconn)
+        self._closed = False
+        # Unique per instance so two `Tools` sharing one connection each get
+        # their own temp table -- bounds live on the object, not the connection.
+        self._table = f"readable_range_{uuid.uuid4().hex}"
+        assert _TABLE_NAME_RE.match(self._table), f"unsafe table name: {self._table!r}"
         db.register_regexp(iconn)
+        self._install_readable_range(progress.readable_ranges(pconn, iconn))
+
+    def _install_readable_range(self, ranges: list[tuple[int, int]]) -> None:
+        """Create this instance's own temp table for every query's WHERE clause to join against."""
+        self._iconn.execute(f"CREATE TEMP TABLE {self._table}(lo INTEGER NOT NULL, hi INTEGER NOT NULL)")
+        self._iconn.executemany(
+            f"INSERT INTO {self._table}(lo, hi) VALUES (?, ?)", ranges
+        )
+        self._iconn.commit()
+
+    def close(self) -> None:
+        """Drop this instance's temp table. Safe to call multiple times or never."""
+        if self._closed:
+            return
+        self._iconn.execute(f"DROP TABLE IF EXISTS temp.{self._table}")
+        self._iconn.commit()
+        self._closed = True
+
+    def __enter__(self) -> "Tools":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
+    def _book_ceiling(self, book_id: str) -> int:
+        """This one book's own watermark, for naming a chapter it has actually reached."""
+        return progress.get_progress(self._pconn, book_id).ceiling_seq
 
     # -- books / chapters --------------------------------------------------
 
@@ -121,9 +156,12 @@ class Tools:
             }
             if prog.position_chapter_idx is not None:
                 ch = self._iconn.execute(
-                    "SELECT label FROM chapter WHERE book_id = ? AND chapter_idx = ? "
-                    "AND start_seq <= ? AND kind != 'excerpt'",
-                    (r["id"], prog.position_chapter_idx, self._ceiling),
+                    f"""
+                    SELECT label FROM chapter
+                    WHERE book_id = ? AND chapter_idx = ? AND kind != 'excerpt'
+                      AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
+                    """,
+                    (r["id"], prog.position_chapter_idx),
                 ).fetchone()
                 if ch is not None:
                     entry["current_chapter"] = ch["label"]
@@ -135,7 +173,7 @@ class Tools:
         if not isinstance(book, str) or not book:
             return {"book": book, "chapters": []}
 
-        params: list = [book, self._ceiling]
+        params: list = [book]
         part_clause = ""
         if part is not None:
             part_clause = " AND part_label = ?"
@@ -144,7 +182,8 @@ class Tools:
         rows = self._iconn.execute(
             f"""
             SELECT chapter_idx, label, part_label FROM chapter
-            WHERE book_id = ? AND start_seq <= ? AND kind != 'excerpt'{part_clause}
+            WHERE book_id = ? AND kind != 'excerpt'{part_clause}
+              AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
             ORDER BY chapter_idx
             """,
             params,
@@ -157,8 +196,9 @@ class Tools:
                 for r in rows
             ],
         }
-        marker = _truncation_marker(self._iconn, book, self._ceiling)
-        if marker is not None and _book_has_content_above(self._iconn, book, self._ceiling):
+        book_ceiling = self._book_ceiling(book)
+        marker = _truncation_marker(self._iconn, book, book_ceiling)
+        if marker is not None and _book_has_content_above(self._iconn, book, book_ceiling):
             result.update(marker)
         return result
 
@@ -177,15 +217,16 @@ class Tools:
         hi = min(hi, lo + _CHAPTER_RANGE_CAP)
 
         rows = self._iconn.execute(
-            """
+            f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text
             FROM para
-            WHERE book_id = ? AND chapter_idx BETWEEN ? AND ? AND global_seq <= ?
+            WHERE book_id = ? AND chapter_idx BETWEEN ? AND ?
               AND kind != 'excerpt'
+              AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             ORDER BY global_seq
             LIMIT ?
             """,
-            (book, lo, hi, self._ceiling, _READ_RAW_PARA_CAP + 1),
+            (book, lo, hi, _READ_RAW_PARA_CAP + 1),
         ).fetchall()
 
         capped = len(rows) > _READ_RAW_PARA_CAP
@@ -200,16 +241,17 @@ class Tools:
             result["capped"] = True
 
         was_clamped = self._iconn.execute(
-            """
+            f"""
             SELECT 1 FROM para
-            WHERE book_id = ? AND chapter_idx BETWEEN ? AND ? AND global_seq > ?
+            WHERE book_id = ? AND chapter_idx BETWEEN ? AND ?
               AND kind != 'excerpt'
+              AND NOT EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             LIMIT 1
             """,
-            (book, lo, hi, self._ceiling),
+            (book, lo, hi),
         ).fetchone()
         if was_clamped is not None:
-            marker = _truncation_marker(self._iconn, book, self._ceiling)
+            marker = _truncation_marker(self._iconn, book, self._book_ceiling(book))
             if marker is not None:
                 result.update(marker)
 
@@ -227,12 +269,15 @@ class Tools:
             except (TypeError, ValueError):
                 return result
             row = self._iconn.execute(
-                "SELECT start_seq FROM chapter WHERE book_id = ? AND chapter_idx = ? "
-                "AND kind != 'excerpt'",
+                f"""
+                SELECT 1 FROM chapter
+                WHERE book_id = ? AND chapter_idx = ? AND kind != 'excerpt'
+                  AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
+                """,
                 (book, chapter),
             ).fetchone()
-            if row is None or row["start_seq"] > self._ceiling:
-                marker = _truncation_marker(self._iconn, book, self._ceiling)
+            if row is None:
+                marker = _truncation_marker(self._iconn, book, self._book_ceiling(book))
                 if marker is not None:
                     result.update(marker)
 
@@ -254,19 +299,19 @@ class Tools:
             except re.error:
                 return {"results": [], "error": "invalid regex"}
 
-            params: list = [self._ceiling]
+            params: list = [query]
             book_clause = ""
             if book is not None:
                 book_clause = " AND book_id = ?"
                 params.append(book)
-            params.append(query)
 
             try:
                 rows = self._iconn.execute(
                     f"""
                     SELECT book_id, spine_idx, para_idx, chapter_label, text
                     FROM para
-                    WHERE global_seq <= ?{book_clause} AND text REGEXP ? AND kind != 'excerpt'
+                    WHERE text REGEXP ? AND kind != 'excerpt'{book_clause}
+                      AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
                     ORDER BY global_seq
                     LIMIT ?
                     """,
@@ -289,7 +334,7 @@ class Tools:
             return {"results": results}
 
         # FTS5 path
-        params = [query, self._ceiling]
+        params = [query]
         book_clause = ""
         if book is not None:
             book_clause = " AND p.book_id = ?"
@@ -302,8 +347,8 @@ class Tools:
                        snippet(para_fts, 0, '[', ']', '...', 10) AS snip
                 FROM para_fts
                 JOIN para p ON p.id = para_fts.rowid
-                WHERE para_fts MATCH ? AND p.global_seq <= ?{book_clause}
-                  AND p.kind != 'excerpt'
+                WHERE para_fts MATCH ? AND p.kind != 'excerpt'{book_clause}
+                  AND EXISTS (SELECT 1 FROM {self._table} r WHERE p.global_seq BETWEEN r.lo AND r.hi)
                 ORDER BY bm25(para_fts)
                 LIMIT ?
                 """,
@@ -336,15 +381,16 @@ class Tools:
         escaped = entity.replace('"', '""')
         try:
             row = self._iconn.execute(
-                """
+                f"""
                 SELECT p.book_id, p.spine_idx, p.para_idx, p.chapter_label
                 FROM para_fts
                 JOIN para p ON p.id = para_fts.rowid
-                WHERE para_fts MATCH ? AND p.global_seq <= ? AND p.kind != 'excerpt'
+                WHERE para_fts MATCH ? AND p.kind != 'excerpt'
+                  AND EXISTS (SELECT 1 FROM {self._table} r WHERE p.global_seq BETWEEN r.lo AND r.hi)
                 ORDER BY p.global_seq ASC
                 LIMIT 1
                 """,
-                (f'"{escaped}"', self._ceiling),
+                (f'"{escaped}"',),
             ).fetchone()
         except sqlite3.OperationalError:
             return {"result": "NOT_YET_SEEN"}
@@ -379,37 +425,41 @@ class Tools:
         window = max(_CONTEXT_WINDOW_MIN, min(window, _CONTEXT_WINDOW_CAP))
 
         center = self._iconn.execute(
-            """
+            f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text, global_seq
             FROM para
-            WHERE book_id = ? AND spine_idx = ? AND para_idx = ? AND global_seq <= ?
-              AND kind != 'excerpt'
+            WHERE book_id = ? AND spine_idx = ? AND para_idx = ? AND kind != 'excerpt'
+              AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             """,
-            (book_id, spine_idx, para_idx, self._ceiling),
+            (book_id, spine_idx, para_idx),
         ).fetchone()
         if center is None:
             raise ValueError(f"unknown or unreadable citation id: {citation_id!r}")
 
+        # book_id-scoped, so a gap from an earlier skipped book can never be
+        # crossed -- expansion cannot leave the book the hit belongs to.
         before_rows = self._iconn.execute(
-            """
+            f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text
             FROM para
-            WHERE book_id = ? AND global_seq <= ? AND global_seq < ? AND kind != 'excerpt'
+            WHERE book_id = ? AND global_seq < ? AND kind != 'excerpt'
+              AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             ORDER BY global_seq DESC
             LIMIT ?
             """,
-            (book_id, self._ceiling, center["global_seq"], window),
+            (book_id, center["global_seq"], window),
         ).fetchall()
 
         after_rows = self._iconn.execute(
-            """
+            f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text
             FROM para
-            WHERE book_id = ? AND global_seq <= ? AND global_seq > ? AND kind != 'excerpt'
+            WHERE book_id = ? AND global_seq > ? AND kind != 'excerpt'
+              AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             ORDER BY global_seq ASC
             LIMIT ?
             """,
-            (book_id, self._ceiling, center["global_seq"], window),
+            (book_id, center["global_seq"], window),
         ).fetchall()
 
         paragraphs = [_row_to_para_dict(r) for r in reversed(before_rows)]
@@ -418,8 +468,9 @@ class Tools:
 
         result: dict = {"citation_id": citation_id, "paragraphs": paragraphs}
         if len(after_rows) < window:
-            marker = _truncation_marker(self._iconn, book_id, self._ceiling)
-            if marker is not None and _book_has_content_above(self._iconn, book_id, self._ceiling):
+            book_ceiling = self._book_ceiling(book_id)
+            marker = _truncation_marker(self._iconn, book_id, book_ceiling)
+            if marker is not None and _book_has_content_above(self._iconn, book_id, book_ceiling):
                 result.update(marker)
         return result
 

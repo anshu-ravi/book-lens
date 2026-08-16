@@ -11,7 +11,8 @@ import json
 import sys
 from pathlib import Path
 
-from booklens import db, ingest, paths, progress, tools
+from booklens import db, ingest, passes, paths, progress, tools
+from booklens.llm.base import BudgetedLLM, BudgetExceeded, FatalLLMError, get_provider
 
 
 def _print(result, as_json: bool) -> None:
@@ -86,11 +87,54 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_digest(args: argparse.Namespace) -> int:
+    """Run the progressive digest + entity pass over a book, printing per-chapter progress."""
+    iconn, _pconn = _open_dbs()
+    llm = BudgetedLLM(get_provider(args.provider), max_calls=args.max_calls)
+
+    count = 0
+
+    def on_progress(event) -> None:
+        nonlocal count
+        count += 1
+        status = "skipped" if event.skipped else "done"
+        print(f"[{count}] {event.level} {event.label!r} -- {status}")
+
+    progress_cb = None if args.json else on_progress
+
+    try:
+        result = passes.run_book(iconn, llm, args.book_id, resume=args.resume, on_progress=progress_cb)
+    except (BudgetExceeded, FatalLLMError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        print(
+            f"partial progress: {count} chapter/part/book unit(s) reported before the failure "
+            "-- already-written digests are safe to resume from",
+            file=sys.stderr,
+        )
+        return 1
+
+    payload = dict(result.__dict__)
+    payload["llm_calls_made"] = llm.calls_made
+    payload["llm_tokens_used"] = llm.tokens_used
+    payload["llm_cost_usd"] = llm.cost_usd
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    print(f"chapters_processed={result.chapters_processed} chapters_skipped={result.chapters_skipped}")
+    print(f"digests_written={result.digests_written} entities_created={result.entities_created} "
+          f"edges_created={result.edges_created} attrs_created={result.attrs_created}")
+    print(f"calls_made={llm.calls_made} rerolls={result.rerolls} tokens_used={llm.tokens_used} "
+          f"cost_usd={llm.cost_usd:.4f}")
+    return 0
+
+
 def cmd_books(args: argparse.Namespace) -> int:
     """List the library with the reader's standing in each book."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    books = t.list_books()
+    with tools.Tools(iconn, pconn) as t:
+        books = t.list_books()
     _print(books, args.json)
     return 0
 
@@ -101,8 +145,8 @@ def cmd_progress(args: argparse.Namespace) -> int:
     prog = progress.set_position(
         pconn, iconn, args.book_id, status=args.status, chapter_idx=args.chapter
     )
-    t = tools.Tools(iconn, pconn)
-    chapters = t.list_chapters(args.book_id)["chapters"]
+    with tools.Tools(iconn, pconn) as t:
+        chapters = t.list_chapters(args.book_id)["chapters"]
     resolved_label = chapters[-1]["label"] if chapters else None
 
     result = {
@@ -124,8 +168,8 @@ def cmd_progress(args: argparse.Namespace) -> int:
 def cmd_chapters(args: argparse.Namespace) -> int:
     """List the chapters the reader has begun."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.list_chapters(args.book_id, part=args.part)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.list_chapters(args.book_id, part=args.part)
     _print(result, args.json)
     return 0
 
@@ -133,8 +177,8 @@ def cmd_chapters(args: argparse.Namespace) -> int:
 def cmd_read(args: argparse.Namespace) -> int:
     """Print raw text for a chapter range."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.read_raw(args.book_id, args.from_ch, args.to_ch)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.read_raw(args.book_id, args.from_ch, args.to_ch)
     if args.json:
         print(json.dumps(result, indent=2))
         return 0
@@ -148,8 +192,8 @@ def cmd_read(args: argparse.Namespace) -> int:
 def cmd_search(args: argparse.Namespace) -> int:
     """Search the text the reader has already read."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.search(args.query, book=args.book, regex=args.regex)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.search(args.query, book=args.book, regex=args.regex)
     if args.json:
         print(json.dumps(result, indent=2))
         return 0
@@ -164,8 +208,8 @@ def cmd_search(args: argparse.Namespace) -> int:
 def cmd_first_seen(args: argparse.Namespace) -> int:
     """Report where something was first encountered."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.first_seen(args.entity)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.first_seen(args.entity)
     _print(result, args.json)
     return 0
 
@@ -173,12 +217,12 @@ def cmd_first_seen(args: argparse.Namespace) -> int:
 def cmd_context(args: argparse.Namespace) -> int:
     """Expand the passage around a citation."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    try:
-        result = t.context(args.citation_id, window=args.window)
-    except ValueError as exc:
-        print(f"error: {exc}")
-        return 1
+    with tools.Tools(iconn, pconn) as t:
+        try:
+            result = t.context(args.citation_id, window=args.window)
+        except ValueError as exc:
+            print(f"error: {exc}")
+            return 1
     if args.json:
         print(json.dumps(result, indent=2))
         return 0
@@ -193,8 +237,8 @@ def cmd_context(args: argparse.Namespace) -> int:
 def cmd_cast(args: argparse.Namespace) -> int:
     """Show the cast as the reader knows it."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = t.cast(book=args.book)
+    with tools.Tools(iconn, pconn) as t:
+        result = t.cast(book=args.book)
     _print(result, args.json)
     return 0
 
@@ -202,13 +246,13 @@ def cmd_cast(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
-    t = tools.Tools(iconn, pconn)
-    result = {
-        "data_dir": str(paths.data_dir()),
-        "schema_version": db.SCHEMA_VERSION,
-        "book_count": len(t.list_books()),
-        "ceiling_seq": progress.ceiling_for(pconn, iconn),
-    }
+    with tools.Tools(iconn, pconn) as t:
+        result = {
+            "data_dir": str(paths.data_dir()),
+            "schema_version": db.SCHEMA_VERSION,
+            "book_count": len(t.list_books()),
+            "ceiling_seq": progress.ceiling_for(pconn, iconn),
+        }
     _print(result, args.json)
     return 0
 
@@ -228,6 +272,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--force", action="store_true")
     p_ingest.add_argument("--json", action="store_true")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_digest = sub.add_parser("digest", help="run the progressive digest + entity pass over a book")
+    p_digest.add_argument("book_id")
+    p_digest.add_argument("--provider", default=None, help="'fake' (default) or 'claude-sdk'")
+    p_digest.add_argument("--max-calls", type=int, default=200)
+    p_digest.add_argument("--no-resume", dest="resume", action="store_false", default=True)
+    p_digest.add_argument("--json", action="store_true")
+    p_digest.set_defaults(func=cmd_digest)
 
     p_books = sub.add_parser("books", help="list ingested books")
     p_books.add_argument("--json", action="store_true")

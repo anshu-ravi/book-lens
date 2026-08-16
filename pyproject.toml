@@ -6,7 +6,8 @@ requires-python = ">=3.11"
 dependencies = ["lxml>=5.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "claude-agent-sdk"]
+llm = ["claude-agent-sdk"]
 
 [project.scripts]
 booklens = "booklens.cli:main"
@@ -17,3 +18,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m \"not realmodel\""
+markers = [
+    "realmodel: makes real calls to a live LLM provider; opt-in via `pytest -m realmodel`, spends quota, needs auth.",
+]

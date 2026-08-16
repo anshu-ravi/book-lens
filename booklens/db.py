@@ -11,7 +11,7 @@ from pathlib import Path
 
 from booklens import paths
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _MAX_SPINE_IDX = 1000
 _MAX_PARA_IDX = 1000
@@ -118,6 +118,56 @@ CREATE TRIGGER IF NOT EXISTS para_au AFTER UPDATE ON para BEGIN
   INSERT INTO para_fts(para_fts, rowid, text) VALUES ('delete', old.id, old.text);
   INSERT INTO para_fts(rowid, text) VALUES (new.id, new.text);
 END;
+
+CREATE TABLE IF NOT EXISTS digest(
+  id INTEGER PRIMARY KEY,
+  book_id TEXT NOT NULL REFERENCES book(id) ON DELETE CASCADE,
+  level TEXT NOT NULL CHECK(level IN ('chapter','part','book')),
+  chapter_idx INTEGER,
+  part_label TEXT,
+  source_start_seq INTEGER NOT NULL,
+  source_end_seq INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  generator TEXT NOT NULL,
+  prompt_hash TEXT NOT NULL,
+  schema_version INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS entity_node(
+  id INTEGER PRIMARY KEY,
+  book_id TEXT NOT NULL REFERENCES book(id) ON DELETE CASCADE,
+  designator TEXT NOT NULL,
+  node_kind TEXT NOT NULL CHECK(node_kind IN ('named','unnamed')),
+  first_seq INTEGER NOT NULL,
+  cite_para_id INTEGER NOT NULL REFERENCES para(id)
+);
+
+CREATE TABLE IF NOT EXISTS entity_edge(
+  id INTEGER PRIMARY KEY,
+  src_node_id INTEGER NOT NULL REFERENCES entity_node(id) ON DELETE CASCADE,
+  dst_node_id INTEGER NOT NULL REFERENCES entity_node(id) ON DELETE CASCADE,
+  edge_type TEXT NOT NULL CHECK(edge_type IN ('stated','inferable')),
+  revealed_at_seq INTEGER NOT NULL,
+  cite_para_id INTEGER REFERENCES para(id)
+);
+
+CREATE TABLE IF NOT EXISTS entity_attr(
+  id INTEGER PRIMARY KEY,
+  node_id INTEGER NOT NULL REFERENCES entity_node(id) ON DELETE CASCADE,
+  attr_kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  first_seq INTEGER NOT NULL,
+  cite_para_id INTEGER REFERENCES para(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_digest_book_level_end ON digest(book_id, level, source_end_seq);
+CREATE INDEX IF NOT EXISTS idx_entity_node_first_seq ON entity_node(first_seq);
+CREATE INDEX IF NOT EXISTS idx_entity_edge_revealed_seq ON entity_edge(revealed_at_seq);
+CREATE INDEX IF NOT EXISTS idx_entity_attr_first_seq ON entity_attr(first_seq);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_digest_target_unique
+  ON digest(book_id, level, chapter_idx, part_label);
 """
 
 _PROGRESS_DDL = """
@@ -140,11 +190,14 @@ class SchemaVersionError(Exception):
     """index.db was built against an older schema and cannot be reused."""
 
 
+_V3_TABLES = {"digest", "entity_node", "entity_edge", "entity_attr"}
+
+
 def _check_schema_compat(conn: sqlite3.Connection) -> None:
     """Reject an index.db predating the current schema.
 
     `CREATE TABLE IF NOT EXISTS` skips existing tables, so a stale one would
-    otherwise survive init untouched and missing its new columns.
+    otherwise survive init untouched and missing its new columns or tables.
     """
     tables = {
         r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -158,6 +211,19 @@ def _check_schema_compat(conn: sqlite3.Connection) -> None:
             raise SchemaVersionError(
                 f"index.db has an outdated schema: table {table!r} is missing "
                 f"column(s) {sorted(missing)} required by SCHEMA_VERSION={SCHEMA_VERSION}. "
+                "index.db is a rebuildable cache, not user data -- delete it "
+                "(and its digests/ directory) and re-run ingest for every book."
+            )
+
+    # A database that has already been initialized (has 'book') but predates
+    # the digest/entity tables added in SCHEMA_VERSION=3 is stale, not merely
+    # incomplete -- the digest pass assumes these tables exist.
+    if "book" in tables:
+        missing_tables = _V3_TABLES - tables
+        if missing_tables:
+            raise SchemaVersionError(
+                f"index.db has an outdated schema: missing table(s) {sorted(missing_tables)} "
+                f"required by SCHEMA_VERSION={SCHEMA_VERSION}. "
                 "index.db is a rebuildable cache, not user data -- delete it "
                 "(and its digests/ directory) and re-run ingest for every book."
             )
