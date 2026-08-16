@@ -145,7 +145,9 @@ def set_position(
         candidate = book_max_end_seq(iconn, book_id)
 
     existing = get_progress(pconn, book_id)
-    new_ceiling = max(existing.ceiling_seq, candidate)
+    # 'unread' is the explicit "I have not read this one" the watermark rule
+    # exempts (section 4); every other move only ever raises the ceiling.
+    new_ceiling = 0 if status == "unread" else max(existing.ceiling_seq, candidate)
 
     pconn.execute(
         """

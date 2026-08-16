@@ -236,3 +236,13 @@ def test_cascade_never_lowers_an_existing_higher_ceiling(pconn, iconn3):
     progress.set_position(pconn, iconn3, "b3", status="reading", chapter_idx=0)
     b1 = progress.get_progress(pconn, "b1")
     assert b1.ceiling_seq == 2001999
+
+
+def test_set_position_unread_lowers_the_ceiling(pconn, iconn):
+    """'unread' is an explicit denial, not a move backward: it must clear the watermark."""
+    progress.set_position(pconn, iconn, "b1", status="finished")
+    assert progress.get_progress(pconn, "b1").ceiling_seq > 0
+
+    progress.set_position(pconn, iconn, "b1", status="unread")
+    assert progress.get_progress(pconn, "b1").ceiling_seq == 0
+    assert progress.readable_ranges(pconn, iconn) == []
