@@ -6,3 +6,13 @@ export function seriesName(seriesId: string): string {
 		.map((word) => word[0].toUpperCase() + word.slice(1))
 		.join(' ');
 }
+
+/** A book title turned into a series id, for a standalone book's own one-book "series". */
+export function slugify(title: string): string {
+	return (
+		title
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '') || 'book'
+	);
+}

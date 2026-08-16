@@ -9,23 +9,24 @@
 	import SeriesExpandedPanel from '$lib/components/library/SeriesExpandedPanel.svelte';
 	import StandaloneCard from '$lib/components/library/StandaloneCard.svelte';
 	import ProgressModal from '$lib/components/library/ProgressModal.svelte';
+	import ShelfModal from '$lib/components/library/ShelfModal.svelte';
 
 	let series = $state<SeriesGroup[]>([]);
 	let loading = $state(true);
 	let error = $state('');
 	let expandedId = $state<string | null>(null);
 	let modalBook = $state<Book | null>(null);
+	let shelfBook = $state<Book | null>(null);
+	let shelfSeriesId = $state<string>('');
 
 	const totalVolumes = $derived(series.reduce((n, s) => n + s.books.length, 0));
 	const reading = $derived(
 		series.flatMap((s) => s.books.filter((b) => b.status === 'reading').map((b) => ({ book: b, series: s }))),
 	);
 
-	// The API has no standalone flag: a SeriesGroup with more than one book is
-	// a series, one with exactly one book is a standalone -- purely a convention.
-	const multiBookSeries = $derived(series.filter((s) => s.books.length > 1));
+	const multiBookSeries = $derived(series.filter((s) => !s.standalone));
 	const standalones = $derived(
-		series.filter((s) => s.books.length === 1).map((s) => ({ book: s.books[0], series: s })),
+		series.filter((s) => s.standalone).map((s) => ({ book: s.books[0], series: s })),
 	);
 
 	async function load() {
@@ -57,6 +58,20 @@
 
 	async function onSaved() {
 		modalBook = null;
+		await load();
+	}
+
+	function openShelfModal(book: Book, seriesId: string) {
+		shelfBook = book;
+		shelfSeriesId = seriesId;
+	}
+
+	function closeShelfModal() {
+		shelfBook = null;
+	}
+
+	async function onShelfSaved() {
+		shelfBook = null;
 		await load();
 	}
 </script>
@@ -95,6 +110,7 @@
 						series={s}
 						onupdate={(b) => (modalBook = b)}
 						onask={askAbout}
+						onshelf={(b) => openShelfModal(b, s.id)}
 					/>
 				{/each}
 			</div>
@@ -118,7 +134,12 @@
 				{#if expandedId}
 					{#each multiBookSeries as s (s.id)}
 						{#if s.id === expandedId}
-							<SeriesExpandedPanel series={s} onupdate={(b) => (modalBook = b)} onask={askAbout} />
+							<SeriesExpandedPanel
+								series={s}
+								onupdate={(b) => (modalBook = b)}
+								onask={askAbout}
+								onshelf={(b) => openShelfModal(b, s.id)}
+							/>
 						{/if}
 					{/each}
 				{/if}
@@ -130,7 +151,13 @@
 				<span class="small-caps subsection-heading">Standalones</span>
 				<Carousel>
 					{#each standalones as { book, series: s } (book.id)}
-						<StandaloneCard {book} series={s} onupdate={(b) => (modalBook = b)} onask={askAbout} />
+						<StandaloneCard
+						{book}
+						series={s}
+						onupdate={(b) => (modalBook = b)}
+						onask={askAbout}
+						onshelf={(b) => openShelfModal(b, s.id)}
+					/>
 					{/each}
 				</Carousel>
 			</div>
@@ -140,6 +167,10 @@
 
 {#if modalBook}
 	<ProgressModal book={modalBook} onclose={closeModal} onsaved={onSaved} />
+{/if}
+
+{#if shelfBook}
+	<ShelfModal book={shelfBook} seriesId={shelfSeriesId} onclose={closeShelfModal} onsaved={onShelfSaved} />
 {/if}
 
 <style>

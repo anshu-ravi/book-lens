@@ -7,9 +7,11 @@ reach past a session's own ceiling.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
-from booklens import cli, db, tools
+from booklens import cli, db, progress, tools
 from booklens.web.app import app
 from booklens.web.sessions import registry
 from tests.test_ingest import _simple_epub
@@ -154,6 +156,132 @@ def test_upload_ingests_and_reports_manifest(tmp_path, monkeypatch):
     assert body["chapters"] == 3
     assert body["skipped"] is False
     assert isinstance(body["excerpt_chapters"], list)
+
+
+# -- shelf placement -------------------------------------------------------------
+
+
+def test_library_marks_single_book_series_standalone_only_when_flagged(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+
+    series = client.get("/api/library").json()["series"]
+    assert series[0]["standalone"] is False
+
+    resp = client.put(
+        "/api/books/sample-book/shelf",
+        json={"series_id": "s1", "book_order": 1, "standalone": True},
+    )
+    assert resp.status_code == 200
+
+    series = client.get("/api/library").json()["series"]
+    assert series[0]["standalone"] is True
+
+
+def test_shelf_flag_only_toggle_does_not_reingest(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+    iconn = db.connect_index()
+    before = iconn.execute(
+        "SELECT ingested_at FROM book WHERE id = 'sample-book'"
+    ).fetchone()["ingested_at"]
+    para_ids_before = [
+        r["id"] for r in iconn.execute("SELECT id FROM para WHERE book_id = 'sample-book' ORDER BY id")
+    ]
+
+    resp = client.put(
+        "/api/books/sample-book/shelf",
+        json={"series_id": "s1", "book_order": 1, "standalone": True},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["standalone"] is True
+
+    after = iconn.execute(
+        "SELECT ingested_at FROM book WHERE id = 'sample-book'"
+    ).fetchone()["ingested_at"]
+    para_ids_after = [
+        r["id"] for r in iconn.execute("SELECT id FROM para WHERE book_id = 'sample-book' ORDER BY id")
+    ]
+    assert after == before
+    assert para_ids_after == para_ids_before
+
+
+def test_shelf_move_to_occupied_slot_returns_409_and_changes_nothing(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+    epub2 = _simple_epub(tmp_path, name="book2.epub", title="Second Book")
+    rc = cli.main(["ingest", str(epub2), "--series", "s1", "--start-order", "2"])
+    assert rc == 0
+
+    iconn = db.connect_index()
+    before = dict(
+        iconn.execute("SELECT series_id, book_order FROM book WHERE id = 'sample-book'").fetchone()
+    )
+
+    resp = client.put(
+        "/api/books/sample-book/shelf",
+        json={"series_id": "s1", "book_order": 2, "standalone": False},
+    )
+    assert resp.status_code == 409
+
+    after = dict(
+        iconn.execute("SELECT series_id, book_order FROM book WHERE id = 'sample-book'").fetchone()
+    )
+    assert after == before
+
+
+def test_shelf_move_rebases_ceiling_to_the_same_chapter(tmp_path, monkeypatch):
+    """The invariant test: moving book_order must not leave a stale ceiling
+    that resolves to the wrong chapter (or none at all)."""
+    _setup(tmp_path, monkeypatch, status="reading", chapter="1")
+
+    iconn = db.connect_index()
+    pconn = db.connect_progress()
+    with tools.Tools(iconn, pconn) as t:
+        before_paras = t.read_raw("sample-book", 0, 2)["paragraphs"]
+    assert before_paras  # sanity: reading position actually exposes text
+
+    resp = client.put(
+        "/api/books/sample-book/shelf",
+        json={"series_id": "s1", "book_order": 3, "standalone": False},
+    )
+    assert resp.status_code == 200
+    book = resp.json()
+    assert book["position_label"] == "Chapter 1"
+
+    iconn2 = db.connect_index()
+    pconn2 = db.connect_progress()
+    with tools.Tools(iconn2, pconn2) as t:
+        after_paras = t.read_raw("sample-book", 0, 2)["paragraphs"]
+
+    before_texts = {p["text"] for p in before_paras}
+    after_texts = {p["text"] for p in after_paras}
+    assert after_texts == before_texts
+
+    new_book_row = iconn2.execute(
+        "SELECT book_order FROM book WHERE id = 'sample-book'"
+    ).fetchone()
+    assert new_book_row["book_order"] == 3
+    ceiling = pconn2.execute(
+        "SELECT ceiling_seq FROM book_progress WHERE book_id = 'sample-book'"
+    ).fetchone()["ceiling_seq"]
+    # The ceiling must sit within this book's new range and at the same
+    # chapter boundary -- not a leftover value from book_order=1's numbering.
+    chapter_end = progress.chapter_end_seq(iconn2, "sample-book", 1)
+    assert ceiling == chapter_end
+    assert ceiling >= 3_000_000
+
+
+def test_shelf_move_400s_when_source_file_is_gone(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+    iconn = db.connect_index()
+    source_path = iconn.execute(
+        "SELECT source_path FROM book WHERE id = 'sample-book'"
+    ).fetchone()["source_path"]
+    Path(source_path).unlink()
+
+    resp = client.put(
+        "/api/books/sample-book/shelf",
+        json={"series_id": "s1", "book_order": 5, "standalone": False},
+    )
+    assert resp.status_code == 400
 
 
 # -- chat -----------------------------------------------------------------------

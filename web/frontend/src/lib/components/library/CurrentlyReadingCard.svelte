@@ -9,11 +9,13 @@
 		series,
 		onupdate,
 		onask,
+		onshelf,
 	}: {
 		book: Book;
 		series: SeriesGroup;
 		onupdate: (book: Book) => void;
 		onask: (book: Book) => void;
+		onshelf: (book: Book) => void;
 	} = $props();
 
 	const seriesLabel = $derived(`${seriesName(series.id)} · VOLUME ${book.book_order}/${series.books.length}`);
@@ -46,6 +48,7 @@
 		<div class="actions">
 			<button class="link-btn small-caps" onclick={() => onupdate(book)}>Update progress</button>
 			<button class="link-btn small-caps brass" onclick={() => onask(book)}>Ask about this</button>
+			<button class="link-btn small-caps" onclick={() => onshelf(book)}>Edit shelf</button>
 		</div>
 	</div>
 </div>

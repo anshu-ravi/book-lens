@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { getSeries, uploadBook, ApiError } from '$lib/api';
 	import type { SeriesSummary, UploadResponse } from '$lib/types';
+	import { slugify } from '$lib/utils/series-name';
 	import DropZone from '$lib/components/upload/DropZone.svelte';
 	import StepRail from '$lib/components/upload/StepRail.svelte';
 
@@ -12,13 +13,17 @@
 	let selectedSeries = $state<string>('');
 	let newSeriesName = $state('');
 	let bookOrder = $state<number>(1);
+	let standalone = $state(false);
 	let submitting = $state(false);
 	let error = $state('');
 	let result = $state<UploadResponse | null>(null);
 
 	const step = $derived<1 | 2 | 3>(result ? 3 : file ? 2 : 1);
 	const isNewSeries = $derived(selectedSeries === NEW_SERIES);
-	const effectiveSeries = $derived(isNewSeries ? newSeriesName.trim() : selectedSeries);
+	const standaloneSeries = $derived(file ? slugify(file.name.replace(/\.epub$/i, '')) : '');
+	const effectiveSeries = $derived(
+		standalone ? standaloneSeries : isNewSeries ? newSeriesName.trim() : selectedSeries,
+	);
 
 	onMount(async () => {
 		try {
@@ -53,7 +58,7 @@
 		error = '';
 		submitting = true;
 		try {
-			result = await uploadBook(file, effectiveSeries, bookOrder);
+			result = await uploadBook(file, effectiveSeries, standalone ? 1 : bookOrder, standalone);
 		} catch (e) {
 			error = e instanceof ApiError ? e.detail : 'Could not shelve the volume.';
 		} finally {
@@ -67,6 +72,7 @@
 		selectedSeries = '';
 		newSeriesName = '';
 		bookOrder = 1;
+		standalone = false;
 		error = '';
 	}
 </script>
@@ -87,6 +93,12 @@
 			<p class="file-line mono">{file?.name} · {file ? fileSize(file) : ''}</p>
 
 			<form class="catalog-form" onsubmit={(e) => { e.preventDefault(); shelve(); }}>
+				<label class="checkbox-row">
+					<input type="checkbox" bind:checked={standalone} />
+					<span class="small-caps">This is a standalone book</span>
+				</label>
+
+				{#if !standalone}
 				<div class="field">
 					<label class="small-caps" for="series-select">Series</label>
 					<select id="series-select" bind:value={selectedSeries} onchange={onSeriesChange} required>
@@ -114,6 +126,9 @@
 					Books in the same series share a reading timeline — a volume filed under the wrong
 					series will not see its predecessors.
 				</p>
+				{:else}
+					<p class="explainer">A standalone sits on its own shelf, outside any series carousel.</p>
+				{/if}
 
 				{#if error}
 					<p class="error" role="alert">{error}</p>
@@ -194,6 +209,13 @@
 	}
 	.field label {
 		color: var(--bone-muted);
+	}
+	.checkbox-row {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-2);
+		cursor: pointer;
+		color: var(--bone);
 	}
 	select,
 	input[type='text'],

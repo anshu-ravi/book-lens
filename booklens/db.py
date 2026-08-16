@@ -11,7 +11,7 @@ from pathlib import Path
 
 from booklens import paths
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _MAX_SPINE_IDX = 1000
 _MAX_PARA_IDX = 1000
@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS book(
   sequence_tier TEXT NOT NULL,
   label_tier   TEXT NOT NULL,
   ingested_at  TEXT NOT NULL,
+  standalone   INTEGER NOT NULL DEFAULT 0,
   UNIQUE(series_id, book_order)
 );
 
@@ -307,8 +308,23 @@ def check_schema_compat(conn: sqlite3.Connection) -> None:
             )
 
 
+def _apply_additive_migrations(conn: sqlite3.Connection) -> None:
+    """In-place migration for purely additive columns; structural changes still
+    require `booklens reindex`. One guarded ALTER per additive column, no framework."""
+    tables = {
+        r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    if "book" not in tables:
+        return
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(book)")}
+    if "standalone" not in cols:
+        conn.execute("ALTER TABLE book ADD COLUMN standalone INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+
+
 def init_index(conn: sqlite3.Connection) -> None:
     """Create the index tables if absent, refusing an outdated database."""
+    _apply_additive_migrations(conn)
     check_schema_compat(conn)
     conn.executescript(_INDEX_DDL)
     conn.commit()
