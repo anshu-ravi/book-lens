@@ -6,6 +6,7 @@ only raw SQL here reads structural book/series metadata, never `para` or `chapte
 
 from __future__ import annotations
 
+import mimetypes
 import sqlite3
 import tempfile
 from dataclasses import asdict
@@ -79,7 +80,7 @@ class AskRequest(BaseModel):
 def _book_payload(iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id: str) -> dict:
     """The `Book` shape shared by `/api/library` and the progress-update response."""
     row = iconn.execute(
-        "SELECT id, title, author, book_order FROM book WHERE id = ?", (book_id,)
+        "SELECT id, title, author, book_order, sha256 FROM book WHERE id = ?", (book_id,)
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"unknown book_id {book_id!r}")
@@ -107,6 +108,7 @@ def _book_payload(iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id:
         "chapter_count": chapter_count,
         "chapters_read": chapters_read,
         "percent": percent,
+        "has_cover": paths.cover_path(row["sha256"]) is not None,
     }
 
 
@@ -155,6 +157,22 @@ def put_book_progress(book_id: str, body: ProgressUpdate, dbs: DbDep):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _book_payload(iconn, pconn, book_id)
+
+
+@app.get("/api/books/{book_id}/cover")
+def get_book_cover(book_id: str, dbs: DbDep):
+    """The book's real EPUB cover art, content-addressed by hash so it's safe to cache long."""
+    iconn, _pconn = dbs
+    row = iconn.execute("SELECT sha256 FROM book WHERE id = ?", (book_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"unknown book_id {book_id!r}")
+    cover_file = paths.cover_path(row["sha256"])
+    if cover_file is None:
+        raise HTTPException(status_code=404, detail=f"no cover for book_id {book_id!r}")
+    media_type = mimetypes.guess_type(str(cover_file))[0] or "application/octet-stream"
+    return FileResponse(
+        cover_file, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"}
+    )
 
 
 # -- series / upload ------------------------------------------------------------

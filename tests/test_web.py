@@ -55,6 +55,16 @@ def test_library_shape_and_percent(tmp_path, monkeypatch):
     assert book["position_label"] == "Chapter 1"
 
 
+def test_book_without_cover_reports_false_and_cover_route_404s(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status="reading", chapter="1")
+
+    book = client.get("/api/library").json()["series"][0]["books"][0]
+    assert book["has_cover"] is False
+
+    resp = client.get("/api/books/sample-book/cover")
+    assert resp.status_code == 404
+
+
 def test_library_unread_book_has_zero_percent(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch, status=None)
 
