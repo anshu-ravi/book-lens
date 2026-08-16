@@ -7,6 +7,7 @@ reach past a session's own ceiling.
 
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -14,12 +15,47 @@ from fastapi.testclient import TestClient
 from booklens import cli, db, progress, tools
 from booklens.web.app import app
 from booklens.web.sessions import registry
-from tests.test_ingest import _simple_epub
+from tests.test_ingest import CONTAINER_XML, _simple_epub
 
 # Every chat-session test needs the fake provider so nothing here can spend money.
 app.state.llm_provider = "fake"
 
 client = TestClient(app)
+
+
+def _epub_with_metadata(
+    tmp_path: Path, name: str, title: str, author: str, extra_metadata_xml: str
+) -> Path:
+    """A minimal one-chapter EPUB with extra `<meta>` tags injected into the OPF,
+    for exercising the series-suggestion ladder against real collection metadata."""
+    path = tmp_path / name
+    opf = f"""<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>{title}</dc:title>
+    <dc:creator>{author}</dc:creator>
+    {extra_metadata_xml}
+  </metadata>
+  <manifest>
+    <item id="ch0" href="text/ch0.xhtml" media-type="application/xhtml+xml"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="ch0"/>
+  </spine>
+</package>"""
+    ncx = """<?xml version="1.0"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <navMap>
+    <navPoint id="np0"><navLabel><text>Chapter 1</text></navLabel><content src="text/ch0.xhtml"/></navPoint>
+  </navMap>
+</ncx>"""
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("META-INF/container.xml", CONTAINER_XML)
+        zf.writestr("OEBPS/content.opf", opf)
+        zf.writestr("OEBPS/toc.ncx", ncx)
+        zf.writestr("OEBPS/text/ch0.xhtml", "<html><body><p>Once upon a time.</p></body></html>")
+    return path
 
 
 def _setup(tmp_path, monkeypatch, status="reading", chapter="1"):
@@ -137,25 +173,162 @@ def test_series_reports_next_order(tmp_path, monkeypatch):
     assert series == [{"id": "s1", "book_count": 1, "next_order": 2}]
 
 
-def test_upload_ingests_and_reports_manifest(tmp_path, monkeypatch):
+def _inspect(tmp_path, monkeypatch, epub_path: Path, filename: str | None = None):
     monkeypatch.setenv("BOOKLENS_DATA_DIR", str(tmp_path / "data"))
-    db.connect_index().close()  # establish the data dir before upload
-
-    epub_path = _simple_epub(tmp_path, name="uploaded.epub")
+    db.connect_index().close()  # establish the data dir before inspecting
     with open(epub_path, "rb") as f:
-        resp = client.post(
-            "/api/upload",
-            files={"file": ("uploaded.epub", f, "application/epub+zip")},
-            data={"series": "s2"},
+        return client.post(
+            "/api/upload/inspect",
+            files={"file": (filename or epub_path.name, f, "application/epub+zip")},
         )
+
+
+def test_inspect_parses_metadata_and_writes_nothing_to_index(tmp_path, monkeypatch):
+    epub_path = _simple_epub(tmp_path, name="uploaded.epub")
+    resp = _inspect(tmp_path, monkeypatch, epub_path)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["book_id"] == "sample-book"
-    assert body["series_id"] == "s2"
-    assert body["book_order"] == 1
-    assert body["chapters"] == 3
-    assert body["skipped"] is False
-    assert isinstance(body["excerpt_chapters"], list)
+
+    assert body["title"] == "Sample Book"
+    assert body["chapters_detected"] == 3  # Prologue, Chapter 1, Chapter 2 -- all body
+    assert body["has_prologue"] is True
+    assert body["word_count"] == sum(
+        len(w.split())
+        for w in ["Once upon a time.", "The story begins.", "It continues.", "More happens.", "Then it ends."]
+    )
+    assert body["already_ingested"] is False
+    assert body["existing_book_id"] is None
+
+    iconn = db.connect_index()
+    assert iconn.execute("SELECT COUNT(*) c FROM book").fetchone()["c"] == 0
+
+
+def test_inspect_reports_already_ingested(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+    epub_path = Path(
+        db.connect_index().execute("SELECT source_path FROM book WHERE id = 'sample-book'").fetchone()[
+            "source_path"
+        ]
+    )
+
+    resp = _inspect(tmp_path, monkeypatch, epub_path, filename="reupload.epub")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["already_ingested"] is True
+    assert body["existing_book_id"] == "sample-book"
+
+
+def _commit(tmp_path, monkeypatch, epub_path: Path, **overrides):
+    resp = _inspect(tmp_path, monkeypatch, epub_path)
+    assert resp.status_code == 200
+    sha256 = resp.json()["sha256"]
+    body = {"sha256": sha256, "series_id": "s1", "book_order": 1, "standalone": False, **overrides}
+    return client.post("/api/upload/commit", json=body), sha256
+
+
+def test_commit_with_title_author_override_stores_overrides(tmp_path, monkeypatch):
+    epub_path = _simple_epub(tmp_path, name="uploaded.epub")
+    resp, _sha = _commit(
+        tmp_path, monkeypatch, epub_path, title="Renamed Title", author="Renamed Author;"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["title"] == "Renamed Title"
+    assert body["author"] == "Renamed Author;"
+
+    iconn = db.connect_index()
+    row = iconn.execute("SELECT title, author FROM book WHERE id = ?", (body["book_id"],)).fetchone()
+    assert row["title"] == "Renamed Title"
+    assert row["author"] == "Renamed Author;"
+
+
+def test_commit_unknown_sha_returns_404(tmp_path, monkeypatch):
+    monkeypatch.setenv("BOOKLENS_DATA_DIR", str(tmp_path / "data"))
+    db.connect_index().close()
+    resp = client.post(
+        "/api/upload/commit",
+        json={"sha256": "0" * 64, "series_id": "s1", "book_order": 1, "standalone": False},
+    )
+    assert resp.status_code == 404
+
+
+def test_commit_into_occupied_slot_returns_409(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)  # occupies s1/1 with sample-book
+
+    epub2 = _simple_epub(tmp_path, name="second.epub", title="Second Book")
+    resp, _sha = _commit(tmp_path, monkeypatch, epub2, series_id="s1", book_order=1)
+    assert resp.status_code == 409
+
+    iconn = db.connect_index()
+    assert iconn.execute("SELECT COUNT(*) c FROM book").fetchone()["c"] == 1
+
+
+# -- series-suggestion ladder ---------------------------------------------------
+
+
+def test_suggest_series_epub3_collection_gives_order_and_name(tmp_path, monkeypatch):
+    epub = _epub_with_metadata(
+        tmp_path,
+        "collection.epub",
+        "Hollow Coast",
+        "A. Hilcaster",
+        extra_metadata_xml=(
+            '<meta property="belongs-to-collection" id="c1">The Mistwarden Cycle</meta>'
+            '<meta refines="#c1" property="collection-type">series</meta>'
+            '<meta refines="#c1" property="group-position">3</meta>'
+        ),
+    )
+    resp = _inspect(tmp_path, monkeypatch, epub)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["suggested_series_name"] == "The Mistwarden Cycle"
+    assert body["suggested_series_id"] == "the-mistwarden-cycle"
+    assert body["suggested_book_order"] == 3
+    assert body["prior_volumes"] == 0
+
+
+def test_suggest_series_calibre_meta_gives_order_and_name(tmp_path, monkeypatch):
+    epub = _epub_with_metadata(
+        tmp_path,
+        "calibre.epub",
+        "Hollow Coast",
+        "A. Hilcaster",
+        extra_metadata_xml=(
+            '<meta name="calibre:series" content="The Mistwarden Cycle"/>'
+            '<meta name="calibre:series_index" content="2"/>'
+        ),
+    )
+    resp = _inspect(tmp_path, monkeypatch, epub)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["suggested_series_name"] == "The Mistwarden Cycle"
+    assert body["suggested_book_order"] == 2
+
+
+def test_suggest_series_matches_existing_series_by_shared_author(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)  # shelves sample-book (author "Test Author") into s1
+    epub = _epub_with_metadata(
+        tmp_path, "second.epub", "Another Volume", "Test Author", extra_metadata_xml=""
+    )
+    resp = _inspect(tmp_path, monkeypatch, epub)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["suggested_series_id"] == "s1"
+    assert body["prior_volumes"] == 1
+    assert body["suggested_book_order"] == 2
+
+
+def test_suggest_series_no_match_returns_nulls(tmp_path, monkeypatch):
+    epub = _epub_with_metadata(
+        tmp_path, "lonely.epub", "Lonely Book", "Nobody Known", extra_metadata_xml=""
+    )
+    resp = _inspect(tmp_path, monkeypatch, epub)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["suggested_series_id"] is None
+    assert body["suggested_series_name"] is None
+    assert body["prior_volumes"] == 0
+    assert body["suggested_book_order"] == 1
 
 
 # -- shelf placement -------------------------------------------------------------

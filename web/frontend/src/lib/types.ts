@@ -76,7 +76,34 @@ export interface ExcerptChapter {
 	paragraphs: number;
 }
 
-export interface UploadResponse {
+export interface InspectResponse {
+	sha256: string;
+	filename: string;
+	size_bytes: number;
+	title: string;
+	author: string | null;
+	chapters_detected: number;
+	has_prologue: boolean;
+	word_count: number;
+	has_cover: boolean;
+	suggested_series_id: string | null;
+	suggested_series_name: string | null;
+	prior_volumes: number;
+	suggested_book_order: number;
+	already_ingested: boolean;
+	existing_book_id: string | null;
+}
+
+export interface CommitRequest {
+	sha256: string;
+	title: string | null;
+	author: string | null;
+	series_id: string;
+	book_order: number;
+	standalone: boolean;
+}
+
+export interface CommitResponse {
 	book_id: string;
 	title: string;
 	author: string;
@@ -84,8 +111,9 @@ export interface UploadResponse {
 	series_id: string;
 	chapters: number;
 	paragraphs: number;
-	skipped: number;
+	skipped: boolean;
 	excerpt_chapters: ExcerptChapter[];
+	standalone: boolean;
 }
 
 export interface CreateSessionRequest {

@@ -3,7 +3,7 @@
 
 	const steps = [
 		{ n: 1, roman: 'I', label: 'Drop the file' },
-		{ n: 2, roman: 'II', label: 'Confirm the catalog entry' },
+		{ n: 2, roman: 'II', label: 'Inspect the catalog entry' },
 		{ n: 3, roman: 'III', label: 'Place on the shelf' },
 	];
 </script>
@@ -20,8 +20,7 @@
 		{/each}
 	</ol>
 	<p class="rail-note">
-		Books in the same series share a reading timeline, so a volume filed under the wrong series
-		will not see its predecessors.
+		BookLens reads only what you give it — and only as far as your bookmark.
 	</p>
 </nav>
 

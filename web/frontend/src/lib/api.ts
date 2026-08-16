@@ -1,7 +1,10 @@
 import type {
 	CitationWindowResponse,
+	CommitRequest,
+	CommitResponse,
 	CreateSessionResponse,
 	CreditsResponse,
+	InspectResponse,
 	LibraryResponse,
 	PositionsResponse,
 	SendMessageResponse,
@@ -9,7 +12,6 @@ import type {
 	UndoResponse,
 	UpdateProgressRequest,
 	UpdateShelfRequest,
-	UploadResponse,
 	Book,
 } from './types';
 
@@ -79,18 +81,18 @@ export function getSeries(): Promise<SeriesResponse> {
 	return request<SeriesResponse>('/series');
 }
 
-export function uploadBook(
-	file: File,
-	series: string,
-	bookOrder?: number,
-	standalone?: boolean,
-): Promise<UploadResponse> {
+export function inspectUpload(file: File): Promise<InspectResponse> {
 	const form = new FormData();
 	form.append('file', file);
-	form.append('series', series);
-	if (bookOrder != null) form.append('book_order', String(bookOrder));
-	if (standalone) form.append('standalone', 'true');
-	return request<UploadResponse>('/upload', { method: 'POST', body: form });
+	return request<InspectResponse>('/upload/inspect', { method: 'POST', body: form });
+}
+
+export function inspectCoverUrl(sha256: string): string {
+	return `/api/upload/inspect/${encodeURIComponent(sha256)}/cover`;
+}
+
+export function commitUpload(body: CommitRequest): Promise<CommitResponse> {
+	return request<CommitResponse>('/upload/commit', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function createChatSession(bookId: string): Promise<CreateSessionResponse> {
