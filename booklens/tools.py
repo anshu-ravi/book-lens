@@ -224,11 +224,14 @@ class Tools:
         db.register_regexp(iconn)
         self._install_readable_range(progress.readable_ranges(pconn, iconn))
 
-    def _install_readable_range(self, ranges: list[tuple[int, int]]) -> None:
+    def _install_readable_range(self, ranges: list[tuple[str, int, int]]) -> None:
         """Create this instance's own temp table for every query's WHERE clause to join against."""
-        self._iconn.execute(f"CREATE TEMP TABLE {self._table}(lo INTEGER NOT NULL, hi INTEGER NOT NULL)")
+        self._iconn.execute(
+            f"CREATE TEMP TABLE {self._table}"
+            "(book_id TEXT NOT NULL, lo INTEGER NOT NULL, hi INTEGER NOT NULL)"
+        )
         self._iconn.executemany(
-            f"INSERT INTO {self._table}(lo, hi) VALUES (?, ?)", ranges
+            f"INSERT INTO {self._table}(book_id, lo, hi) VALUES (?, ?, ?)", ranges
         )
         self._iconn.commit()
 
@@ -271,9 +274,12 @@ class Tools:
             if prog.position_chapter_idx is not None:
                 ch = self._iconn.execute(
                     f"""
-                    SELECT label FROM chapter
-                    WHERE book_id = ? AND chapter_idx = ? AND kind IN {db.SERVABLE_KINDS_SQL}
-                      AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
+                    SELECT label FROM chapter AS c
+                    WHERE c.book_id = ? AND c.chapter_idx = ? AND c.kind IN {db.SERVABLE_KINDS_SQL}
+                      AND EXISTS (
+                        SELECT 1 FROM {self._table} r
+                        WHERE r.book_id = c.book_id AND c.start_seq BETWEEN r.lo AND r.hi
+                      )
                     """,
                     (r["id"], prog.position_chapter_idx),
                 ).fetchone()
@@ -295,9 +301,12 @@ class Tools:
 
         rows = self._iconn.execute(
             f"""
-            SELECT chapter_idx, label, part_label FROM chapter
-            WHERE book_id = ? AND kind IN {db.SERVABLE_KINDS_SQL}{part_clause}
-              AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
+            SELECT chapter_idx, label, part_label FROM chapter AS c
+            WHERE c.book_id = ? AND c.kind IN {db.SERVABLE_KINDS_SQL}{part_clause}
+              AND EXISTS (
+                SELECT 1 FROM {self._table} r
+                WHERE r.book_id = c.book_id AND c.start_seq BETWEEN r.lo AND r.hi
+              )
             ORDER BY chapter_idx
             """,
             params,
@@ -369,11 +378,14 @@ class Tools:
         rows = self._iconn.execute(
             f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text
-            FROM para
-            WHERE book_id = ? AND chapter_idx BETWEEN ? AND ?
-              AND kind IN {db.SERVABLE_KINDS_SQL}
-              AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
-            ORDER BY global_seq
+            FROM para AS p
+            WHERE p.book_id = ? AND p.chapter_idx BETWEEN ? AND ?
+              AND p.kind IN {db.SERVABLE_KINDS_SQL}
+              AND EXISTS (
+                SELECT 1 FROM {self._table} r
+                WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+              )
+            ORDER BY p.global_seq
             LIMIT ?
             """,
             (book, lo, hi, _READ_RAW_PARA_CAP + 1),
@@ -392,10 +404,13 @@ class Tools:
 
         was_clamped = self._iconn.execute(
             f"""
-            SELECT 1 FROM para
-            WHERE book_id = ? AND chapter_idx BETWEEN ? AND ?
-              AND kind IN {db.SERVABLE_KINDS_SQL}
-              AND NOT EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
+            SELECT 1 FROM para AS p
+            WHERE p.book_id = ? AND p.chapter_idx BETWEEN ? AND ?
+              AND p.kind IN {db.SERVABLE_KINDS_SQL}
+              AND NOT EXISTS (
+                SELECT 1 FROM {self._table} r
+                WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+              )
             LIMIT 1
             """,
             (book, lo, hi),
@@ -420,9 +435,12 @@ class Tools:
                 return result
             row = self._iconn.execute(
                 f"""
-                SELECT 1 FROM chapter
-                WHERE book_id = ? AND chapter_idx = ? AND kind IN {db.SERVABLE_KINDS_SQL}
-                  AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
+                SELECT 1 FROM chapter AS c
+                WHERE c.book_id = ? AND c.chapter_idx = ? AND c.kind IN {db.SERVABLE_KINDS_SQL}
+                  AND EXISTS (
+                    SELECT 1 FROM {self._table} r
+                    WHERE r.book_id = c.book_id AND c.start_seq BETWEEN r.lo AND r.hi
+                  )
                 """,
                 (book, chapter),
             ).fetchone()
@@ -459,9 +477,12 @@ class Tools:
                 rows = self._iconn.execute(
                     f"""
                     SELECT book_id, spine_idx, para_idx, chapter_label, text
-                    FROM para
+                    FROM para AS p
                     WHERE text REGEXP ? AND kind IN {db.SERVABLE_KINDS_SQL}{book_clause}
-                      AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
+                      AND EXISTS (
+                        SELECT 1 FROM {self._table} r
+                        WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+                      )
                     ORDER BY global_seq
                     LIMIT ?
                     """,
@@ -498,7 +519,10 @@ class Tools:
                 FROM para_fts
                 JOIN para p ON p.id = para_fts.rowid
                 WHERE para_fts MATCH ? AND p.kind IN {db.SERVABLE_KINDS_SQL}{book_clause}
-                  AND EXISTS (SELECT 1 FROM {self._table} r WHERE p.global_seq BETWEEN r.lo AND r.hi)
+                  AND EXISTS (
+                    SELECT 1 FROM {self._table} r
+                    WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+                  )
                 ORDER BY bm25(para_fts)
                 LIMIT ?
                 """,
@@ -536,7 +560,10 @@ class Tools:
                 FROM para_fts
                 JOIN para p ON p.id = para_fts.rowid
                 WHERE para_fts MATCH ? AND p.kind IN {db.SERVABLE_KINDS_SQL}
-                  AND EXISTS (SELECT 1 FROM {self._table} r WHERE p.global_seq BETWEEN r.lo AND r.hi)
+                  AND EXISTS (
+                    SELECT 1 FROM {self._table} r
+                    WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+                  )
                 ORDER BY p.global_seq ASC
                 LIMIT 1
                 """,
@@ -577,9 +604,12 @@ class Tools:
         center = self._iconn.execute(
             f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text, global_seq
-            FROM para
-            WHERE book_id = ? AND spine_idx = ? AND para_idx = ? AND kind IN {db.SERVABLE_KINDS_SQL}
-              AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
+            FROM para AS p
+            WHERE p.book_id = ? AND p.spine_idx = ? AND p.para_idx = ? AND p.kind IN {db.SERVABLE_KINDS_SQL}
+              AND EXISTS (
+                SELECT 1 FROM {self._table} r
+                WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+              )
             """,
             (book_id, spine_idx, para_idx),
         ).fetchone()
@@ -591,9 +621,12 @@ class Tools:
         before_rows = self._iconn.execute(
             f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text
-            FROM para
-            WHERE book_id = ? AND global_seq < ? AND kind IN {db.SERVABLE_KINDS_SQL}
-              AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
+            FROM para AS p
+            WHERE p.book_id = ? AND p.global_seq < ? AND p.kind IN {db.SERVABLE_KINDS_SQL}
+              AND EXISTS (
+                SELECT 1 FROM {self._table} r
+                WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+              )
             ORDER BY global_seq DESC
             LIMIT ?
             """,
@@ -603,9 +636,12 @@ class Tools:
         after_rows = self._iconn.execute(
             f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text
-            FROM para
-            WHERE book_id = ? AND global_seq > ? AND kind IN {db.SERVABLE_KINDS_SQL}
-              AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
+            FROM para AS p
+            WHERE p.book_id = ? AND p.global_seq > ? AND p.kind IN {db.SERVABLE_KINDS_SQL}
+              AND EXISTS (
+                SELECT 1 FROM {self._table} r
+                WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+              )
             ORDER BY global_seq ASC
             LIMIT ?
             """,

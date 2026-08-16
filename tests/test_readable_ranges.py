@@ -182,14 +182,15 @@ def test_mid_book_ceiling_truncates_only_that_book(tmp_path):
     assert t.list_chapters("b3")["chapters"] == []
 
 
-def test_ranges_merge_when_overlapping(tmp_path):
+def test_ranges_stay_per_book_when_overlapping(tmp_path):
     iconn, pconn, meta = build_three_book_fixture(tmp_path)
-    # Contrived overlap: b1's ceiling reaches into b2's own floor.
+    # Contrived overlap: b1's ceiling reaches into b2's own floor. Each book
+    # still gets its own span, keyed by book_id -- no merge collapses them.
     progress.reset_ceiling(pconn, "b1", db.global_seq(2, 0, 0) + 500)
     progress.set_position(pconn, iconn, "b2", status="reading", chapter_idx=0)
     ranges = progress.readable_ranges(pconn, iconn)
-    assert len(ranges) == 1
-    assert ranges[0][0] == 1_000_000
+    assert len(ranges) == 2
+    assert ("b1", 1_000_000, db.global_seq(2, 0, 0) + 500) in ranges
 
 
 # -- 4. context() must not tunnel across a gap --------------------------------
@@ -239,8 +240,10 @@ def test_property_rows_always_inside_union_of_ranges(tmp_path):
         ranges = progress.readable_ranges(pconn, iconn)
         t = tools.Tools(iconn, pconn)
 
-        def inside_any_range(gseq):
-            return any(lo <= gseq <= hi for lo, hi in ranges)
+        def inside_any_range(book_id, gseq):
+            return any(
+                rb == book_id and lo <= gseq <= hi for rb, lo, hi in ranges
+            )
 
         for name, result in _all_tool_calls(t, meta, query="lorem"):
             for book_id in book_ids:
@@ -249,7 +252,7 @@ def test_property_rows_always_inside_union_of_ranges(tmp_path):
                         cid = tools.format_citation_id(book_id, spine_idx, para_idx)
                         if cid in _blob(result):
                             gseq = db.global_seq(BOOK_ORDER[book_id], spine_idx, para_idx)
-                            assert inside_any_range(gseq), (
+                            assert inside_any_range(book_id, gseq), (
                                 f"{name} returned {cid} (global_seq={gseq}) "
                                 f"outside readable ranges {ranges}"
                             )

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -151,6 +153,70 @@ _COVER_EXT_MEDIA_TYPES = {
 def _extension_for_report(cover_file: Path) -> str:
     """Best-effort media type for the human-readable `covers` report line."""
     return _COVER_EXT_MEDIA_TYPES.get(cover_file.suffix.lower(), "application/octet-stream")
+
+
+def cmd_reindex(args: argparse.Namespace) -> int:
+    """Rebuild index.db from the source EPUBs it already knows about.
+
+    The fix for a schema too old to open the normal way: source paths and
+    series/order live inside the very file that has to be rebuilt, so this
+    reads them with a raw connection first, then re-ingests into a fresh
+    index.db under the same book ids. Backs up the old file to
+    `index.db.bak`; restores it on any failure so the index is never left
+    half-rebuilt.
+    """
+    old_path = paths.index_db_path()
+    if not old_path.is_file():
+        print(f"error: no index.db at {old_path}", file=sys.stderr)
+        return 1
+
+    raw = sqlite3.connect(str(old_path))
+    raw.row_factory = sqlite3.Row
+    try:
+        books = raw.execute(
+            "SELECT id, source_path, series_id, book_order FROM book "
+            "ORDER BY series_id, book_order"
+        ).fetchall()
+    finally:
+        raw.close()
+
+    missing = [b["source_path"] for b in books if not Path(b["source_path"]).is_file()]
+    if missing:
+        print("error: cannot reindex, source file(s) missing:", file=sys.stderr)
+        for p in missing:
+            print(f"  - {p}", file=sys.stderr)
+        return 1
+
+    bak_path = old_path.with_name(old_path.name + ".bak")
+    os.replace(old_path, bak_path)
+
+    results = []
+    try:
+        iconn = db.connect_index()
+        for b in books:
+            result = ingest.ingest_book(
+                b["source_path"],
+                series_id=b["series_id"],
+                book_order=b["book_order"],
+                book_id=b["id"],
+                iconn=iconn,
+            )
+            results.append(result)
+            if not args.json:
+                print(f"{result.book_id}: reingested ({result.chapters} chapters, "
+                      f"{result.paragraphs} paragraphs)")
+        iconn.close()
+    except Exception as exc:
+        old_path.unlink(missing_ok=True)
+        os.replace(bak_path, old_path)
+        print(f"error: reindex failed, restored the previous index.db: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps([r.__dict__ for r in results], indent=2, default=str))
+    else:
+        print(f"reindexed {len(results)} book(s); previous index.db backed up to {bak_path}")
+    return 0
 
 
 def cmd_digest(args: argparse.Namespace) -> int:
@@ -429,6 +495,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_covers.add_argument("--force", action="store_true", help="overwrite an existing cover")
     p_covers.add_argument("--json", action="store_true")
     p_covers.set_defaults(func=cmd_covers)
+
+    p_reindex = sub.add_parser("reindex", help="rebuild index.db from its source EPUBs")
+    p_reindex.add_argument("--json", action="store_true")
+    p_reindex.set_defaults(func=cmd_reindex)
 
     p_digest = sub.add_parser("digest", help="run the progressive digest + entity pass over a book")
     p_digest.add_argument("book_id")

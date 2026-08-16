@@ -209,12 +209,14 @@ def reset_ceiling(
 
 def readable_ranges(
     pconn: sqlite3.Connection, iconn: sqlite3.Connection
-) -> list[tuple[int, int]]:
-    """Merged per-book readable spans, a true union that can have gaps.
+) -> list[tuple[str, int, int]]:
+    """Per-book readable spans: `(book_id, book_order * 1_000_000, ceiling_seq)`.
 
-    Each book with progress contributes `[book_order * 1_000_000, ceiling_seq]`
-    -- its own floor, not zero. Unread books (`ceiling_seq == 0`) and books
-    whose ceiling hasn't reached their own floor contribute nothing.
+    One span per book with progress, never merged across books -- `book_order`
+    is only unique within a series, so two series can legitimately share the
+    same integer range, and only the `book_id` on each span keeps them apart.
+    Unread books (`ceiling_seq == 0`) and books whose ceiling hasn't reached
+    their own floor contribute nothing.
     """
     rows = pconn.execute(
         "SELECT book_id, ceiling_seq FROM book_progress WHERE ceiling_seq > 0"
@@ -230,19 +232,8 @@ def readable_ranges(
         book_start = book["book_order"] * 1_000_000
         if r["ceiling_seq"] < book_start:
             continue
-        ranges.append((book_start, r["ceiling_seq"]))
-    ranges.sort()
-    if not ranges:
-        return []
-
-    merged: list[list[int]] = [list(ranges[0])]
-    for start, end in ranges[1:]:
-        last = merged[-1]
-        if start <= last[1] + 1:
-            last[1] = max(last[1], end)
-        else:
-            merged.append([start, end])
-    return [(s, e) for s, e in merged]
+        ranges.append((r["book_id"], book_start, r["ceiling_seq"]))
+    return ranges
 
 
 def ceiling_for(pconn: sqlite3.Connection, iconn: sqlite3.Connection) -> int:

@@ -222,7 +222,7 @@ async def upload_book(
                 tmp_path, series_id=series, book_order=book_order, iconn=iconn, force=False
             )
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=f"could not shelve this EPUB: {exc}") from exc
     finally:
         tmp_path.unlink(missing_ok=True)
 

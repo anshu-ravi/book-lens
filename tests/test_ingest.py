@@ -192,6 +192,31 @@ def test_book_id_disambiguated_on_collision(tmp_path):
     assert r2.book_id == "same-title-2"
 
 
+def test_two_series_can_each_have_a_book_order_1(tmp_path):
+    """A second series' volume 1 must not collide with a first series' volume 1.
+
+    Regression test: global_seq encodes no series component, so two
+    book_order=1 books used to produce identical global_seq values and the
+    old column-level UNIQUE on para.global_seq raised IntegrityError on the
+    second ingest.
+    """
+    epub_a = _make_epub(tmp_path / "a.epub", "Series A Book One", [("Chapter 1", ["Hello"])])
+    epub_b = _make_epub(tmp_path / "b.epub", "Series B Book One", [("Chapter 1", ["World"])])
+    iconn = _iconn(tmp_path)
+    r1 = ingest.ingest_book(epub_a, series_id="sA", book_order=1, iconn=iconn)
+    r2 = ingest.ingest_book(epub_b, series_id="sB", book_order=1, iconn=iconn)
+    assert r1.skipped is False
+    assert r2.skipped is False
+    assert r1.book_id != r2.book_id
+
+    # Both books share a global_seq value (same book_order, same chapter/para
+    # position) -- confirm both rows survive rather than one being silently lost.
+    rows = iconn.execute("SELECT book_id, global_seq FROM para ORDER BY book_id").fetchall()
+    assert len(rows) == 2
+    assert rows[0]["global_seq"] == rows[1]["global_seq"]
+    assert {r["book_id"] for r in rows} == {r1.book_id, r2.book_id}
+
+
 # -- idempotency / force -------------------------------------------------
 
 

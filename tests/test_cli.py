@@ -114,6 +114,53 @@ def test_ingest_second_run_is_skipped(data_dir, capsys):
     assert "skipped" in out
 
 
+# -- reindex ----------------------------------------------------------------
+
+
+def test_reindex_rebuilds_from_source_epubs(data_dir, capsys):
+    from booklens import paths
+
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    rc = _run(["reindex", "--json"])
+    assert rc == 0
+    reindexed = json.loads(capsys.readouterr().out)
+    assert len(reindexed) == 1
+    assert reindexed[0]["book_id"] == "sample-book"
+
+    assert paths.index_db_path().with_name("index.db.bak").is_file()
+
+    rc = _run(["books", "--json"])
+    assert rc == 0
+    books = json.loads(capsys.readouterr().out)
+    assert len(books) == 1
+    assert books[0]["id"] == "sample-book"
+
+
+def test_reindex_aborts_and_restores_when_source_missing(data_dir, capsys):
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+    epub.unlink()
+
+    rc = _run(["reindex", "--json"])
+    assert rc == 1
+    capsys.readouterr()
+
+    # index.db must be untouched -- the book is still there under its old schema.
+    rc = _run(["books", "--json"])
+    assert rc == 0
+    books = json.loads(capsys.readouterr().out)
+    assert len(books) == 1
+
+
+def test_reindex_no_index_db_fails_cleanly(data_dir, capsys):
+    rc = _run(["reindex", "--json"])
+    assert rc == 1
+
+
 # -- progress -------------------------------------------------------------
 
 

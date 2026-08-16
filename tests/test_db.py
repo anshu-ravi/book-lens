@@ -249,3 +249,82 @@ def test_init_index_on_fresh_database_never_raises(tmp_path):
     conn = _make_index_conn(tmp_path)  # must not raise
     tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"book", "digest", "entity_node", "entity_edge", "entity_attr"} <= tables
+
+
+# -- schema version guard (SCHEMA_VERSION=5: para.global_seq scoped per book) -
+
+
+def test_para_unique_is_scoped_per_book_not_global(tmp_path):
+    """Two books can now share a global_seq value; only (book_id, global_seq) is unique."""
+    conn = _make_index_conn(tmp_path)
+    conn.execute(
+        """
+        INSERT INTO book(id, sha256, title, author, source_path, series_id,
+                          book_order, sequence_tier, label_tier, ingested_at)
+        VALUES ('a1', 'sha-a', 'A', NULL, '/a.epub', 'sA', 1, 'S1', 'L1', '2026-01-01')
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO book(id, sha256, title, author, source_path, series_id,
+                          book_order, sequence_tier, label_tier, ingested_at)
+        VALUES ('b1', 'sha-b', 'B', NULL, '/b.epub', 'sB', 1, 'S1', 'L1', '2026-01-01')
+        """
+    )
+    for book_id in ("a1", "b1"):
+        conn.execute(
+            "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, "
+            "chapter_label, text) VALUES (?, 0, 0, 1000000, 0, 'Chapter 0', 'text')",
+            (book_id,),
+        )
+    conn.commit()  # must not raise: both books legitimately share global_seq=1_000_000
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, "
+            "chapter_label, text) VALUES ('a1', 0, 1, 1000000, 0, 'Chapter 0', 'dup')"
+        )
+
+
+def test_init_index_rejects_pre_v5_global_seq_unique(tmp_path):
+    """A database built under the old column-level UNIQUE on para.global_seq
+    must be rejected with a message pointing at `booklens reindex`."""
+    path = tmp_path / "index.db"
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.executescript(
+        """
+        CREATE TABLE book(
+          id TEXT PRIMARY KEY, sha256 TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+          author TEXT, source_path TEXT NOT NULL, series_id TEXT NOT NULL,
+          book_order INTEGER NOT NULL, sequence_tier TEXT NOT NULL, label_tier TEXT NOT NULL,
+          ingested_at TEXT NOT NULL, UNIQUE(series_id, book_order)
+        );
+        CREATE TABLE chapter(
+          book_id TEXT NOT NULL, chapter_idx INTEGER NOT NULL, label TEXT NOT NULL,
+          part_label TEXT, start_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'body'
+              CHECK(kind IN ('body', 'reference', 'boilerplate', 'excerpt')),
+          PRIMARY KEY(book_id, chapter_idx)
+        );
+        CREATE TABLE para(
+          id INTEGER PRIMARY KEY, book_id TEXT NOT NULL, spine_idx INTEGER NOT NULL,
+          para_idx INTEGER NOT NULL, global_seq INTEGER NOT NULL UNIQUE,
+          chapter_idx INTEGER NOT NULL, chapter_label TEXT NOT NULL, text TEXT NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'body'
+              CHECK(kind IN ('body', 'reference', 'boilerplate', 'excerpt'))
+        );
+        CREATE TABLE digest(id INTEGER PRIMARY KEY);
+        CREATE TABLE entity_node(id INTEGER PRIMARY KEY);
+        CREATE TABLE entity_edge(id INTEGER PRIMARY KEY);
+        CREATE TABLE entity_attr(id INTEGER PRIMARY KEY);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    reopened = sqlite3.connect(str(path))
+    reopened.row_factory = sqlite3.Row
+    with pytest.raises(db.SchemaVersionError, match="reindex"):
+        db.init_index(reopened)

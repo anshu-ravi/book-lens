@@ -11,7 +11,7 @@ from pathlib import Path
 
 from booklens import paths
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _MAX_SPINE_IDX = 1000
 _MAX_PARA_IDX = 1000
@@ -44,10 +44,13 @@ ADDRESSABLE_KINDS_SQL = _kinds_sql(ADDRESSABLE_KINDS)
 
 
 def global_seq(book_order: int, spine_idx: int, para_idx: int) -> int:
-    """Position a paragraph in the single total order spanning the whole series.
+    """Position a paragraph within its own book's span, in reading order.
 
-    Refuses inputs that would overflow their digit range and collide with a
-    neighbouring document, rather than silently producing a wrong order.
+    Uniqueness holds only within a book (see `para`'s `UNIQUE(book_id, global_seq)`
+    below) -- two different series can both legitimately have a volume 1, so this
+    value alone is not a cross-series identity. Refuses inputs that would
+    overflow their digit range and collide with a neighbouring document, rather
+    than silently producing a wrong order.
     """
     if book_order < 0 or spine_idx < 0 or para_idx < 0:
         raise ValueError(
@@ -122,12 +125,13 @@ CREATE TABLE IF NOT EXISTS para(
   book_id       TEXT NOT NULL REFERENCES book(id) ON DELETE CASCADE,
   spine_idx     INTEGER NOT NULL,
   para_idx      INTEGER NOT NULL,
-  global_seq    INTEGER NOT NULL UNIQUE,
+  global_seq    INTEGER NOT NULL,
   chapter_idx   INTEGER NOT NULL,
   chapter_label TEXT NOT NULL,
   text          TEXT NOT NULL,
   kind          TEXT NOT NULL DEFAULT 'body'
-                CHECK(kind IN {ALL_KINDS_SQL})
+                CHECK(kind IN {ALL_KINDS_SQL}),
+  UNIQUE(book_id, global_seq)
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS para_fts USING fts5(
@@ -280,6 +284,26 @@ def check_schema_compat(conn: sqlite3.Connection) -> None:
                 "'reference'/'boilerplate' split introduced in SCHEMA_VERSION=4. "
                 "index.db is a rebuildable cache, not user data -- delete it "
                 "(and its digests/ directory) and re-run ingest for every book."
+            )
+
+    # SCHEMA_VERSION=5 dropped the column-level UNIQUE on para.global_seq (a
+    # cross-series book_order collision made it impossible to ingest a second
+    # series' volume 1) in favour of UNIQUE(book_id, global_seq). The old
+    # constraint text survives untouched under CREATE TABLE IF NOT EXISTS, so
+    # detect it the same way the chapter.kind check above does.
+    if "para" in tables:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='para'"
+        ).fetchone()
+        if row is not None and row["sql"] is not None and re.search(
+            r"global_seq\s+INTEGER\s+NOT\s+NULL\s+UNIQUE", row["sql"], re.IGNORECASE
+        ):
+            raise SchemaVersionError(
+                "index.db has an outdated schema: para.global_seq was globally "
+                "UNIQUE, which predates the per-book UNIQUE(book_id, global_seq) "
+                "introduced in SCHEMA_VERSION=5 to allow two series to each have "
+                "a volume 1. Run `booklens reindex` to rebuild index.db from the "
+                "source EPUBs already on record."
             )
 
 
