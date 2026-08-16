@@ -63,13 +63,16 @@ _BOOK_MAX_END_SEQ_SQL = (
 )
 
 
-def _chapter_end_seq(
+def chapter_end_seq(
     iconn: sqlite3.Connection, book_id: str, chapter_idx: int
 ) -> int:
     """End of a chapter the reader can actually claim to have finished.
 
     Excerpt and boilerplate chapters are excluded; neither is a valid
     position -- one belongs to another book, the other isn't the book proper.
+    Public because `booklens/chat.py` needs the same "end of this chapter"
+    arithmetic `set_position` uses, to build an exact (not watermarked)
+    ceiling for a session it never persists.
     """
     row = iconn.execute(_CHAPTER_END_SEQ_SQL, (book_id, chapter_idx)).fetchone()
     if row is None:
@@ -137,7 +140,7 @@ def set_position(
         if chapter_idx is None:
             candidate = 0
         else:
-            candidate = _chapter_end_seq(iconn, book_id, chapter_idx)
+            candidate = chapter_end_seq(iconn, book_id, chapter_idx)
     else:  # finished
         candidate = _book_max_end_seq(iconn, book_id)
 

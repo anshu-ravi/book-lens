@@ -11,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-from booklens import db, ingest, passes, paths, progress, tools
+from booklens import chat, context, db, ingest, passes, paths, progress, tools
 from booklens.llm.base import BudgetedLLM, BudgetExceeded, FatalLLMError, get_provider
 
 
@@ -280,6 +280,38 @@ def cmd_credits(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_chat(args: argparse.Namespace) -> int:
+    """Resolve the reading position, assemble the readable set once, and start the REPL.
+
+    `--chapter` is the reader-facing reference (a printed number, or a named
+    division like 'prologue'); an unresolvable one exits with the error
+    `tools.resolve_chapter_ref` raises, which already names what's valid.
+    `--chapter` is a lens on the corpus, not a claim about what the reader has
+    read, so it is applied to an in-memory clone of progress and never
+    written to `data/progress.db` -- see `chat.ephemeral_ceiling_conn`.
+    """
+    iconn, pconn = _open_dbs()
+    try:
+        chapter_idx = tools.resolve_chapter_ref(iconn, args.book_id, args.chapter)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    session_pconn = chat.ephemeral_ceiling_conn(pconn, iconn, args.book_id, chapter_idx)
+
+    with tools.Tools(iconn, session_pconn) as t:
+        assembled = context.assemble(t)
+        chapters = t.list_chapters(args.book_id)["chapters"]
+        book = next((b for b in t.list_books() if b["id"] == args.book_id), None)
+
+    title = book["title"] if book else args.book_id
+    chapter_label = chapters[-1]["label"] if chapters else args.chapter
+
+    llm = chat.build_llm(args.provider)
+    session = chat.ChatSession(llm, assembled, temperature=args.temperature)
+    return chat.run_repl(session, title=title, chapter_label=chapter_label, debug=args.debug)
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
@@ -372,6 +404,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_cast.add_argument("--book", default=None)
     p_cast.add_argument("--json", action="store_true")
     p_cast.set_defaults(func=cmd_cast)
+
+    p_chat = sub.add_parser("chat", help="interactive chat bounded to a fixed reading position")
+    p_chat.add_argument("--book", dest="book_id", required=True)
+    p_chat.add_argument(
+        "--chapter", required=True,
+        help="the printed chapter number or a named division (e.g. 'prologue'), fixed for the session",
+    )
+    p_chat.add_argument("--temperature", type=float, default=chat.DEFAULT_TEMPERATURE)
+    p_chat.add_argument("--debug", action="store_true", help="start with per-turn debug output on")
+    p_chat.add_argument("--provider", default="openrouter", help="LLM provider name (default: openrouter)")
+    p_chat.set_defaults(func=cmd_chat)
 
     p_status = sub.add_parser("status", help="show data dir, schema, and ceiling info")
     p_status.add_argument("--json", action="store_true")
