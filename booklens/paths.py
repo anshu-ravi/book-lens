@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 
@@ -79,3 +80,29 @@ def series_dir() -> Path:
     d = data_dir() / "series"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+UPLOAD_STASH_MAX_AGE_SECONDS = 24 * 60 * 60
+
+
+def _upload_stash_dir() -> Path:
+    """Where inspected-but-not-yet-committed EPUB bytes wait for their commit call."""
+    d = data_dir() / "uploads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def upload_stash_path(sha256: str) -> Path:
+    """The stash location for one inspected upload, content-addressed like everything else."""
+    return _upload_stash_dir() / f"{sha256}.epub"
+
+
+def prune_stale_uploads(max_age_seconds: float = UPLOAD_STASH_MAX_AGE_SECONDS) -> None:
+    """Delete stashed uploads older than `max_age_seconds` -- no scheduler, just called on inspect."""
+    now = time.time()
+    for f in _upload_stash_dir().glob("*.epub"):
+        try:
+            if now - f.stat().st_mtime > max_age_seconds:
+                f.unlink(missing_ok=True)
+        except OSError:
+            continue

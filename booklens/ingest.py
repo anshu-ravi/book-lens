@@ -123,12 +123,17 @@ def ingest_book(
     iconn: sqlite3.Connection | None = None,
     force: bool = False,
     standalone: bool | None = None,
+    title: str | None = None,
+    author: str | None = None,
 ) -> IngestResult:
     """Read a book into the index, assigning every paragraph its sequence.
 
     Runs as one transaction, so a failure leaves no half-ingested book behind.
     `standalone` defaults to preserving whatever a re-ingested row already had
     (or False for a genuinely new book); pass it explicitly to set the flag.
+    `title`/`author` override what the EPUB's own metadata claims, when given
+    -- e.g. an embedded author string that carries stray punctuation. Extraction
+    itself is untouched; only the values stored and returned are overridden.
     """
     path = Path(path)
     if iconn is None:
@@ -155,7 +160,10 @@ def ingest_book(
     book = extract_book(path)
     assert book.sha256 == sha256, "sha256 mismatch between pre-hash and extraction"
 
-    resolved_book_id = book_id if book_id is not None else _slugify(book.title)
+    resolved_title = title if title is not None else book.title
+    resolved_author = author if author is not None else book.author
+
+    resolved_book_id = book_id if book_id is not None else _slugify(resolved_title)
     if ":" in resolved_book_id:
         raise ValueError(f"book_id must not contain ':': {resolved_book_id!r}")
     resolved_book_id = _unique_book_id(iconn, resolved_book_id)
@@ -180,8 +188,8 @@ def ingest_book(
             (
                 resolved_book_id,
                 book.sha256,
-                book.title,
-                book.author,
+                resolved_title,
+                resolved_author,
                 str(path),
                 series_id,
                 book_order,
@@ -250,8 +258,8 @@ def ingest_book(
 
     book_dir = paths.book_dir(book.sha256)
     meta = {
-        "title": book.title,
-        "author": book.author,
+        "title": resolved_title,
+        "author": resolved_author,
         "source_path": str(path),
         "sha256": book.sha256,
         "series_id": series_id,
@@ -280,7 +288,7 @@ def ingest_book(
 
     return IngestResult(
         book_id=resolved_book_id,
-        title=book.title,
+        title=resolved_title,
         sha256=book.sha256,
         book_order=book_order,
         documents=len(book.documents),

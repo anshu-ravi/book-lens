@@ -6,20 +6,22 @@ only raw SQL here reads structural book/series metadata, never `para` or `chapte
 
 from __future__ import annotations
 
+import hashlib
 import mimetypes
 import sqlite3
-import tempfile
 from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from booklens import chat, context, db, ingest, paths, progress, tools
+from booklens import chat, classify, context, db, ingest, paths, progress, tools
+from booklens.extract import extract_book, extract_cover, read_series_hint
+from booklens.ingest import _slugify as _slugify_name
 from booklens.llm.base import FatalLLMError, TransientLLMError
 from booklens.web import sessions
 
@@ -65,6 +67,17 @@ class ProgressUpdate(BaseModel):
 class ShelfUpdate(BaseModel):
     """Body of `PUT /api/books/{book_id}/shelf`."""
 
+    series_id: str
+    book_order: int
+    standalone: bool
+
+
+class UploadCommitRequest(BaseModel):
+    """Body of `POST /api/upload/commit`."""
+
+    sha256: str
+    title: str | None = None
+    author: str | None = None
     series_id: str
     book_order: int
     standalone: bool
@@ -119,6 +132,76 @@ def _book_payload(iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id:
         "percent": percent,
         "has_cover": paths.cover_path(row["sha256"]) is not None,
         "standalone": bool(row["standalone"]),
+    }
+
+
+def _check_slot_free(
+    iconn: sqlite3.Connection, series_id: str, book_order: int, exclude_book_id: str | None = None
+) -> None:
+    """Raise 409 if another book already occupies (series_id, book_order)."""
+    query = "SELECT id FROM book WHERE series_id = ? AND book_order = ?"
+    params: list = [series_id, book_order]
+    if exclude_book_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_book_id)
+    occupant = iconn.execute(query, params).fetchone()
+    if occupant is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"series {series_id!r} already has a book at position {book_order}",
+        )
+
+
+def _humanize_series_id(series_id: str) -> str:
+    """Turn a series slug into a display name, mirroring the frontend's `seriesName`."""
+    return " ".join(word.capitalize() for word in series_id.replace("_", "-").split("-") if word)
+
+
+def _suggest_series(iconn: sqlite3.Connection, book) -> dict:
+    """The series-suggestion ladder: EPUB3 collection, then Calibre series, then shared authorship."""
+    rows = iconn.execute("SELECT series_id, book_order, author FROM book").fetchall()
+    stats: dict[str, dict] = {}
+    for r in rows:
+        s = stats.setdefault(r["series_id"], {"count": 0, "max_order": 0, "authors": set()})
+        s["count"] += 1
+        s["max_order"] = max(s["max_order"], r["book_order"])
+        if r["author"]:
+            s["authors"].add(r["author"])
+
+    hint = read_series_hint(book.source_path)
+    if hint is not None:
+        sid = _slugify_name(hint.name)
+        existing = stats.get(sid)
+        prior_volumes = existing["count"] if existing else 0
+        if hint.position is not None:
+            order = hint.position
+        elif existing is not None:
+            order = existing["max_order"] + 1
+        else:
+            order = 1
+        return {
+            "suggested_series_id": sid,
+            "suggested_series_name": hint.name,
+            "prior_volumes": prior_volumes,
+            "suggested_book_order": order,
+        }
+
+    if book.author:
+        candidates = [(sid, s) for sid, s in stats.items() if book.author in s["authors"]]
+        if candidates:
+            sid, s = max(candidates, key=lambda kv: kv[1]["count"])
+            return {
+                "suggested_series_id": sid,
+                "suggested_series_name": _humanize_series_id(sid),
+                "prior_volumes": s["count"],
+                "suggested_book_order": s["max_order"] + 1,
+            }
+
+    return {
+        "suggested_series_id": None,
+        "suggested_series_name": None,
+        "prior_volumes": 0,
+        "suggested_book_order": 1,
     }
 
 
@@ -209,18 +292,7 @@ def put_book_shelf(book_id: str, body: ShelfUpdate, dbs: DbDep):
             detail=f"source file no longer exists: {source_path}",
         )
 
-    occupant = iconn.execute(
-        "SELECT id FROM book WHERE series_id = ? AND book_order = ? AND id != ?",
-        (body.series_id, body.book_order, book_id),
-    ).fetchone()
-    if occupant is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"series {body.series_id!r} already has a book at position "
-                f"{body.book_order}"
-            ),
-        )
+    _check_slot_free(iconn, body.series_id, body.book_order, exclude_book_id=book_id)
 
     prior_progress = progress.get_progress(pconn, book_id)
 
@@ -288,40 +360,108 @@ def get_series(dbs: DbDep):
     return {"series": series}
 
 
-@app.post("/api/upload")
-async def upload_book(
-    dbs: DbDep,
-    file: UploadFile = File(...),
-    series: str = Form(...),
-    book_order: int | None = Form(None),
-    standalone: bool = Form(False),
-):
-    """Ingest an uploaded EPUB into `series`, never writing into the user's Books directory."""
-    iconn, _pconn = dbs
-    if book_order is None:
-        row = iconn.execute(
-            "SELECT MAX(book_order) AS m FROM book WHERE series_id = ?", (series,)
-        ).fetchone()
-        book_order = (row["m"] or 0) + 1
+@app.post("/api/upload/inspect")
+async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
+    """Parse an EPUB into a catalog entry, writing nothing to `index.db`.
 
-    with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
-        tmp_path = Path(tmp.name)
-        tmp.write(await file.read())
+    The bytes are stashed under `data/uploads/`, content-addressed by hash,
+    so `/api/upload/commit` doesn't need the file re-sent.
+    """
+    iconn, _pconn = dbs
+    data = await file.read()
+    sha256 = hashlib.sha256(data).hexdigest()
+
+    stash_path = paths.upload_stash_path(sha256)
+    stash_path.write_bytes(data)
+    paths.prune_stale_uploads()
 
     try:
-        try:
-            result = ingest.ingest_book(
-                tmp_path,
-                series_id=series,
-                book_order=book_order,
-                iconn=iconn,
-                force=False,
-                standalone=standalone,
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"could not shelve this EPUB: {exc}") from exc
-    finally:
-        tmp_path.unlink(missing_ok=True)
+        book = extract_book(stash_path)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"could not read this EPUB: {exc}") from exc
+
+    kinds = classify.classify_chapters(book)
+    body_chapters = [ch for ch in book.chapters if kinds[ch.chapter_idx] == "body"]
+    has_prologue = any(ch.label.strip().lower().startswith("prologue") for ch in body_chapters)
+
+    doc_paragraphs = {d.spine_idx: d.paragraphs for d in book.documents}
+    word_count = sum(
+        len(p.text.split())
+        for ch in body_chapters
+        for spine_idx in range(ch.start_spine_idx, ch.end_spine_idx + 1)
+        for p in doc_paragraphs.get(spine_idx, ())
+    )
+
+    try:
+        has_cover = extract_cover(stash_path) is not None
+    except Exception:
+        has_cover = False
+
+    existing = iconn.execute("SELECT id FROM book WHERE sha256 = ?", (sha256,)).fetchone()
+
+    return {
+        "sha256": sha256,
+        "filename": file.filename,
+        "size_bytes": len(data),
+        "title": book.title,
+        "author": book.author,
+        "chapters_detected": len(body_chapters),
+        "has_prologue": has_prologue,
+        "word_count": word_count,
+        "has_cover": has_cover,
+        **_suggest_series(iconn, book),
+        "already_ingested": existing is not None,
+        "existing_book_id": existing["id"] if existing else None,
+    }
+
+
+@app.get("/api/upload/inspect/{sha256}/cover")
+def get_inspect_cover(sha256: str):
+    """The cover plate for a stashed, not-yet-committed upload."""
+    stash_path = paths.upload_stash_path(sha256)
+    if not stash_path.is_file():
+        raise HTTPException(status_code=404, detail=f"no stashed upload for sha256 {sha256!r}")
+    try:
+        cover = extract_cover(stash_path)
+    except Exception:
+        cover = None
+    if cover is None:
+        raise HTTPException(status_code=404, detail="this EPUB has no cover image")
+    media_type = cover.media_type or mimetypes.guess_type(cover.zip_path)[0] or "application/octet-stream"
+    return Response(content=cover.data, media_type=media_type)
+
+
+@app.post("/api/upload/commit")
+def commit_upload(body: UploadCommitRequest, dbs: DbDep):
+    """Ingest a previously inspected, stashed EPUB. Never writes into the user's Books directory."""
+    iconn, _pconn = dbs
+    stash_path = paths.upload_stash_path(body.sha256)
+    if not stash_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="this upload has expired or was never inspected -- please re-drop the file",
+        )
+
+    existing = iconn.execute("SELECT id FROM book WHERE sha256 = ?", (body.sha256,)).fetchone()
+    _check_slot_free(
+        iconn, body.series_id, body.book_order, exclude_book_id=existing["id"] if existing else None
+    )
+
+    try:
+        result = ingest.ingest_book(
+            stash_path,
+            series_id=body.series_id,
+            book_order=body.book_order,
+            iconn=iconn,
+            force=False,
+            standalone=body.standalone,
+            title=body.title,
+            author=body.author,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"could not shelve this EPUB: {exc}") from exc
+
+    stash_path.unlink(missing_ok=True)
 
     author_row = iconn.execute("SELECT author FROM book WHERE id = ?", (result.book_id,)).fetchone()
     manifest = paths.manifest_for(result.sha256)
@@ -331,11 +471,12 @@ async def upload_book(
         "title": result.title,
         "author": author_row["author"] if author_row else None,
         "book_order": result.book_order,
-        "series_id": series,
+        "series_id": body.series_id,
         "chapters": result.chapters,
         "paragraphs": result.paragraphs,
         "skipped": result.skipped,
         "excerpt_chapters": manifest.get("excerpt_chapters", []),
+        "standalone": body.standalone,
     }
 
 

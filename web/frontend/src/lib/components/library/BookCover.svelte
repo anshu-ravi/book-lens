@@ -13,7 +13,7 @@
 		author?: string;
 		seriesId: string;
 		positionInSeries?: number;
-		size?: 'thumb' | 'small' | 'medium' | 'large';
+		size?: 'thumb' | 'small' | 'medium' | 'large' | 'plate';
 		coverUrl?: string | null;
 	} = $props();
 
@@ -25,6 +25,8 @@
 		small: { w: 100, h: 150 },
 		medium: { w: 160, h: 240 },
 		large: { w: 280, h: 400 },
+		// The upload catalog-entry plate: ~240px wide, 3:2 (height:width) aspect.
+		plate: { w: 240, h: 360 },
 	};
 	const { w, h } = $derived(dims[size]);
 

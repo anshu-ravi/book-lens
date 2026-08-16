@@ -2,6 +2,7 @@
 
 from .cover import CoverImage, extract_cover
 from .epub import extract_book
+from .series_hint import SeriesHint, read_series_hint
 from .types import (
     BookExtraction,
     Chapter,
@@ -15,6 +16,7 @@ from .types import (
 __all__ = [
     "extract_book",
     "extract_cover",
+    "read_series_hint",
     "BookExtraction",
     "Chapter",
     "CoverImage",
@@ -23,4 +25,5 @@ __all__ = [
     "ExtractionError",
     "MalformedEpubError",
     "Paragraph",
+    "SeriesHint",
 ]
