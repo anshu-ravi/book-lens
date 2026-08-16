@@ -259,8 +259,8 @@ def run_chapter_pass(
 ) -> PassResult:
     """Walk every non-excerpt chapter front to back, producing one digest + entity set each.
 
-    Front matter (kind='front') is processed exactly like a body chapter --
-    it is seed data (e.g. a Dramatis Personae), not a hazard, per
+    Front matter (kind='reference') is processed exactly like a body chapter
+    -- it is seed data (e.g. a Dramatis Personae), not a hazard, per
     DECISIONS.md section 3. Committed per chapter so an interrupted run can
     resume without redoing completed work.
     """
@@ -269,8 +269,8 @@ def run_chapter_pass(
 
     all_chapters = iconn.execute(
         "SELECT chapter_idx, label, part_label, start_seq, end_seq, kind FROM chapter "
-        "WHERE book_id = ? AND kind != 'excerpt' ORDER BY start_seq",
-        (book_id,),
+        "WHERE book_id = ? AND kind != ? ORDER BY start_seq",
+        (book_id, db.EXCERPT_KIND),
     ).fetchall()
 
     for ch in all_chapters:

@@ -35,18 +35,18 @@ def _build_book(iconn, book_id="b1", book_order=1, with_front=False):
             """
             INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx,
                               chapter_label, text, kind)
-            VALUES (?, ?, 0, ?, ?, 'Dramatis Personae', 'INVENTED_FRONT_TEXT alpha is beta', 'front')
+            VALUES (?, ?, 0, ?, ?, 'Dramatis Personae', 'INVENTED_FRONT_TEXT alpha is beta', 'reference')
             """,
             (book_id, next_idx, gseq, next_idx),
         )
         iconn.execute(
             """
             INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq, kind)
-            VALUES (?, ?, 'Dramatis Personae', NULL, ?, ?, 'front')
+            VALUES (?, ?, 'Dramatis Personae', NULL, ?, ?, 'reference')
             """,
             (book_id, next_idx, gseq, gseq),
         )
-        chapters.append({"chapter_idx": next_idx, "start_seq": gseq, "end_seq": gseq, "kind": "front"})
+        chapters.append({"chapter_idx": next_idx, "start_seq": gseq, "end_seq": gseq, "kind": "reference"})
         next_idx += 1
 
     for ch in range(NUM_CHAPTERS):
@@ -115,7 +115,7 @@ def test_chapters_includes_front_matter(iconn):
     window = causal.CausalWindow(iconn, max_seq=chapters[-1]["end_seq"])
     result = window.chapters("b1")
     kinds = {c["chapter_idx"]: c["kind"] for c in result}
-    assert kinds[0] == "front"
+    assert kinds[0] == "reference"
 
 
 def test_chapters_never_includes_excerpt(iconn):

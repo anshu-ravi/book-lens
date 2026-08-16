@@ -185,6 +185,39 @@ def test_excerpt_paragraphs_never_appear_at_any_ceiling(tmp_path):
         assert EXCERPT_TOKEN not in result.text, f"excerpt leaked at ceiling={ceiling}"
 
 
+def test_boilerplate_paragraphs_never_appear_at_any_ceiling(tmp_path):
+    """A boilerplate chapter (e.g. copyright, dedication) sitting inside a
+    book's own seq range must never reach the assembled context, at any
+    ceiling -- same guarantee as the excerpt exclusion, different kind."""
+    iconn, pconn, meta = build_fixture(tmp_path)
+    boilerplate_spine = NUM_CHAPTERS + 1
+    boilerplate_token = "BOILERPLATETOKEN_KX4"
+    gseq = db.global_seq(1, boilerplate_spine, 0)
+    iconn.execute(
+        """
+        INSERT INTO para(book_id, spine_idx, para_idx, global_seq,
+                          chapter_idx, chapter_label, text, kind)
+        VALUES ('rr1', ?, 0, ?, ?, 'Copyright', ?, 'boilerplate')
+        """,
+        (boilerplate_spine, gseq, NUM_CHAPTERS + 1, f"lorem {boilerplate_token} all rights reserved"),
+    )
+    iconn.execute(
+        """
+        INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq, kind)
+        VALUES ('rr1', ?, 'Copyright', NULL, ?, ?, 'boilerplate')
+        """,
+        (NUM_CHAPTERS + 1, gseq, gseq),
+    )
+    iconn.commit()
+
+    for ceiling in (gseq - 1, gseq, gseq + 1, meta["max_global_seq"] + 1000):
+        _set_ceiling(pconn, "rr1", ceiling)
+        _set_ceiling(pconn, "rr2", 0)
+        with tools.Tools(iconn, pconn) as t:
+            result = context.assemble(t)
+        assert boilerplate_token not in result.text, f"boilerplate leaked at ceiling={ceiling}"
+
+
 def test_paragraph_order_strictly_ascending_by_global_seq(tmp_path):
     iconn, pconn, meta = build_fixture(tmp_path)
     _set_ceiling(pconn, "rr1", meta["books"]["rr1"]["chapters"][-1]["end_seq"])

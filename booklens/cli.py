@@ -84,6 +84,11 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         skipped_empty = manifest.get("skipped_empty_chapters", [])
         if skipped_empty:
             print(f"  chapters with zero extracted paragraphs (not stored): {skipped_empty}")
+        size_flags = manifest.get("size_flags", [])
+        if size_flags:
+            print("  SIZE FLAG (short for its kind -- check for misclassification, nothing was dropped):")
+            for entry in size_flags:
+                print(f"    - {entry['label']!r} ({entry['kind']}): {entry['words']} words")
     return 0
 
 
@@ -140,10 +145,17 @@ def cmd_books(args: argparse.Namespace) -> int:
 
 
 def cmd_progress(args: argparse.Namespace) -> int:
-    """Set reading position and confirm the boundary it resolved to."""
+    """Set reading position and confirm the boundary it resolved to.
+
+    `--chapter` takes the number printed in the book (or a named division
+    like "prologue"), never the internal chapter_idx.
+    """
     iconn, pconn = _open_dbs()
+    chapter_idx = None
+    if args.chapter is not None:
+        chapter_idx = tools.resolve_chapter_ref(iconn, args.book_id, args.chapter)
     prog = progress.set_position(
-        pconn, iconn, args.book_id, status=args.status, chapter_idx=args.chapter
+        pconn, iconn, args.book_id, status=args.status, chapter_idx=chapter_idx
     )
     with tools.Tools(iconn, pconn) as t:
         chapters = t.list_chapters(args.book_id)["chapters"]
@@ -170,6 +182,15 @@ def cmd_chapters(args: argparse.Namespace) -> int:
     iconn, pconn = _open_dbs()
     with tools.Tools(iconn, pconn) as t:
         result = t.list_chapters(args.book_id, part=args.part)
+    _print(result, args.json)
+    return 0
+
+
+def cmd_positions(args: argparse.Namespace) -> int:
+    """Show the reading-position picker: structure for the whole book, titles once reached."""
+    iconn, pconn = _open_dbs()
+    with tools.Tools(iconn, pconn) as t:
+        result = t.list_chapter_positions(args.book_id)
     _print(result, args.json)
     return 0
 
@@ -304,7 +325,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_progress = sub.add_parser("progress", help="set a book's reading position")
     p_progress.add_argument("book_id")
     p_progress.add_argument("--status", required=True, choices=["unread", "reading", "finished"])
-    p_progress.add_argument("--chapter", type=int, default=None)
+    p_progress.add_argument(
+        "--chapter", default=None,
+        help="the printed chapter number or a named division (e.g. 'prologue'), not the internal index",
+    )
     p_progress.add_argument("--json", action="store_true")
     p_progress.set_defaults(func=cmd_progress)
 
@@ -313,6 +337,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_chapters.add_argument("--part", default=None)
     p_chapters.add_argument("--json", action="store_true")
     p_chapters.set_defaults(func=cmd_chapters)
+
+    p_positions = sub.add_parser("positions", help="show the reading-position picker")
+    p_positions.add_argument("book_id")
+    p_positions.add_argument("--json", action="store_true")
+    p_positions.set_defaults(func=cmd_positions)
 
     p_read = sub.add_parser("read", help="read raw paragraphs in a chapter range")
     p_read.add_argument("book_id")

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 from booklens.classify import classify_chapters
 from booklens.extract import extract_book
 
@@ -71,20 +73,30 @@ def test_no_excerpt_pattern_no_excerpt_chapters():
 # -- rule 2: leading front-matter run --------------------------------------
 
 
-def test_leading_front_matter_run_is_marked_front():
+def test_leading_boilerplate_run_is_marked_boilerplate():
     book = _book(["Cover", "Title Page", "Copyright", "Chapter 1", "Chapter 2"])
     kinds = classify_chapters(book)
-    assert kinds[0] == "front"
-    assert kinds[1] == "front"
-    assert kinds[2] == "front"
+    assert kinds[0] == "boilerplate"
+    assert kinds[1] == "boilerplate"
+    assert kinds[2] == "boilerplate"
     assert kinds[3] == "body"
     assert kinds[4] == "body"
+
+
+def test_leading_reference_shaped_label_is_marked_reference():
+    # Reference-shaped material positioned before the first body chapter is
+    # seed data (DECISIONS.md section 3), distinct from boilerplate.
+    book = _book(["Dramatis Personae", "Map", "Chapter 1"])
+    kinds = classify_chapters(book)
+    assert kinds[0] == "reference"
+    assert kinds[1] == "reference"
+    assert kinds[2] == "body"
 
 
 def test_leading_run_stops_at_first_non_matching_label():
     book = _book(["Cover", "Prologue", "Copyright", "Chapter 1"])
     kinds = classify_chapters(book)
-    assert kinds[0] == "front"
+    assert kinds[0] == "boilerplate"
     # "Prologue" doesn't match a front pattern -- the leading run stops here.
     assert kinds[1] == "body"
     assert kinds[2] == "body"
@@ -99,28 +111,36 @@ def test_non_matching_first_chapter_yields_no_leading_front_run():
     assert kinds[1] == "body"
 
 
-# -- rule 3: trailing about-author/acknowledgments -------------------------
+# -- rule 3: trailing back matter -------------------------------------------
 
 
-def test_trailing_acknowledgments_before_excerpt_run_is_front():
+def test_trailing_acknowledgments_before_excerpt_run_is_boilerplate():
     book = _book(["Chapter 1", "Chapter 2", "Acknowledgments", "About the Author", "Excerpt from Book Two"])
     kinds = classify_chapters(book)
     assert kinds[0] == "body"
     assert kinds[1] == "body"
-    assert kinds[2] == "front"
-    assert kinds[3] == "front"
+    assert kinds[2] == "boilerplate"
+    assert kinds[3] == "boilerplate"
     assert kinds[4] == "excerpt"
 
 
-def test_trailing_acknowledgments_with_no_excerpt_run_is_excerpt():
-    # No excerpt run anywhere in this book -- rule 3's "else" branch fires:
-    # without positive confirmation this trailing matter is harmless back
-    # matter, bias toward quarantining it too.
+def test_trailing_acknowledgments_with_no_excerpt_run_is_boilerplate():
     book = _book(["Chapter 1", "Chapter 2", "Acknowledgments"])
     kinds = classify_chapters(book)
     assert kinds[0] == "body"
     assert kinds[1] == "body"
-    assert kinds[2] == "excerpt"
+    assert kinds[2] == "boilerplate"
+
+
+def test_trailing_reference_shaped_label_is_boilerplate_not_reference():
+    # The key asymmetry: the same "Glossary" shape that would be `reference`
+    # at the front is `boilerplate` at the back -- it was written with
+    # whole-book knowledge and gets no seed-data trust there.
+    book = _book(["Chapter 1", "Chapter 2", "Glossary"])
+    kinds = classify_chapters(book)
+    assert kinds[0] == "body"
+    assert kinds[1] == "body"
+    assert kinds[2] == "boilerplate"
 
 
 def test_rule3_scan_stops_at_first_real_trailing_chapter():
@@ -129,7 +149,7 @@ def test_rule3_scan_stops_at_first_real_trailing_chapter():
     # Epilogue is real content -- the backward scan for rule 3 stops there,
     # so Acknowledgments (after it) is still caught, but Epilogue is body.
     assert kinds[2] == "body"
-    assert kinds[3] == "excerpt"
+    assert kinds[3] == "boilerplate"
 
 
 # -- rule 4: default ---------------------------------------------------------
@@ -198,4 +218,19 @@ def test_every_chapter_classified_exactly_once_on_real_corpus(corpus):
         book = extract_book(path)
         kinds = classify_chapters(book)
         assert set(kinds.keys()) == {c.chapter_idx for c in book.chapters}
-        assert all(v in ("body", "front", "excerpt") for v in kinds.values())
+        assert all(v in ("body", "reference", "boilerplate", "excerpt") for v in kinds.values())
+
+
+def test_red_rising_boilerplate_and_reference_split_on_real_corpus(corpus):
+    if "red-rising" not in corpus:
+        pytest.skip("red-rising not present in uploads/")
+    book = extract_book(corpus["red-rising"])
+    kinds = classify_chapters(book)
+    by_label = {c.label: kinds[c.chapter_idx] for c in book.chapters}
+
+    for label in ("Copyright", "Contents", "Dedication", "Acknowledgments", "About the Author"):
+        assert by_label[label] == "boilerplate", f"{label!r} should be boilerplate, got {by_label[label]!r}"
+
+    assert by_label["Map"] == "reference"
+    assert by_label["Prologue"] == "body"
+    assert by_label["Excerpt from Golden Son"] == "excerpt"

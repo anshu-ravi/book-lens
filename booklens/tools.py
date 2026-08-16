@@ -15,6 +15,12 @@ _TABLE_NAME_RE = re.compile(r"^readable_range_[0-9a-f]{32}$")
 
 _CITATION_RE = re.compile(r"^(?P<book>[^:]+):(?P<spine>\d+):p(?P<para>\d+)$")
 
+# Recognise the *shape* of a reader-facing chapter label -- never used to
+# reorder anything; spine order (chapter_idx) remains the only sequence.
+_PART_DIVIDER_RE = re.compile(r"^\s*part\b", re.IGNORECASE)
+_NAMED_DIVISION_RE = re.compile(r"^\s*(prologue|epilogue|interlude\w*)\b", re.IGNORECASE)
+_PRINTED_NUMBER_RE = re.compile(r"^\s*(?:chapter\s+)?(\d+)\b", re.IGNORECASE)
+
 _SEARCH_LIMIT = 40
 _READ_RAW_PARA_CAP = 800
 _CONTEXT_WINDOW_CAP = 50
@@ -45,14 +51,84 @@ def parse_citation_id(citation_id: str) -> tuple[str, int, int]:
     return m.group("book"), int(m.group("spine")), int(m.group("para"))
 
 
+def _printed_identity(label: str) -> tuple[str, str | int] | None:
+    """Read a chapter label the way a reader would name it.
+
+    Returns ('number', N) for something like "20: The House Mars" or
+    "Chapter 20", ('name', 'prologue') for a named division, or None if the
+    label carries no reader-facing identity at all (e.g. a part divider).
+    """
+    stripped = label.strip()
+    m = _NAMED_DIVISION_RE.match(stripped)
+    if m:
+        return ("name", stripped.lower())
+    m = _PRINTED_NUMBER_RE.match(stripped)
+    if m:
+        return ("number", int(m.group(1)))
+    return None
+
+
+def resolve_chapter_ref(iconn: sqlite3.Connection, book_id: str, ref: str | int) -> int:
+    """Map a reader-facing chapter reference to the internal `chapter_idx`.
+
+    Accepts a printed number ("20") or a named division ("prologue",
+    "epilogue", an interlude's label). Part dividers are structure, not
+    reading positions, and are never resolvable here. Only recognises the
+    *shape* of a label to identify what the reader would type -- spine order
+    (chapter_idx) remains the only sequence, per `DECISIONS.md` section 3.
+    Raises `ValueError` naming what is valid; never clamps to something close.
+    """
+    rows = iconn.execute(
+        f"SELECT chapter_idx, label FROM chapter WHERE book_id = ? AND kind IN {db.ADDRESSABLE_KINDS_SQL} "
+        "ORDER BY chapter_idx",
+        (book_id,),
+    ).fetchall()
+    if not rows:
+        raise ValueError(f"unknown book_id {book_id!r}")
+
+    numbers: dict[int, int] = {}
+    names: dict[str, int] = {}
+    for r in rows:
+        label = r["label"]
+        if _PART_DIVIDER_RE.match(label.strip()):
+            continue
+        identity = _printed_identity(label)
+        if identity is None:
+            continue
+        kind, value = identity
+        if kind == "number":
+            numbers.setdefault(value, r["chapter_idx"])
+        else:
+            names.setdefault(value, r["chapter_idx"])
+
+    if isinstance(ref, int):
+        query_number, query_name = ref, None
+    else:
+        text = str(ref).strip()
+        query_number, query_name = (int(text), None) if text.isdigit() else (None, text.lower())
+
+    if query_number is not None and query_number in numbers:
+        return numbers[query_number]
+    if query_name is not None and query_name in names:
+        return names[query_name]
+
+    valid_numbers = sorted(numbers)
+    number_range = f"{valid_numbers[0]}-{valid_numbers[-1]}" if valid_numbers else "none"
+    valid_names = ", ".join(sorted(names)) if names else "none"
+    raise ValueError(
+        f"unknown chapter reference {ref!r} for book {book_id!r}; "
+        f"valid printed chapters: {number_range}; valid named divisions: {valid_names}"
+    )
+
+
 def _last_readable_chapter_label(
     iconn: sqlite3.Connection, book_id: str, ceiling: int
 ) -> str | None:
     """Label of the furthest chapter the reader has started, for the truncation marker."""
     row = iconn.execute(
-        """
+        f"""
         SELECT label FROM chapter
-        WHERE book_id = ? AND start_seq <= ? AND kind != 'excerpt'
+        WHERE book_id = ? AND start_seq <= ? AND kind IN {db.SERVABLE_KINDS_SQL}
         ORDER BY start_seq DESC LIMIT 1
         """,
         (book_id, ceiling),
@@ -75,7 +151,7 @@ def _book_has_content_above(
 ) -> bool:
     """Whether anything remains unread, without revealing what or how much."""
     row = iconn.execute(
-        "SELECT 1 FROM chapter WHERE book_id = ? AND end_seq > ? AND kind != 'excerpt' LIMIT 1",
+        f"SELECT 1 FROM chapter WHERE book_id = ? AND end_seq > ? AND kind IN {db.SERVABLE_KINDS_SQL} LIMIT 1",
         (book_id, ceiling),
     ).fetchone()
     return row is not None
@@ -98,7 +174,15 @@ class Tools:
     """
 
     def __init__(self, iconn: sqlite3.Connection, pconn: sqlite3.Connection):
-        """Bind to the reader's current readable ranges for the life of this object."""
+        """Bind to the reader's current readable ranges for the life of this object.
+
+        Checks `iconn` against the current schema unconditionally -- `iconn`
+        may have been opened with plain `sqlite3.connect` rather than
+        `db.connect_index`, and a stale schema must fail loudly here rather
+        than silently serving fewer rows than it should (DECISIONS.md
+        section 3: fail loudly, never silently).
+        """
+        db.check_schema_compat(iconn)
         self._iconn = iconn
         self._pconn = pconn
         self._ceiling = progress.ceiling_for(pconn, iconn)
@@ -158,7 +242,7 @@ class Tools:
                 ch = self._iconn.execute(
                     f"""
                     SELECT label FROM chapter
-                    WHERE book_id = ? AND chapter_idx = ? AND kind != 'excerpt'
+                    WHERE book_id = ? AND chapter_idx = ? AND kind IN {db.SERVABLE_KINDS_SQL}
                       AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
                     """,
                     (r["id"], prog.position_chapter_idx),
@@ -182,7 +266,7 @@ class Tools:
         rows = self._iconn.execute(
             f"""
             SELECT chapter_idx, label, part_label FROM chapter
-            WHERE book_id = ? AND kind != 'excerpt'{part_clause}
+            WHERE book_id = ? AND kind IN {db.SERVABLE_KINDS_SQL}{part_clause}
               AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
             ORDER BY chapter_idx
             """,
@@ -201,6 +285,42 @@ class Tools:
         if marker is not None and _book_has_content_above(self._iconn, book, book_ceiling):
             result.update(marker)
         return result
+
+    def list_chapter_positions(self, book: str) -> dict:
+        """The reading-position picker: reader-facing numbers for the whole book.
+
+        Structure -- printed numbers and part boundaries -- is visible for
+        every chapter so the reader can orient, but a chapter's title is
+        withheld until its start_seq is inside the readable range. Section 4:
+        the picker must not reveal titles above the ceiling. Never the
+        internal chapter_idx.
+        """
+        rows = self._iconn.execute(
+            "SELECT label, part_label, start_seq FROM chapter "
+            f"WHERE book_id = ? AND kind IN {db.ADDRESSABLE_KINDS_SQL} ORDER BY chapter_idx",
+            (book,),
+        ).fetchall()
+        ceiling = self._book_ceiling(book)
+
+        positions: list[dict] = []
+        seen_parts: set[str] = set()
+        for r in rows:
+            label = r["label"]
+            if _PART_DIVIDER_RE.match(label.strip()):
+                if label not in seen_parts:
+                    positions.append({"part": label})
+                    seen_parts.add(label)
+                continue
+            identity = _printed_identity(label)
+            entry: dict = {}
+            if identity is not None:
+                key = "number" if identity[0] == "number" else "name"
+                entry[key] = identity[1]
+            if r["start_seq"] <= ceiling:
+                entry["label"] = label
+            positions.append(entry)
+
+        return {"book": book, "positions": positions}
 
     # -- raw text -------------------------------------------------------
 
@@ -221,7 +341,7 @@ class Tools:
             SELECT book_id, spine_idx, para_idx, chapter_label, text
             FROM para
             WHERE book_id = ? AND chapter_idx BETWEEN ? AND ?
-              AND kind != 'excerpt'
+              AND kind IN {db.SERVABLE_KINDS_SQL}
               AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             ORDER BY global_seq
             LIMIT ?
@@ -244,7 +364,7 @@ class Tools:
             f"""
             SELECT 1 FROM para
             WHERE book_id = ? AND chapter_idx BETWEEN ? AND ?
-              AND kind != 'excerpt'
+              AND kind IN {db.SERVABLE_KINDS_SQL}
               AND NOT EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             LIMIT 1
             """,
@@ -271,7 +391,7 @@ class Tools:
             row = self._iconn.execute(
                 f"""
                 SELECT 1 FROM chapter
-                WHERE book_id = ? AND chapter_idx = ? AND kind != 'excerpt'
+                WHERE book_id = ? AND chapter_idx = ? AND kind IN {db.SERVABLE_KINDS_SQL}
                   AND EXISTS (SELECT 1 FROM {self._table} r WHERE start_seq BETWEEN r.lo AND r.hi)
                 """,
                 (book, chapter),
@@ -310,7 +430,7 @@ class Tools:
                     f"""
                     SELECT book_id, spine_idx, para_idx, chapter_label, text
                     FROM para
-                    WHERE text REGEXP ? AND kind != 'excerpt'{book_clause}
+                    WHERE text REGEXP ? AND kind IN {db.SERVABLE_KINDS_SQL}{book_clause}
                       AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
                     ORDER BY global_seq
                     LIMIT ?
@@ -347,7 +467,7 @@ class Tools:
                        snippet(para_fts, 0, '[', ']', '...', 10) AS snip
                 FROM para_fts
                 JOIN para p ON p.id = para_fts.rowid
-                WHERE para_fts MATCH ? AND p.kind != 'excerpt'{book_clause}
+                WHERE para_fts MATCH ? AND p.kind IN {db.SERVABLE_KINDS_SQL}{book_clause}
                   AND EXISTS (SELECT 1 FROM {self._table} r WHERE p.global_seq BETWEEN r.lo AND r.hi)
                 ORDER BY bm25(para_fts)
                 LIMIT ?
@@ -385,7 +505,7 @@ class Tools:
                 SELECT p.book_id, p.spine_idx, p.para_idx, p.chapter_label
                 FROM para_fts
                 JOIN para p ON p.id = para_fts.rowid
-                WHERE para_fts MATCH ? AND p.kind != 'excerpt'
+                WHERE para_fts MATCH ? AND p.kind IN {db.SERVABLE_KINDS_SQL}
                   AND EXISTS (SELECT 1 FROM {self._table} r WHERE p.global_seq BETWEEN r.lo AND r.hi)
                 ORDER BY p.global_seq ASC
                 LIMIT 1
@@ -428,7 +548,7 @@ class Tools:
             f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text, global_seq
             FROM para
-            WHERE book_id = ? AND spine_idx = ? AND para_idx = ? AND kind != 'excerpt'
+            WHERE book_id = ? AND spine_idx = ? AND para_idx = ? AND kind IN {db.SERVABLE_KINDS_SQL}
               AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             """,
             (book_id, spine_idx, para_idx),
@@ -442,7 +562,7 @@ class Tools:
             f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text
             FROM para
-            WHERE book_id = ? AND global_seq < ? AND kind != 'excerpt'
+            WHERE book_id = ? AND global_seq < ? AND kind IN {db.SERVABLE_KINDS_SQL}
               AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             ORDER BY global_seq DESC
             LIMIT ?
@@ -454,7 +574,7 @@ class Tools:
             f"""
             SELECT book_id, spine_idx, para_idx, chapter_label, text
             FROM para
-            WHERE book_id = ? AND global_seq > ? AND kind != 'excerpt'
+            WHERE book_id = ? AND global_seq > ? AND kind IN {db.SERVABLE_KINDS_SQL}
               AND EXISTS (SELECT 1 FROM {self._table} r WHERE global_seq BETWEEN r.lo AND r.hi)
             ORDER BY global_seq ASC
             LIMIT ?

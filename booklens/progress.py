@@ -9,6 +9,8 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from booklens import db
+
 
 @dataclass(frozen=True)
 class BookProgress:
@@ -52,18 +54,24 @@ def _book_exists(iconn: sqlite3.Connection, book_id: str) -> bool:
     )
 
 
+_CHAPTER_END_SEQ_SQL = (
+    "SELECT end_seq FROM chapter WHERE book_id = ? AND chapter_idx = ? AND kind IN "
+    + db.SERVABLE_KINDS_SQL
+)
+_BOOK_MAX_END_SEQ_SQL = (
+    "SELECT MAX(end_seq) AS m FROM chapter WHERE book_id = ? AND kind IN " + db.SERVABLE_KINDS_SQL
+)
+
+
 def _chapter_end_seq(
     iconn: sqlite3.Connection, book_id: str, chapter_idx: int
 ) -> int:
     """End of a chapter the reader can actually claim to have finished.
 
-    Excerpt chapters are excluded; they belong to another book and are never a
-    valid position in this one.
+    Excerpt and boilerplate chapters are excluded; neither is a valid
+    position -- one belongs to another book, the other isn't the book proper.
     """
-    row = iconn.execute(
-        "SELECT end_seq FROM chapter WHERE book_id = ? AND chapter_idx = ? AND kind != 'excerpt'",
-        (book_id, chapter_idx),
-    ).fetchone()
+    row = iconn.execute(_CHAPTER_END_SEQ_SQL, (book_id, chapter_idx)).fetchone()
     if row is None:
         raise ValueError(f"unknown chapter_idx {chapter_idx} for book {book_id!r}")
     return row["end_seq"]
@@ -71,11 +79,9 @@ def _chapter_end_seq(
 
 def _book_max_end_seq(iconn: sqlite3.Connection, book_id: str) -> int:
     """End of the book proper, so 'finished' never sets a ceiling into the
-    next book's opening chapters sitting in this book's back matter."""
-    row = iconn.execute(
-        "SELECT MAX(end_seq) AS m FROM chapter WHERE book_id = ? AND kind != 'excerpt'",
-        (book_id,),
-    ).fetchone()
+    back matter (an excerpt of the next book, or boilerplate like an
+    afterword) that follows the book's own last chapter."""
+    row = iconn.execute(_BOOK_MAX_END_SEQ_SQL, (book_id,)).fetchone()
     if row is None or row["m"] is None:
         # Nothing ingested for this book yet.
         return 0

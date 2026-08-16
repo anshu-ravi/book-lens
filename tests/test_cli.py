@@ -83,6 +83,18 @@ def test_ingest_no_excerpt_reports_none_detected(data_dir, capsys):
     assert "no excerpt back matter detected" in out
 
 
+def test_ingest_prints_size_flag_report(data_dir, capsys):
+    # _simple_epub's chapters are all a handful of words, well under the
+    # likely-boilerplate threshold -- the report should flag them without
+    # dropping or reclassifying anything (see test_ingest.py for that check).
+    epub = _simple_epub(data_dir, name="book.epub")
+    rc = _run(["ingest", str(epub), "--series", "s1"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "SIZE FLAG" in out
+    assert "Prologue" in out
+
+
 def test_ingest_json_output_is_parseable(data_dir, capsys):
     epub = _simple_epub(data_dir, name="book.epub")
     rc = _run(["ingest", str(epub), "--series", "s1", "--json"])
@@ -110,7 +122,7 @@ def test_progress_sets_status_and_prints_resolved_boundary(data_dir, capsys):
     _run(["ingest", str(epub), "--series", "s1"])
     capsys.readouterr()
 
-    rc = _run(["progress", "sample-book", "--status", "reading", "--chapter", "0"])
+    rc = _run(["progress", "sample-book", "--status", "reading", "--chapter", "prologue"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "sample-book" in out
@@ -131,6 +143,48 @@ def test_progress_json_output(data_dir, capsys):
     assert out["resolved_chapter_label"] is not None
 
 
+def test_progress_chapter_takes_printed_number_not_internal_index(data_dir, capsys):
+    # _simple_epub is [Prologue, Chapter 1, Chapter 2] -- internal chapter_idx
+    # 1 is printed "Chapter 1", so --chapter 1 must resolve to that, not to
+    # internal chapter_idx 1 by coincidence-free construction.
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    rc = _run(["progress", "sample-book", "--status", "reading", "--chapter", "1", "--json"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["resolved_chapter_label"] == "Chapter 1"
+
+
+def test_progress_unresolvable_chapter_fails_clean(data_dir, capsys):
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    rc = _run(["progress", "sample-book", "--status", "reading", "--chapter", "999"])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "error" in err.lower()
+
+
+def test_positions_hides_titles_above_ceiling(data_dir, capsys):
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+    _run(["progress", "sample-book", "--status", "reading", "--chapter", "prologue"])
+    capsys.readouterr()
+
+    rc = _run(["positions", "sample-book", "--json"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    by_number = {e["number"]: e for e in out["positions"] if "number" in e}
+    assert "label" not in by_number[1]
+    assert "label" not in by_number[2]
+    named = [e for e in out["positions"] if e.get("name") == "prologue"]
+    assert named[0]["label"] == "Prologue"
+
+
 # -- chapters / read / search / context / first-seen -----------------------
 
 
@@ -138,7 +192,7 @@ def test_chapters_respects_ceiling(data_dir, capsys):
     epub = _simple_epub(data_dir, name="book.epub")
     _run(["ingest", str(epub), "--series", "s1"])
     capsys.readouterr()
-    _run(["progress", "sample-book", "--status", "reading", "--chapter", "0"])
+    _run(["progress", "sample-book", "--status", "reading", "--chapter", "prologue"])
     capsys.readouterr()
 
     rc = _run(["chapters", "sample-book", "--json"])
@@ -152,7 +206,7 @@ def test_read_prints_paragraphs_and_truncation_marker(data_dir, capsys):
     epub = _simple_epub(data_dir, name="book.epub")
     _run(["ingest", str(epub), "--series", "s1"])
     capsys.readouterr()
-    _run(["progress", "sample-book", "--status", "reading", "--chapter", "0"])
+    _run(["progress", "sample-book", "--status", "reading", "--chapter", "prologue"])
     capsys.readouterr()
 
     rc = _run(["read", "sample-book", "--from", "0", "--to", "2"])

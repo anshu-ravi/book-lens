@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from booklens import db
+
 
 class CausalWindow:
     """Reads only at or below a seq fixed when it was built.
@@ -28,10 +30,10 @@ class CausalWindow:
             """
             SELECT chapter_idx, label, part_label, kind, start_seq, end_seq
             FROM chapter
-            WHERE book_id = ? AND kind != 'excerpt' AND end_seq <= ?
+            WHERE book_id = ? AND kind != ? AND end_seq <= ?
             ORDER BY start_seq
             """,
-            (book_id, self._max_seq),
+            (book_id, db.EXCERPT_KIND, self._max_seq),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -43,7 +45,7 @@ class CausalWindow:
         ).fetchone()
         if ch is None:
             raise ValueError(f"unknown chapter_idx {chapter_idx} for book {book_id!r}")
-        if ch["kind"] == "excerpt":
+        if ch["kind"] == db.EXCERPT_KIND:
             raise ValueError(f"chapter {chapter_idx} of {book_id!r} is an excerpt and cannot be windowed")
         if ch["end_seq"] > self._max_seq:
             raise ValueError(
@@ -63,10 +65,10 @@ class CausalWindow:
             SELECT id, book_id, spine_idx, para_idx, chapter_idx, chapter_label, global_seq, text
             FROM para
             WHERE book_id = ? AND global_seq BETWEEN ? AND ?
-              AND kind != 'excerpt' AND global_seq <= ?
+              AND kind != ? AND global_seq <= ?
             ORDER BY global_seq
             """,
-            (book_id, start_seq, end_seq, self._max_seq),
+            (book_id, start_seq, end_seq, db.EXCERPT_KIND, self._max_seq),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -81,10 +83,10 @@ class CausalWindow:
             SELECT n.id, n.designator, n.node_kind, n.first_seq, n.cite_para_id
             FROM entity_node n
             JOIN para p ON p.id = n.cite_para_id
-            WHERE n.book_id = ? AND n.first_seq <= ? AND p.kind != 'excerpt'
+            WHERE n.book_id = ? AND n.first_seq <= ? AND p.kind != ?
             ORDER BY n.first_seq
             """,
-            (book_id, self._max_seq),
+            (book_id, self._max_seq, db.EXCERPT_KIND),
         ).fetchall()
         edges = self._iconn.execute(
             """
@@ -93,10 +95,10 @@ class CausalWindow:
             JOIN entity_node src ON src.id = e.src_node_id
             LEFT JOIN para p ON p.id = e.cite_para_id
             WHERE src.book_id = ? AND e.revealed_at_seq <= ?
-              AND (e.cite_para_id IS NULL OR p.kind != 'excerpt')
+              AND (e.cite_para_id IS NULL OR p.kind != ?)
             ORDER BY e.revealed_at_seq
             """,
-            (book_id, self._max_seq),
+            (book_id, self._max_seq, db.EXCERPT_KIND),
         ).fetchall()
         attrs = self._iconn.execute(
             """
@@ -105,10 +107,10 @@ class CausalWindow:
             JOIN entity_node n ON n.id = a.node_id
             LEFT JOIN para p ON p.id = a.cite_para_id
             WHERE n.book_id = ? AND a.first_seq <= ?
-              AND (a.cite_para_id IS NULL OR p.kind != 'excerpt')
+              AND (a.cite_para_id IS NULL OR p.kind != ?)
             ORDER BY a.first_seq
             """,
-            (book_id, self._max_seq),
+            (book_id, self._max_seq, db.EXCERPT_KIND),
         ).fetchall()
         return {
             "nodes": [dict(r) for r in nodes],

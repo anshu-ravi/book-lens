@@ -11,10 +11,36 @@ from pathlib import Path
 
 from booklens import paths
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _MAX_SPINE_IDX = 1000
 _MAX_PARA_IDX = 1000
+
+# The kind vocabulary, defined once so no call site can hardcode a stale or
+# partial list (see docs/implementation-notes.md for the incident that
+# motivated this). `ALL_KINDS` backs the schema CHECK constraint and the
+# schema-compat guard below.
+ALL_KINDS = ("body", "reference", "boilerplate", "excerpt")
+EXCERPT_KIND = "excerpt"
+
+# What the answering context and every bounded tool query serve. Boilerplate
+# and excerpt are never in this set, for any query, at any ceiling.
+SERVABLE_KINDS = ("body", "reference")
+
+# What a reader can name as a reading position. Reference material (a cast
+# list, a map) and part dividers are structure, not positions.
+ADDRESSABLE_KINDS = ("body",)
+
+
+def _kinds_sql(kinds: tuple[str, ...]) -> str:
+    """Render a kind tuple as a SQL `IN (...)` list. Kinds are code constants,
+    never user input, so simple quoting is safe."""
+    return "(" + ", ".join(f"'{k}'" for k in kinds) + ")"
+
+
+ALL_KINDS_SQL = _kinds_sql(ALL_KINDS)
+SERVABLE_KINDS_SQL = _kinds_sql(SERVABLE_KINDS)
+ADDRESSABLE_KINDS_SQL = _kinds_sql(ADDRESSABLE_KINDS)
 
 
 def global_seq(book_order: int, spine_idx: int, para_idx: int) -> int:
@@ -59,7 +85,7 @@ def connect_progress(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-_INDEX_DDL = """
+_INDEX_DDL = f"""
 CREATE TABLE IF NOT EXISTS book(
   id           TEXT PRIMARY KEY,
   sha256       TEXT NOT NULL UNIQUE,
@@ -81,7 +107,8 @@ CREATE TABLE IF NOT EXISTS chapter(
   part_label  TEXT,
   start_seq   INTEGER NOT NULL,
   end_seq     INTEGER NOT NULL,
-  kind        TEXT NOT NULL DEFAULT 'body' CHECK(kind IN ('body','front','excerpt')),
+  kind        TEXT NOT NULL DEFAULT 'body'
+              CHECK(kind IN {ALL_KINDS_SQL}),
   PRIMARY KEY(book_id, chapter_idx)
 );
 
@@ -94,7 +121,8 @@ CREATE TABLE IF NOT EXISTS para(
   chapter_idx   INTEGER NOT NULL,
   chapter_label TEXT NOT NULL,
   text          TEXT NOT NULL,
-  kind          TEXT NOT NULL DEFAULT 'body' CHECK(kind IN ('body','front','excerpt'))
+  kind          TEXT NOT NULL DEFAULT 'body'
+                CHECK(kind IN {ALL_KINDS_SQL})
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS para_fts USING fts5(
@@ -193,11 +221,15 @@ class SchemaVersionError(Exception):
 _V3_TABLES = {"digest", "entity_node", "entity_edge", "entity_attr"}
 
 
-def _check_schema_compat(conn: sqlite3.Connection) -> None:
+def check_schema_compat(conn: sqlite3.Connection) -> None:
     """Reject an index.db predating the current schema.
 
     `CREATE TABLE IF NOT EXISTS` skips existing tables, so a stale one would
     otherwise survive init untouched and missing its new columns or tables.
+    Called by `init_index` (the `connect_index` path) *and* directly by
+    `Tools.__init__`, because a caller can hand `Tools` a connection opened
+    with plain `sqlite3.connect` that never went through `connect_index` --
+    that path must not be able to silently serve a stale schema either.
     """
     tables = {
         r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -228,10 +260,27 @@ def _check_schema_compat(conn: sqlite3.Connection) -> None:
                 "(and its digests/ directory) and re-run ingest for every book."
             )
 
+    # A stored CHECK constraint is part of the table's DDL text and survives
+    # untouched under CREATE TABLE IF NOT EXISTS, so a database built under
+    # SCHEMA_VERSION=3's ('body','front','excerpt') kind vocabulary would
+    # otherwise reject SCHEMA_VERSION=4 inserts with a bare IntegrityError
+    # instead of this clear message.
+    if "chapter" in tables:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='chapter'"
+        ).fetchone()
+        if row is not None and row["sql"] is not None and ALL_KINDS_SQL not in row["sql"]:
+            raise SchemaVersionError(
+                "index.db has an outdated schema: chapter.kind predates the "
+                "'reference'/'boilerplate' split introduced in SCHEMA_VERSION=4. "
+                "index.db is a rebuildable cache, not user data -- delete it "
+                "(and its digests/ directory) and re-run ingest for every book."
+            )
+
 
 def init_index(conn: sqlite3.Connection) -> None:
     """Create the index tables if absent, refusing an outdated database."""
-    _check_schema_compat(conn)
+    check_schema_compat(conn)
     conn.executescript(_INDEX_DDL)
     conn.commit()
 
