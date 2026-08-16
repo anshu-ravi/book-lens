@@ -1,6 +1,20 @@
 
 Documenting cases in my interaction that needs to be triaged and fixed 
 
+## Triage — 2026-08-16
+
+| Observation | Verdict | Where it went |
+| --- | --- | --- |
+| Long answer for a broad question, short ones for narrow questions | working as intended | — |
+| Tone acceptable, improvable later | future todo, not scheduled | — |
+| Resolved "he"/"him" from vague context | working as intended | — |
+| Refused to reproduce Eo's song, reversed itself when challenged, needed a third ask | **fixed** | `chat_prompt.py` — SYSTEM_PROMPT now grants explicit permission to quote the given paragraphs at any length. It is the reader's own book and they have already read those words; a copyright refusal on that text is always wrong. The only thing still unquotable is text that isn't in the context, and that refusal is about the reading position. |
+| Need to cancel an in-flight message | **fixed** | `chat.py` — Ctrl-C during a turn cancels it and returns to the prompt with `history` untouched, so the cached prefix and the conversation are exactly as they were. Ctrl-C at the prompt no longer exits. Provider errors no longer kill the REPL. In the web UI this is an `AbortController` plus `POST /api/chat/sessions/{sid}/undo`. |
+| Question truncated mid-sentence ("How did his and Mustang") — the model said so and answered the rest | working as intended | — |
+| No spoilers observed across two sessions | recorded as evidence | Amendment to `DECISIONS.md` section 14 — the entailment auditor and semantic golden sets move to V3, to be designed against real multi-book transcripts. |
+
+Found while extending to the full trilogy, not visible in these transcripts: Red Rising had been ingested under series `red-rising-trilogy` while books 2 and 3 went to `red-rising`. Nothing warned. The failure presented as "book 1 is simply missing from a book-2 session", which looks like a context bug rather than a data-entry one. Mitigated in the upload UI by picking a series from the ones that already exist; see `DECISIONS.md` section 20.
+
 - Darrow's current storyline was detailed - Good 
 - But at the same time other questions returned a shorter more crsip answer - very good 
 - Tone is also acceptable, I like it (but can be improved in the future not an immediate concern) - future todo 
