@@ -388,6 +388,11 @@
 		cursor: pointer;
 		flex-shrink: 0;
 	}
+	/* --ink-bg is near-white in the light theme, so brass-on-ink-bg loses
+	   contrast there -- --bone (near-black in light) reads correctly instead. */
+	:global(:root[data-theme='light']) .send-btn {
+		color: var(--bone);
+	}
 	.send-btn:disabled {
 		opacity: 0.5;
 		cursor: default;

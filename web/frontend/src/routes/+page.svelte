@@ -4,7 +4,10 @@
 	import { getLibrary, ApiError } from '$lib/api';
 	import type { Book, SeriesGroup } from '$lib/types';
 	import CurrentlyReadingCard from '$lib/components/library/CurrentlyReadingCard.svelte';
-	import SeriesRow from '$lib/components/library/SeriesRow.svelte';
+	import Carousel from '$lib/components/library/Carousel.svelte';
+	import SeriesCard from '$lib/components/library/SeriesCard.svelte';
+	import SeriesExpandedPanel from '$lib/components/library/SeriesExpandedPanel.svelte';
+	import StandaloneCard from '$lib/components/library/StandaloneCard.svelte';
 	import ProgressModal from '$lib/components/library/ProgressModal.svelte';
 
 	let series = $state<SeriesGroup[]>([]);
@@ -16,6 +19,13 @@
 	const totalVolumes = $derived(series.reduce((n, s) => n + s.books.length, 0));
 	const reading = $derived(
 		series.flatMap((s) => s.books.filter((b) => b.status === 'reading').map((b) => ({ book: b, series: s }))),
+	);
+
+	// The API has no standalone flag: a SeriesGroup with more than one book is
+	// a series, one with exactly one book is a standalone -- purely a convention.
+	const multiBookSeries = $derived(series.filter((s) => s.books.length > 1));
+	const standalones = $derived(
+		series.filter((s) => s.books.length === 1).map((s) => ({ book: s.books[0], series: s })),
 	);
 
 	async function load() {
@@ -93,19 +103,38 @@
 
 	<section class="section">
 		<div class="section-header">
-			<span class="small-caps">Index of series</span>
+			<span class="small-caps">The shelf</span>
 			<div class="rule"></div>
 		</div>
-		<div class="series-list">
-			{#each series as s (s.id)}
-				<SeriesRow
-					series={s}
-					expanded={expandedId === s.id}
-					ontoggle={() => toggle(s.id)}
-					onbookclick={(b) => (modalBook = b)}
-				/>
-			{/each}
-		</div>
+
+		{#if multiBookSeries.length > 0}
+			<div class="subsection">
+				<span class="small-caps subsection-heading">Series</span>
+				<Carousel>
+					{#each multiBookSeries as s (s.id)}
+						<SeriesCard series={s} expanded={expandedId === s.id} ontoggle={() => toggle(s.id)} />
+					{/each}
+				</Carousel>
+				{#if expandedId}
+					{#each multiBookSeries as s (s.id)}
+						{#if s.id === expandedId}
+							<SeriesExpandedPanel series={s} onupdate={(b) => (modalBook = b)} onask={askAbout} />
+						{/if}
+					{/each}
+				{/if}
+			</div>
+		{/if}
+
+		{#if standalones.length > 0}
+			<div class="subsection">
+				<span class="small-caps subsection-heading">Standalones</span>
+				<Carousel>
+					{#each standalones as { book, series: s } (book.id)}
+						<StandaloneCard {book} series={s} onupdate={(b) => (modalBook = b)} onask={askAbout} />
+					{/each}
+				</Carousel>
+			</div>
+		{/if}
 	</section>
 {/if}
 
@@ -175,8 +204,12 @@
 		flex-wrap: wrap;
 		gap: var(--sp-12);
 	}
-	.series-list {
-		display: flex;
-		flex-direction: column;
+	.subsection {
+		margin-bottom: var(--sp-8);
+	}
+	.subsection-heading {
+		display: block;
+		color: var(--bone-muted);
+		margin-bottom: var(--sp-4);
 	}
 </style>

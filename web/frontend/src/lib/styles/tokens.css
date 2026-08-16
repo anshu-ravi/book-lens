@@ -37,6 +37,25 @@
   --header-h:     80px;
 }
 
+/* Light parchment palette. Token names stay dark-flavoured (--ink-bg is "the
+   page background", --bone is "the text colour") -- they describe roles, not
+   literal colours, so we keep them rather than renaming across the codebase. */
+:root[data-theme='light'] {
+  --ink-bg:        #faf6ec;
+  --ink-surface:   #f2ecdc;
+  --ink-hairline:  rgba(31, 36, 32, 0.13);
+  --bone:          #1f2420;
+  --bone-muted:    #6e7268;
+  --bone-faint:    #9a9b90;
+  --brass:         #a8864a;
+  --brass-dim:     rgba(168, 134, 74, 0.20);
+  --oxblood:       #9a4a3a;
+  --sage:          #2a4a35;
+  --quote:         #8a6020;
+
+  --serif-display: 'Cormorant Garamond', Georgia, serif;
+}
+
 .small-caps {
   font-family: var(--sans-caps);
   text-transform: uppercase;
