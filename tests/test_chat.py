@@ -304,6 +304,89 @@ def test_repl_multiturn_asks_twice_and_accumulates_history():
     assert len(llm.calls[1]["messages"]) == 4  # context + q1 + a1 + q2
 
 
+# -- run_repl: cancellation and transient failures ---------------------------
+
+
+class _RaisingLLM:
+    """An LLM whose `complete` always raises the given exception."""
+
+    def __init__(self, exc: Exception):
+        self._exc = exc
+        self.calls = []
+
+    def complete(self, messages, *, system=None, max_tokens=4096, temperature=0.0, cache_breakpoint=None):
+        self.calls.append(messages)
+        raise self._exc
+
+
+def test_repl_ctrl_c_during_turn_cancels_without_touching_history():
+    llm = _RaisingLLM(KeyboardInterrupt())
+    session = chat.ChatSession(llm, _fixture_context())
+    printed = []
+    rc = chat.run_repl(
+        session,
+        title="Sample Book",
+        chapter_label="1: The Start",
+        input_fn=_scripted_input(["what happens?", "/exit"]),
+        print_fn=_recording_print(printed),
+        indicator=_no_wait_indicator,
+    )
+    assert rc == 0
+    assert session.history == []
+    assert any("cancelled" in line for line in printed)
+    assert len(llm.calls) == 1
+
+
+def test_repl_ctrl_c_at_prompt_does_not_exit(monkeypatch):
+    llm = MockLLM()
+    session = chat.ChatSession(llm, _fixture_context())
+    printed = []
+
+    lines = iter(["/exit"])
+
+    def _input(prompt=""):
+        if not printed_ctrl_c["done"]:
+            printed_ctrl_c["done"] = True
+            raise KeyboardInterrupt
+        try:
+            return next(lines)
+        except StopIteration:
+            raise EOFError
+
+    printed_ctrl_c = {"done": False}
+
+    rc = chat.run_repl(
+        session,
+        title="Sample Book",
+        chapter_label="1: The Start",
+        input_fn=_input,
+        print_fn=_recording_print(printed),
+        indicator=_no_wait_indicator,
+    )
+    assert rc == 0
+    assert any("use /exit or Ctrl-D to quit" in line for line in printed)
+    assert not llm.calls
+
+
+def test_repl_transient_error_during_turn_prints_error_and_keeps_history_empty():
+    from booklens.llm.base import TransientLLMError
+
+    llm = _RaisingLLM(TransientLLMError("rate limited"))
+    session = chat.ChatSession(llm, _fixture_context())
+    printed = []
+    rc = chat.run_repl(
+        session,
+        title="Sample Book",
+        chapter_label="1: The Start",
+        input_fn=_scripted_input(["what happens?", "/exit"]),
+        print_fn=_recording_print(printed),
+        indicator=_no_wait_indicator,
+    )
+    assert rc == 0
+    assert session.history == []
+    assert any("error:" in line and "rate limited" in line for line in printed)
+
+
 # -- build_llm: provider selection -------------------------------------------
 
 
@@ -466,8 +549,9 @@ def test_ceiling_is_exact_and_ephemeral_across_descending_chat_runs(data_dir, ca
     assert "Chapter 5" not in banner_low
 
 
-def test_ceiling_from_chat_respects_other_books_real_progress(data_dir, capsys, monkeypatch):
-    """The session ceiling is built *from* real progress, not from nothing -- other books' state carries over."""
+def test_chat_pulls_in_earlier_series_books_whole_even_if_never_marked_read(data_dir, capsys, monkeypatch):
+    """Nobody reads book 2 without book 1 -- the session must include book 1 whole,
+    even though `data/progress.db` has never been told the reader touched it (problem a)."""
     import io
 
     epub_a = _multi_chapter_epub(data_dir, name="a.epub", title="Book A", n_chapters=4)
@@ -476,19 +560,48 @@ def test_ceiling_from_chat_respects_other_books_real_progress(data_dir, capsys, 
     cli.main(["ingest", str(epub_b), "--series", "s1", "--start-order", "2"])
     capsys.readouterr()
 
-    # Book A has real, persisted progress: finished.
-    rc = cli.main(["progress", "book-a", "--status", "finished"])
+    # Book A has no real progress at all -- still unread.
+    monkeypatch.setattr("sys.stdin", io.StringIO("what happens in book a?\n/exit\n"))
+    rc = cli.main(["chat", "--book", "book-b", "--chapter", "1", "--provider", "fake"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    banner_line = out.splitlines()[0]
+    assert "Book A" in banner_line
+    assert "(whole)" in banner_line
+
+    # Book A's real progress must remain untouched -- still unread.
+    rc = cli.main(["books", "--json"])
+    books = json.loads(capsys.readouterr().out)
+    book_a = next(b for b in books if b["id"] == "book-a")
+    assert book_a["status"] == "unread"
+
+
+def test_chat_ignores_real_progress_from_a_later_book_in_the_series(data_dir, capsys, monkeypatch):
+    """A session pinned at book 1 must not silently drag in book 3's content just
+    because the reader has genuinely finished book 3 in real life (problem b)."""
+    import io
+
+    epub_a = _multi_chapter_epub(data_dir, name="a.epub", title="Book A", n_chapters=4)
+    epub_b = _multi_chapter_epub(data_dir, name="b.epub", title="Book B", n_chapters=4)
+    cli.main(["ingest", str(epub_a), "--series", "s1", "--start-order", "1"])
+    cli.main(["ingest", str(epub_b), "--series", "s1", "--start-order", "2"])
+    capsys.readouterr()
+
+    # Book B (later in the series) has real, persisted progress: finished.
+    rc = cli.main(["progress", "book-b", "--status", "finished"])
     assert rc == 0
     capsys.readouterr()
 
     monkeypatch.setattr("sys.stdin", io.StringIO("/exit\n"))
-    rc = cli.main(["chat", "--book", "book-b", "--chapter", "1", "--provider", "fake"])
+    rc = cli.main(["chat", "--book", "book-a", "--chapter", "1", "--provider", "fake"])
     assert rc == 0
-    capsys.readouterr()
+    out = capsys.readouterr().out
+    banner_line = out.splitlines()[0]
+    # Only book A (and nothing later) may be named as in context.
+    assert "Book B" not in banner_line
 
-    # Book A's real progress must be visible from inside the chat session's
-    # bound Tools instance (via list_books), and must be untouched afterward.
+    # Book B's real progress must be untouched by the session.
     rc = cli.main(["books", "--json"])
     books = json.loads(capsys.readouterr().out)
-    book_a = next(b for b in books if b["id"] == "book-a")
-    assert book_a["status"] == "finished"
+    book_b = next(b for b in books if b["id"] == "book-b")
+    assert book_b["status"] == "finished"

@@ -15,7 +15,7 @@ import re
 
 import pytest
 
-from booklens import context, db, progress, tools
+from booklens import chat, context, db, progress, tools
 
 NUM_CHAPTERS = 4
 PARAS_PER_CHAPTER = 6
@@ -325,3 +325,90 @@ def test_default_budget_fits_a_normal_reading_position(tmp_path):
     with tools.Tools(iconn, pconn) as t:
         result = context.assemble(t)  # default max_tokens; must not raise
     assert result.token_estimate < context.DEFAULT_MAX_TOKENS
+
+
+# -- a chat session's ephemeral ceiling is scoped to one series ------------
+
+
+def _add_second_series_book(iconn, book_id="s2b1", series_id="s2", title="Other Series Book 1"):
+    """A single-book, unrelated series, with its own body chapter and a distinct token.
+
+    Uses a `book_order` above rr1/rr2's so `global_seq` (which is scoped by
+    `book_order` alone, not `series_id`) can't collide with the fixture's rows.
+    """
+    other_book_order = 3
+    iconn.execute(
+        """
+        INSERT INTO book(id, sha256, title, author, source_path, series_id,
+                          book_order, sequence_tier, label_tier, ingested_at)
+        VALUES (?, ?, ?, 'Some Author', '/y.epub', ?, ?, 'S1', 'L1', '2026-01-01')
+        """,
+        (book_id, f"sha-{book_id}", title, series_id, other_book_order),
+    )
+    token = f"OTHERSERIESTOKEN_{book_id}"
+    para_rows = []
+    for p in range(PARAS_PER_CHAPTER):
+        gseq = db.global_seq(other_book_order, 0, p)
+        text = f"lorem {book_id} chapter 0 paragraph {p} {token}"
+        iconn.execute(
+            """
+            INSERT INTO para(book_id, spine_idx, para_idx, global_seq,
+                              chapter_idx, chapter_label, text, kind)
+            VALUES (?, 0, ?, ?, 0, 'Chapter 0', ?, 'body')
+            """,
+            (book_id, p, gseq, text),
+        )
+        para_rows.append(gseq)
+    iconn.execute(
+        """
+        INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq, kind)
+        VALUES (?, 0, 'Chapter 0', NULL, ?, ?, 'body')
+        """,
+        (book_id, para_rows[0], para_rows[-1]),
+    )
+    iconn.commit()
+    return token
+
+
+def test_chat_session_pinned_at_book_two_includes_book_one_whole(tmp_path):
+    """A session pinned at book 2 chapter K assembles book 1 (whole) plus book 2
+    through chapter K -- every paragraph at or below the respective ceiling,
+    nothing above."""
+    iconn, real_pconn, meta = build_fixture(tmp_path)
+    target_chapter = meta["books"]["rr2"]["chapters"][1]["chapter_idx"]
+
+    session_pconn = chat.ephemeral_ceiling_conn(iconn, "rr2", target_chapter)
+    with tools.Tools(iconn, session_pconn) as t:
+        result = context.assemble(t)
+
+    citations = _citations_in_order(result.text)
+    book_ids_seen = {b for b, _, _ in citations}
+    assert book_ids_seen == {"rr1", "rr2"}
+
+    rr1_max_seq = meta["books"]["rr1"]["chapters"][-1]["end_seq"]  # book 1 is whole
+    rr2_ceiling = meta["books"]["rr2"]["chapters"][1]["end_seq"]
+    for book_id, spine_idx, para_idx in citations:
+        gseq = db.global_seq(BOOK_ORDER[book_id], spine_idx, para_idx)
+        if book_id == "rr1":
+            assert gseq <= rr1_max_seq
+        else:
+            assert gseq <= rr2_ceiling
+
+
+def test_chat_session_excludes_an_unrelated_series_even_if_finished_in_real_progress(tmp_path):
+    """A second series marked `finished` in the *real* progress db must contribute
+    nothing to a session pinned inside a different series."""
+    iconn, real_pconn, meta = build_fixture(tmp_path)
+    other_token = _add_second_series_book(iconn)
+
+    # The real db has the other series marked finished.
+    progress.set_position(real_pconn, iconn, "s2b1", status="finished")
+
+    target_chapter = meta["books"]["rr2"]["chapters"][0]["chapter_idx"]
+    session_pconn = chat.ephemeral_ceiling_conn(iconn, "rr2", target_chapter)
+    with tools.Tools(iconn, session_pconn) as t:
+        result = context.assemble(t)
+
+    assert other_token not in result.text
+    book_ids_seen = {b for b, _, _ in _citations_in_order(result.text)}
+    assert "s2b1" not in book_ids_seen

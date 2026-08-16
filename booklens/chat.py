@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from booklens import db, progress
 from booklens.chat_prompt import CONTEXT_PREFACE, SYSTEM_PROMPT
 from booklens.context import AssembledContext
-from booklens.llm.base import LLM, Message, Response, get_provider
+from booklens.llm.base import LLM, FatalLLMError, Message, Response, TransientLLMError, get_provider
 
 DEFAULT_TEMPERATURE = 0.3
 ANSWER_MAX_TOKENS = 2048
@@ -36,6 +36,7 @@ _HELP_TEXT = (
     "/exit           end the conversation\n"
     "/debug          toggle per-turn debug output\n"
     "/help           show this message\n"
+    "Ctrl-C          cancel the current answer\n"
     "\n"
     "The reading position is fixed for this session -- relaunch with a "
     "different --chapter to change it."
@@ -43,30 +44,23 @@ _HELP_TEXT = (
 
 
 def ephemeral_ceiling_conn(
-    real_pconn: sqlite3.Connection, iconn: sqlite3.Connection, book_id: str, chapter_idx: int
+    iconn: sqlite3.Connection, book_id: str, chapter_idx: int
 ) -> sqlite3.Connection:
-    """An in-memory clone of `book_progress`, with one book's ceiling forced to exactly one chapter.
+    """A from-scratch, in-memory `book_progress` scoped to exactly `book_id`'s series.
 
-    `--chapter N` is a lens on the corpus, not a claim about what the reader
-    has read, so it must be exact every launch and must never touch
-    `data/progress.db` -- the watermark in `progress.set_position` only ever
-    rises, which would make a later, earlier `--chapter` silently no-op.
-    Every other book's real progress is carried over unchanged, so cross-book
-    context still reflects what the reader has actually read elsewhere.
+    Earlier books (`book_order` lower than the target's) are `finished`, whole.
+    The target book is `reading`, pinned at `chapter_idx`. Every later book, and
+    every other series, gets no row at all. `data/progress.db` is never read or
+    written -- see docs/implementation-notes.md for why.
     """
     clone = sqlite3.connect(":memory:")
     clone.row_factory = sqlite3.Row
     db.init_progress(clone)
-    for row in real_pconn.execute("SELECT * FROM book_progress"):
-        clone.execute(
-            "INSERT INTO book_progress(book_id, status, position_chapter_idx, ceiling_seq, updated_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (row["book_id"], row["status"], row["position_chapter_idx"], row["ceiling_seq"], row["updated_at"]),
-        )
-    clone.commit()
 
-    candidate = progress.chapter_end_seq(iconn, book_id, chapter_idx)
-    progress.reset_ceiling(clone, book_id, candidate)
+    # set_position already cascades every earlier book in the series to
+    # finished; reset_ceiling then pins the target exactly, never watermarked.
+    progress.set_position(clone, iconn, book_id, status="reading", chapter_idx=chapter_idx)
+    progress.reset_ceiling(clone, book_id, progress.chapter_end_seq(iconn, book_id, chapter_idx))
     return clone
 
 
@@ -145,10 +139,14 @@ class ChatSession:
         )
 
 
-def banner(title: str, chapter_label: str, assembled: AssembledContext) -> str:
-    """The one-line orientation printed at launch."""
+def banner(title: str, chapter_label: str, assembled: AssembledContext, prior_titles: list[str] | None = None) -> str:
+    """The one-line orientation printed at launch, naming every volume actually in context."""
     tokens_k = assembled.token_estimate // 1000
-    return f"{title} -- through chapter {chapter_label} (~{tokens_k}k tokens in context)"
+    prior = prior_titles or []
+    head = ", ".join(prior) + " (whole) + " + title if prior else title
+    # Some books label chapters "Chapter 5: ...", others just "5: ..." -- don't say "chapter" twice.
+    where = chapter_label if chapter_label.lower().startswith("chapter") else f"chapter {chapter_label}"
+    return f"{head} through {where} (~{tokens_k}k tokens in context)"
 
 
 def format_debug(result: TurnResult, context_tokens: int) -> str:
@@ -191,21 +189,30 @@ def run_repl(
     *,
     title: str,
     chapter_label: str,
+    prior_titles: list[str] | None = None,
     debug: bool = False,
     input_fn=input,
     print_fn=print,
     indicator=_working_indicator,
 ) -> int:
-    """Drive the read-eval-print loop until `/exit`, EOF, or Ctrl-C."""
-    print_fn(banner(title, chapter_label, session.assembled))
+    """Drive the read-eval-print loop until `/exit` or EOF.
+
+    Ctrl-C at the prompt is a no-op (prints a hint); Ctrl-C during a turn
+    cancels that turn without touching `session.history`.
+    """
+    print_fn(banner(title, chapter_label, session.assembled, prior_titles))
     print_fn("Type /help for commands.\n")
 
     while True:
         try:
             line = input_fn("> ")
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print_fn()
             return 0
+        except KeyboardInterrupt:
+            print_fn()
+            print_fn("(use /exit or Ctrl-D to quit)")
+            continue
         line = line.strip()
         if not line:
             continue
@@ -222,8 +229,16 @@ def run_repl(
             print_fn(f"unknown command: {line!r} (try /help)")
             continue
 
-        with indicator(print_fn):
-            result = session.ask(line)
+        try:
+            with indicator(print_fn):
+                result = session.ask(line)
+        except KeyboardInterrupt:
+            print_fn("(cancelled)")
+            continue
+        except (TransientLLMError, FatalLLMError) as exc:
+            print_fn(f"error: {exc}")
+            continue
+
         print_fn(result.text)
         if debug:
             print_fn(format_debug(result, session.assembled.token_estimate))

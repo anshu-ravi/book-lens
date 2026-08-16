@@ -293,14 +293,22 @@ def cmd_chat(args: argparse.Namespace) -> int:
     read, so it is applied to an in-memory clone of progress and never
     written to `data/progress.db` -- see `chat.ephemeral_ceiling_conn`.
     """
-    iconn, pconn = _open_dbs()
+    iconn, _pconn = _open_dbs()
     try:
         chapter_idx = tools.resolve_chapter_ref(iconn, args.book_id, args.chapter)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    session_pconn = chat.ephemeral_ceiling_conn(pconn, iconn, args.book_id, chapter_idx)
+    session_pconn = chat.ephemeral_ceiling_conn(iconn, args.book_id, chapter_idx)
+    series_id, target_order = progress.series_and_order(iconn, args.book_id)
+    prior_titles = [
+        row["title"]
+        for row in iconn.execute(
+            "SELECT title FROM book WHERE series_id = ? AND book_order < ? ORDER BY book_order",
+            (series_id, target_order),
+        )
+    ]
 
     with tools.Tools(iconn, session_pconn) as t:
         assembled = context.assemble(t)
@@ -312,7 +320,9 @@ def cmd_chat(args: argparse.Namespace) -> int:
 
     llm = chat.build_llm(args.provider)
     session = chat.ChatSession(llm, assembled, temperature=args.temperature)
-    return chat.run_repl(session, title=title, chapter_label=chapter_label, debug=args.debug)
+    return chat.run_repl(
+        session, title=title, chapter_label=chapter_label, prior_titles=prior_titles, debug=args.debug
+    )
 
 
 def cmd_status(args: argparse.Namespace) -> int:

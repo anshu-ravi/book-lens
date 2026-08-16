@@ -80,7 +80,7 @@ def chapter_end_seq(
     return row["end_seq"]
 
 
-def _book_max_end_seq(iconn: sqlite3.Connection, book_id: str) -> int:
+def book_max_end_seq(iconn: sqlite3.Connection, book_id: str) -> int:
     """End of the book proper, so 'finished' never sets a ceiling into the
     back matter (an excerpt of the next book, or boilerplate like an
     afterword) that follows the book's own last chapter."""
@@ -91,7 +91,7 @@ def _book_max_end_seq(iconn: sqlite3.Connection, book_id: str) -> int:
     return row["m"]
 
 
-def _series_and_order(iconn: sqlite3.Connection, book_id: str) -> tuple[str, int]:
+def series_and_order(iconn: sqlite3.Connection, book_id: str) -> tuple[str, int]:
     """A book's series and its order within that series."""
     row = iconn.execute(
         "SELECT series_id, book_order FROM book WHERE id = ?", (book_id,)
@@ -103,7 +103,7 @@ def _earlier_books_in_series(
     iconn: sqlite3.Connection, book_id: str
 ) -> list[str]:
     """Every book in the same series with a strictly lower `book_order`."""
-    series_id, book_order = _series_and_order(iconn, book_id)
+    series_id, book_order = series_and_order(iconn, book_id)
     rows = iconn.execute(
         "SELECT id FROM book WHERE series_id = ? AND book_order < ?",
         (series_id, book_order),
@@ -142,7 +142,7 @@ def set_position(
         else:
             candidate = chapter_end_seq(iconn, book_id, chapter_idx)
     else:  # finished
-        candidate = _book_max_end_seq(iconn, book_id)
+        candidate = book_max_end_seq(iconn, book_id)
 
     existing = get_progress(pconn, book_id)
     new_ceiling = max(existing.ceiling_seq, candidate)
@@ -164,7 +164,7 @@ def set_position(
     if status in ("reading", "finished"):
         for earlier_id in _earlier_books_in_series(iconn, book_id):
             earlier = get_progress(pconn, earlier_id)
-            earlier_candidate = _book_max_end_seq(iconn, earlier_id)
+            earlier_candidate = book_max_end_seq(iconn, earlier_id)
             earlier_ceiling = max(earlier.ceiling_seq, earlier_candidate)
             pconn.execute(
                 """
