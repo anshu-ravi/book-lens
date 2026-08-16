@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from booklens.classify import classify_chapters
+from booklens.classify import NoBodyChaptersError, classify_chapters
 from booklens.extract import extract_book
 
 
@@ -103,12 +103,15 @@ def test_leading_run_stops_at_first_non_matching_label():
     assert kinds[3] == "body"
 
 
-def test_non_matching_first_chapter_yields_no_leading_front_run():
+def test_unrecognised_labels_before_the_first_chapter_are_front_matter():
+    # An unrecognised label ahead of the narrative is a title page, not the
+    # book proper. Previously the leading run stopped dead at index 0, which
+    # is what let a front-matter "Also by" reach the excerpt trigger.
     book = _book(["Untitled Book", "Acknowledgments", "Chapter 1"])
     kinds = classify_chapters(book)
-    # index 0 doesn't match a front pattern, so the leading run never starts.
-    assert kinds[0] == "body"
-    assert kinds[1] == "body"
+    assert kinds[0] == "boilerplate"
+    assert kinds[1] == "boilerplate"
+    assert kinds[2] == "body"
 
 
 # -- rule 3: trailing back matter -------------------------------------------
@@ -234,3 +237,38 @@ def test_red_rising_boilerplate_and_reference_split_on_real_corpus(corpus):
     assert by_label["Map"] == "reference"
     assert by_label["Prologue"] == "body"
     assert by_label["Excerpt from Golden Son"] == "excerpt"
+
+
+def test_also_by_in_front_matter_does_not_quarantine_the_book():
+    """Ironbound: 'Also by <author>' is a front-matter listing, not a preview.
+
+    It matched the excerpt pattern, and the trigger marked everything after
+    it as excerpt -- the entire book, leaving nothing readable.
+    """
+    book = _book([
+        "Cover", "Title Page", "Copyright", "Contents",
+        "Also by Andrew Givler", "Epigraph",
+        "I. THE SENTENTIA", "Chapter 1", "Chapter 2",
+    ])
+    kinds = classify_chapters(book)
+
+    assert kinds[4] == "boilerplate"   # "Also by Andrew Givler"
+    assert kinds[6] == "body"          # "I. THE SENTENTIA"
+    assert kinds[7] == "body"
+    assert kinds[8] == "body"
+
+
+def test_also_by_after_the_body_still_starts_the_excerpt_run():
+    """The same label at the back of the book keeps its old meaning."""
+    book = _book(["Cover", "Chapter 1", "Chapter 2", "Also by Andrew Givler", "Chapter 1"])
+    kinds = classify_chapters(book)
+
+    assert kinds[1] == "body"
+    assert kinds[3] == "excerpt"
+    assert kinds[4] == "excerpt"
+
+
+def test_classifying_everything_as_non_body_raises():
+    """A book with nothing readable is a classifier bug, never a real structure."""
+    with pytest.raises(NoBodyChaptersError):
+        classify_chapters(_book(["Cover", "Title Page", "Copyright"]))

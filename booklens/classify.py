@@ -41,6 +41,23 @@ _FRONTLIKE_RE = re.compile(
     _REFERENCE_RE.pattern + "|" + _BOILERPLATE_RE.pattern, re.IGNORECASE
 )
 
+# Where the book proper starts, by the same reader-facing shapes the chapter
+# addressing uses: a printed number, a named division, or a part divider.
+_NARRATIVE_START_RE = re.compile(
+    r"^\s*(?:chapter\s+)?\d+\b|^\s*(?:prologue|part\b|book\s+\w+\b|interlude)|"
+    r"^\s*[IVXLC]+[.:]\s+\S",
+    re.IGNORECASE,
+)
+
+
+class NoBodyChaptersError(Exception):
+    """Classification left a book with nothing readable, which is always a bug here.
+
+    A real EPUB is never entirely front matter, back matter, and previews, so
+    this is the classifier misreading structure -- and it fails loudly rather
+    than shelving a book whose every chapter is silently unservable.
+    """
+
 
 def classify_chapters(book: BookExtraction) -> dict[int, str]:
     """Tag every chapter so the tool layer serves only narrative and seed data.
@@ -53,28 +70,26 @@ def classify_chapters(book: BookExtraction) -> dict[int, str]:
     labels = [c.label for c in chapters]
     kind: dict[int, str] = {}
 
-    # Once a preview starts, everything after it is more of the same:
-    # ads, reading lists, further previews.
-    excerpt_trigger: int | None = None
-    for i, label in enumerate(labels):
-        if _EXCERPT_RE.search(label):
-            excerpt_trigger = i
-            break
-    if excerpt_trigger is not None:
-        for i in range(excerpt_trigger, n):
-            kind[i] = "excerpt"
-
-    # Leading front-matter run, contiguous from the start. Reference-shaped
-    # material here is the publisher's seed data (section 3); boilerplate is
-    # never served regardless of where it sits.
-    for i in range(n):
-        if i in kind:
-            break
+    # Front matter is everything before the first narrative-shaped label,
+    # recognised or not -- a title page carrying only the book's own name
+    # would otherwise end the run one chapter in. Reference-shaped material
+    # here is the publisher's seed data (section 3); the rest is boilerplate.
+    narrative_start = next(
+        (i for i, label in enumerate(labels) if _NARRATIVE_START_RE.match(label.strip())), 0
+    )
+    for i in range(narrative_start):
         if _REFERENCE_RE.search(labels[i]):
             kind[i] = "reference"
-        elif _BOILERPLATE_RE.search(labels[i]):
-            kind[i] = "boilerplate"
         else:
+            kind[i] = "boilerplate"
+
+    # Once a preview starts, everything after it is more of the same: ads,
+    # reading lists, further previews. Only searched past the front matter --
+    # "Also by X" opens a listing at the front and a teaser at the back.
+    for i in range(narrative_start, n):
+        if _EXCERPT_RE.search(labels[i]):
+            for j in range(i, n):
+                kind[j] = "excerpt"
             break
 
     # Trailing back matter. Reference-shaped material back here does NOT get
@@ -93,5 +108,11 @@ def classify_chapters(book: BookExtraction) -> dict[int, str]:
     # Everything untouched is the book proper.
     for i in range(n):
         kind.setdefault(i, "body")
+
+    if n and not any(k == "body" for k in kind.values()):
+        raise NoBodyChaptersError(
+            f"classified all {n} chapters as non-body, leaving nothing readable; "
+            f"labels: {labels[:12]}"
+        )
 
     return {chapters[i].chapter_idx: kind[i] for i in range(n)}
