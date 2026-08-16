@@ -8,10 +8,12 @@
 		series,
 		onupdate,
 		onask,
+		onshelf,
 	}: {
 		series: SeriesGroup;
 		onupdate: (book: Book) => void;
 		onask: (book: Book) => void;
+		onshelf: (book: Book) => void;
 	} = $props();
 
 	const sorted = $derived([...series.books].sort((a, b) => a.book_order - b.book_order));
@@ -37,6 +39,7 @@
 			<div class="actions">
 				<button class="link-btn small-caps" onclick={() => onupdate(book)}>Update progress</button>
 				<button class="link-btn small-caps brass" onclick={() => onask(book)}>Ask about this</button>
+				<button class="link-btn small-caps" onclick={() => onshelf(book)}>Edit shelf</button>
 			</div>
 		</div>
 	{/each}

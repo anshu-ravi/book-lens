@@ -173,10 +173,21 @@ def cmd_reindex(args: argparse.Namespace) -> int:
     raw = sqlite3.connect(str(old_path))
     raw.row_factory = sqlite3.Row
     try:
-        books = raw.execute(
-            "SELECT id, source_path, series_id, book_order FROM book "
-            "ORDER BY series_id, book_order"
-        ).fetchall()
+        # The old database may predate the `standalone` column (an additive
+        # migration that only runs through connect_index, not this raw read).
+        has_standalone = "standalone" in {
+            r["name"] for r in raw.execute("PRAGMA table_info(book)")
+        }
+        if has_standalone:
+            books = raw.execute(
+                "SELECT id, source_path, series_id, book_order, standalone FROM book "
+                "ORDER BY series_id, book_order"
+            ).fetchall()
+        else:
+            books = raw.execute(
+                "SELECT id, source_path, series_id, book_order FROM book "
+                "ORDER BY series_id, book_order"
+            ).fetchall()
     finally:
         raw.close()
 
@@ -200,6 +211,7 @@ def cmd_reindex(args: argparse.Namespace) -> int:
                 book_order=b["book_order"],
                 book_id=b["id"],
                 iconn=iconn,
+                standalone=bool(b["standalone"]) if has_standalone else False,
             )
             results.append(result)
             if not args.json:

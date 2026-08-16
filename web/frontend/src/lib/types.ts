@@ -16,11 +16,13 @@ export interface Book {
 	chapters_read: number;
 	percent: number;
 	has_cover: boolean;
+	standalone: boolean;
 }
 
 export interface SeriesGroup {
 	id: string;
 	books: Book[];
+	standalone: boolean;
 }
 
 export interface LibraryResponse {
@@ -51,6 +53,12 @@ export interface PositionsResponse {
 export interface UpdateProgressRequest {
 	status: BookStatus;
 	chapter: string | null;
+}
+
+export interface UpdateShelfRequest {
+	series_id: string;
+	book_order: number;
+	standalone: boolean;
 }
 
 export interface SeriesSummary {

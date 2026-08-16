@@ -122,24 +122,34 @@ def ingest_book(
     book_id: str | None = None,
     iconn: sqlite3.Connection | None = None,
     force: bool = False,
+    standalone: bool | None = None,
 ) -> IngestResult:
     """Read a book into the index, assigning every paragraph its sequence.
 
     Runs as one transaction, so a failure leaves no half-ingested book behind.
+    `standalone` defaults to preserving whatever a re-ingested row already had
+    (or False for a genuinely new book); pass it explicitly to set the flag.
     """
     path = Path(path)
     if iconn is None:
         iconn = db.connect_index()
 
     sha256 = _sha256_of_file(path)
-    existing = iconn.execute("SELECT id FROM book WHERE sha256 = ?", (sha256,)).fetchone()
+    existing = iconn.execute(
+        "SELECT id, standalone FROM book WHERE sha256 = ?", (sha256,)
+    ).fetchone()
 
     if existing is not None and not force:
         return _skip_result(iconn, sha256)
 
+    resolved_standalone = standalone
     if existing is not None and force:
+        if resolved_standalone is None:
+            resolved_standalone = bool(existing["standalone"])
         iconn.execute("DELETE FROM book WHERE id = ?", (existing["id"],))
         iconn.commit()
+    if resolved_standalone is None:
+        resolved_standalone = False
 
     # Full extraction ladder -- only paid for on a genuine new/forced ingest.
     book = extract_book(path)
@@ -164,8 +174,8 @@ def ingest_book(
         iconn.execute(
             """
             INSERT INTO book(id, sha256, title, author, source_path, series_id,
-                              book_order, sequence_tier, label_tier, ingested_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                              book_order, sequence_tier, label_tier, ingested_at, standalone)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 resolved_book_id,
@@ -178,6 +188,7 @@ def ingest_book(
                 book.sequence_tier,
                 book.label_tier,
                 _now(),
+                int(resolved_standalone),
             ),
         )
 

@@ -328,3 +328,34 @@ def test_init_index_rejects_pre_v5_global_seq_unique(tmp_path):
     reopened.row_factory = sqlite3.Row
     with pytest.raises(db.SchemaVersionError, match="reindex"):
         db.init_index(reopened)
+
+
+# -- additive migration (SCHEMA_VERSION=6: book.standalone) -------------------
+
+
+def test_book_standalone_column_migrates_in_place(tmp_path):
+    """A database predating `book.standalone` gains it on the next connect,
+    existing rows default to 0, and no SchemaVersionError is raised."""
+    db_path = tmp_path / "index.db"
+    conn = _make_index_conn(tmp_path)
+    conn.execute(
+        """
+        INSERT INTO book(id, sha256, title, author, source_path, series_id,
+                          book_order, sequence_tier, label_tier, ingested_at)
+        VALUES ('b1', 'deadbeef', 'A Book', NULL, '/tmp/a.epub', 's1', 1, 'L1', 'L1', 'now')
+        """
+    )
+    conn.commit()
+    # Simulate a pre-migration database by dropping the column back out.
+    conn.execute("ALTER TABLE book DROP COLUMN standalone")
+    conn.commit()
+    conn.close()
+
+    reopened = sqlite3.connect(str(db_path))
+    reopened.row_factory = sqlite3.Row
+    db.init_index(reopened)  # must not raise SchemaVersionError
+
+    cols = {r["name"] for r in reopened.execute("PRAGMA table_info(book)")}
+    assert "standalone" in cols
+    row = reopened.execute("SELECT standalone FROM book WHERE id = 'b1'").fetchone()
+    assert row["standalone"] == 0

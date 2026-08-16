@@ -249,6 +249,18 @@ def test_force_reingest_replaces_rows_without_duplicating(tmp_path):
     assert n_paras == r2.paragraphs
 
 
+def test_standalone_survives_force_reingest(tmp_path):
+    epub = _simple_epub(tmp_path)
+    iconn = _iconn(tmp_path)
+    r1 = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn, standalone=True)
+    row = iconn.execute("SELECT standalone FROM book WHERE id = ?", (r1.book_id,)).fetchone()
+    assert row["standalone"] == 1
+
+    r2 = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn, force=True)
+    row = iconn.execute("SELECT standalone FROM book WHERE id = ?", (r2.book_id,)).fetchone()
+    assert row["standalone"] == 1
+
+
 # -- excerpt classification flows through to storage -------------------------
 
 

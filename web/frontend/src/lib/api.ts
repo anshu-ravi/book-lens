@@ -8,6 +8,7 @@ import type {
 	SeriesResponse,
 	UndoResponse,
 	UpdateProgressRequest,
+	UpdateShelfRequest,
 	UploadResponse,
 	Book,
 } from './types';
@@ -67,6 +68,13 @@ export function updateProgress(bookId: string, body: UpdateProgressRequest): Pro
 	});
 }
 
+export function updateShelf(bookId: string, body: UpdateShelfRequest): Promise<Book> {
+	return request<Book>(`/books/${bookId}/shelf`, {
+		method: 'PUT',
+		body: JSON.stringify(body),
+	});
+}
+
 export function getSeries(): Promise<SeriesResponse> {
 	return request<SeriesResponse>('/series');
 }
@@ -75,11 +83,13 @@ export function uploadBook(
 	file: File,
 	series: string,
 	bookOrder?: number,
+	standalone?: boolean,
 ): Promise<UploadResponse> {
 	const form = new FormData();
 	form.append('file', file);
 	form.append('series', series);
 	if (bookOrder != null) form.append('book_order', String(bookOrder));
+	if (standalone) form.append('standalone', 'true');
 	return request<UploadResponse>('/upload', { method: 'POST', body: form });
 }
 

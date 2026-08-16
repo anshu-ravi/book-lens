@@ -62,6 +62,14 @@ class ProgressUpdate(BaseModel):
     chapter: str | None = None
 
 
+class ShelfUpdate(BaseModel):
+    """Body of `PUT /api/books/{book_id}/shelf`."""
+
+    series_id: str
+    book_order: int
+    standalone: bool
+
+
 class CreateSessionRequest(BaseModel):
     """Body of `POST /api/chat/sessions`."""
 
@@ -80,7 +88,8 @@ class AskRequest(BaseModel):
 def _book_payload(iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id: str) -> dict:
     """The `Book` shape shared by `/api/library` and the progress-update response."""
     row = iconn.execute(
-        "SELECT id, title, author, book_order, sha256 FROM book WHERE id = ?", (book_id,)
+        "SELECT id, title, author, book_order, sha256, standalone FROM book WHERE id = ?",
+        (book_id,),
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"unknown book_id {book_id!r}")
@@ -109,6 +118,7 @@ def _book_payload(iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id:
         "chapters_read": chapters_read,
         "percent": percent,
         "has_cover": paths.cover_path(row["sha256"]) is not None,
+        "standalone": bool(row["standalone"]),
     }
 
 
@@ -127,7 +137,16 @@ def get_library(dbs: DbDep):
     for row in rows:
         series_map.setdefault(row["series_id"], []).append(_book_payload(iconn, pconn, row["id"]))
 
-    series = [{"id": sid, "books": books} for sid, books in sorted(series_map.items())]
+    series = [
+        {
+            "id": sid,
+            "books": books,
+            # Computed here, once: a series is standalone only when it has a
+            # single book and that book carries the flag. Never derived client-side.
+            "standalone": len(books) == 1 and books[0]["standalone"],
+        }
+        for sid, books in sorted(series_map.items())
+    ]
     return {"series": series}
 
 
@@ -156,6 +175,78 @@ def put_book_progress(book_id: str, body: ProgressUpdate, dbs: DbDep):
         progress.set_position(pconn, iconn, book_id, status=body.status, chapter_idx=chapter_idx)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _book_payload(iconn, pconn, book_id)
+
+
+@app.put("/api/books/{book_id}/shelf")
+def put_book_shelf(book_id: str, body: ShelfUpdate, dbs: DbDep):
+    """Move a book to a different series/position, or flip its standalone flag.
+
+    An unchanged (series_id, book_order) is just a flag flip. A real move
+    re-derives every paragraph's `global_seq` via a forced re-ingest (the
+    only path allowed to touch seq), then rebases the reading-position
+    ceiling -- the old ceiling encodes the pre-move book_order and is
+    otherwise meaningless.
+    """
+    iconn, pconn = dbs
+    row = iconn.execute(
+        "SELECT series_id, book_order, source_path FROM book WHERE id = ?", (book_id,)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"unknown book_id {book_id!r}")
+
+    if row["series_id"] == body.series_id and row["book_order"] == body.book_order:
+        iconn.execute(
+            "UPDATE book SET standalone = ? WHERE id = ?", (int(body.standalone), book_id)
+        )
+        iconn.commit()
+        return _book_payload(iconn, pconn, book_id)
+
+    source_path = Path(row["source_path"])
+    if not source_path.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"source file no longer exists: {source_path}",
+        )
+
+    occupant = iconn.execute(
+        "SELECT id FROM book WHERE series_id = ? AND book_order = ? AND id != ?",
+        (body.series_id, body.book_order, book_id),
+    ).fetchone()
+    if occupant is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"series {body.series_id!r} already has a book at position "
+                f"{body.book_order}"
+            ),
+        )
+
+    prior_progress = progress.get_progress(pconn, book_id)
+
+    ingest.ingest_book(
+        source_path,
+        series_id=body.series_id,
+        book_order=body.book_order,
+        book_id=book_id,
+        iconn=iconn,
+        force=True,
+        standalone=body.standalone,
+    )
+
+    if prior_progress.status == "unread":
+        progress.reset_ceiling(pconn, book_id, 0)
+    elif prior_progress.status == "reading":
+        if prior_progress.position_chapter_idx is not None:
+            new_ceiling = progress.chapter_end_seq(
+                iconn, book_id, prior_progress.position_chapter_idx
+            )
+        else:
+            new_ceiling = 0
+        progress.reset_ceiling(pconn, book_id, new_ceiling)
+    else:  # finished
+        progress.reset_ceiling(pconn, book_id, progress.book_max_end_seq(iconn, book_id))
+
     return _book_payload(iconn, pconn, book_id)
 
 
@@ -203,6 +294,7 @@ async def upload_book(
     file: UploadFile = File(...),
     series: str = Form(...),
     book_order: int | None = Form(None),
+    standalone: bool = Form(False),
 ):
     """Ingest an uploaded EPUB into `series`, never writing into the user's Books directory."""
     iconn, _pconn = dbs
@@ -219,7 +311,12 @@ async def upload_book(
     try:
         try:
             result = ingest.ingest_book(
-                tmp_path, series_id=series, book_order=book_order, iconn=iconn, force=False
+                tmp_path,
+                series_id=series,
+                book_order=book_order,
+                iconn=iconn,
+                force=False,
+                standalone=standalone,
             )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"could not shelve this EPUB: {exc}") from exc
