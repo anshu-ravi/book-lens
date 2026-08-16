@@ -68,6 +68,36 @@ def _printed_identity(label: str) -> tuple[str, str | int] | None:
     return None
 
 
+def count_addressable_chapters(iconn: sqlite3.Connection, book_id: str) -> int:
+    """Total structural chapters for a book, excluding part dividers.
+
+    Not spoiler-bearing: it is a count of structure, not titles, so it is
+    safe to show above the ceiling (DECISIONS.md section 4). `book_id` is
+    never user-supplied SQL text; `db.ADDRESSABLE_KINDS_SQL` is a code
+    constant rendered the same way every other query in this module does.
+    """
+    query = "SELECT label FROM chapter WHERE book_id = ? AND kind IN " + db.ADDRESSABLE_KINDS_SQL
+    rows = iconn.execute(query, (book_id,)).fetchall()
+    return sum(1 for r in rows if not _PART_DIVIDER_RE.match(r["label"].strip()))
+
+
+def chapter_ref_for(iconn: sqlite3.Connection, book_id: str, chapter_idx: int) -> str | None:
+    """The reader-facing reference for an internal `chapter_idx`, the inverse of `resolve_chapter_ref`.
+
+    None when the chapter carries no reader-facing identity (a part divider,
+    or an unlabelled division). The internal index is not the printed number,
+    so a UI must round-trip through this rather than assume they match.
+    """
+    row = iconn.execute(
+        f"SELECT label FROM chapter WHERE book_id = ? AND chapter_idx = ? AND kind IN {db.ADDRESSABLE_KINDS_SQL}",
+        (book_id, chapter_idx),
+    ).fetchone()
+    if row is None:
+        return None
+    identity = _printed_identity(row["label"])
+    return None if identity is None else str(identity[1])
+
+
 def resolve_chapter_ref(iconn: sqlite3.Connection, book_id: str, ref: str | int) -> int:
     """Map a reader-facing chapter reference to the internal `chapter_idx`.
 

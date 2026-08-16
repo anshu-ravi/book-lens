@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -57,6 +58,14 @@ def failed_response_path(sha256: str, chapter_idx: int) -> Path:
     d = digests_dir(sha256) / "failed"
     d.mkdir(parents=True, exist_ok=True)
     return d / f"ch{chapter_idx:04d}.txt"
+
+
+def manifest_for(sha256: str) -> dict:
+    """Load a book's ingest manifest, empty if it was never written."""
+    p = book_dir(sha256) / "manifest.json"
+    if not p.is_file():
+        return {}
+    return json.loads(p.read_text())
 
 
 def series_dir() -> Path:

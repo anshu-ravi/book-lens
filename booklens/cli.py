@@ -42,10 +42,7 @@ def _open_dbs() -> tuple:
 
 def _manifest_for(sha256: str) -> dict:
     """Load a book's ingest manifest, empty if it was never written."""
-    p = paths.book_dir(sha256) / "manifest.json"
-    if not p.is_file():
-        return {}
-    return json.loads(p.read_text())
+    return paths.manifest_for(sha256)
 
 
 # -- subcommands --------------------------------------------------------
@@ -325,6 +322,17 @@ def cmd_chat(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Run the local web API (and, if built, the SPA) with uvicorn."""
+    try:
+        import uvicorn
+    except ImportError:
+        print("error: uvicorn is not installed; `pip install booklens[web]`", file=sys.stderr)
+        return 1
+    uvicorn.run("booklens.web.app:app", host=args.host, port=args.port, reload=args.reload)
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
@@ -429,6 +437,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_chat.add_argument("--debug", action="store_true", help="start with per-turn debug output on")
     p_chat.add_argument("--provider", default="openrouter", help="LLM provider name (default: openrouter)")
     p_chat.set_defaults(func=cmd_chat)
+
+    p_serve = sub.add_parser("serve", help="run the local web API")
+    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--port", type=int, default=8000)
+    p_serve.add_argument("--reload", action="store_true")
+    p_serve.set_defaults(func=cmd_serve)
 
     p_status = sub.add_parser("status", help="show data dir, schema, and ceiling info")
     p_status.add_argument("--json", action="store_true")

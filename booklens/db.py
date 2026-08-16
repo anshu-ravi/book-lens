@@ -61,26 +61,31 @@ def global_seq(book_order: int, spine_idx: int, para_idx: int) -> int:
     return book_order * 1_000_000 + spine_idx * 1000 + para_idx
 
 
-def _base_connect(path: Path) -> sqlite3.Connection:
+def _base_connect(path: Path, *, check_same_thread: bool = True) -> sqlite3.Connection:
     """Open a connection with the settings every caller depends on."""
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
-def connect_index(path: Path | None = None) -> sqlite3.Connection:
-    """Open the derived-text database, creating it if needed."""
+def connect_index(path: Path | None = None, *, check_same_thread: bool = True) -> sqlite3.Connection:
+    """Open the derived-text database, creating it if needed.
+
+    `check_same_thread=False` is for a connection handed off to live longer
+    than the request that opened it (e.g. a web chat session), not for
+    ordinary per-request use.
+    """
     p = path if path is not None else paths.index_db_path()
-    conn = _base_connect(p)
+    conn = _base_connect(p, check_same_thread=check_same_thread)
     init_index(conn)
     return conn
 
 
-def connect_progress(path: Path | None = None) -> sqlite3.Connection:
+def connect_progress(path: Path | None = None, *, check_same_thread: bool = True) -> sqlite3.Connection:
     """Open the user-state database, creating it if needed."""
     p = path if path is not None else paths.progress_db_path()
-    conn = _base_connect(p)
+    conn = _base_connect(p, check_same_thread=check_same_thread)
     init_progress(conn)
     return conn
 

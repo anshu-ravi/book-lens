@@ -44,16 +44,18 @@ _HELP_TEXT = (
 
 
 def ephemeral_ceiling_conn(
-    iconn: sqlite3.Connection, book_id: str, chapter_idx: int
+    iconn: sqlite3.Connection, book_id: str, chapter_idx: int, *, check_same_thread: bool = True
 ) -> sqlite3.Connection:
     """A from-scratch, in-memory `book_progress` scoped to exactly `book_id`'s series.
 
     Earlier books (`book_order` lower than the target's) are `finished`, whole.
     The target book is `reading`, pinned at `chapter_idx`. Every later book, and
     every other series, gets no row at all. `data/progress.db` is never read or
-    written -- see docs/implementation-notes.md for why.
+    written -- see docs/implementation-notes.md for why. `check_same_thread=False`
+    is for a connection handed to something (e.g. a web chat session) that will
+    outlive the request/thread that created it.
     """
-    clone = sqlite3.connect(":memory:")
+    clone = sqlite3.connect(":memory:", check_same_thread=check_same_thread)
     clone.row_factory = sqlite3.Row
     db.init_progress(clone)
 
