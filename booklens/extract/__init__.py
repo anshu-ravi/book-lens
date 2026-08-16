@@ -1,5 +1,6 @@
 """EPUB extraction: pure functions from an EPUB file to a BookExtraction."""
 
+from .cover import CoverImage, extract_cover
 from .epub import extract_book
 from .types import (
     BookExtraction,
@@ -13,8 +14,10 @@ from .types import (
 
 __all__ = [
     "extract_book",
+    "extract_cover",
     "BookExtraction",
     "Chapter",
+    "CoverImage",
     "Document",
     "DrmProtectedError",
     "ExtractionError",

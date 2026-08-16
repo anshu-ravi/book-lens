@@ -46,6 +46,12 @@ def book_dir(sha256: str) -> Path:
     return d
 
 
+def cover_path(sha256: str) -> Path | None:
+    """The book's stored cover file, whatever its extension, or None if it has none."""
+    matches = sorted(book_dir(sha256).glob("cover.*"))
+    return matches[0] if matches else None
+
+
 def digests_dir(sha256: str) -> Path:
     """Where a book's digest markdown lives, hand-editable on purpose."""
     d = book_dir(sha256) / "digests"

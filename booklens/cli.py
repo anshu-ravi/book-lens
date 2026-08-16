@@ -92,6 +92,67 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_covers(args: argparse.Namespace) -> int:
+    """Backfill covers for already-ingested books, without re-running ingest."""
+    from booklens.ingest import _write_cover
+
+    iconn, _pconn = _open_dbs()
+    rows = iconn.execute("SELECT id, sha256, source_path FROM book ORDER BY series_id, book_order").fetchall()
+
+    results = []
+    for row in rows:
+        book_id, sha256, source_path = row["id"], row["sha256"], row["source_path"]
+        book_dir = paths.book_dir(sha256)
+
+        if paths.cover_path(sha256) is not None and not args.force:
+            entry = {"book_id": book_id, "outcome": "skipped"}
+            results.append(entry)
+            if not args.json:
+                print(f"{book_id}: skipped (already have one)")
+            continue
+
+        if not Path(source_path).is_file():
+            entry = {"book_id": book_id, "outcome": "source_missing", "source_path": source_path}
+            results.append(entry)
+            if not args.json:
+                print(f"{book_id}: source file no longer at {source_path}")
+            continue
+
+        tier = _write_cover(Path(source_path), book_dir)
+        if tier is None:
+            entry = {"book_id": book_id, "outcome": "no_cover"}
+            results.append(entry)
+            if not args.json:
+                print(f"{book_id}: no cover found")
+            continue
+
+        cover_file = paths.cover_path(sha256)
+        size_kb = cover_file.stat().st_size // 1024
+        media_type = _extension_for_report(cover_file)
+        entry = {
+            "book_id": book_id, "outcome": "written", "tier": tier,
+            "media_type": media_type, "size_kb": size_kb,
+        }
+        results.append(entry)
+        if not args.json:
+            print(f"{book_id}: cover written ({tier}, {media_type}, {size_kb} KB)")
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+    return 0
+
+
+_COVER_EXT_MEDIA_TYPES = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
+}
+
+
+def _extension_for_report(cover_file: Path) -> str:
+    """Best-effort media type for the human-readable `covers` report line."""
+    return _COVER_EXT_MEDIA_TYPES.get(cover_file.suffix.lower(), "application/octet-stream")
+
+
 def cmd_digest(args: argparse.Namespace) -> int:
     """Run the progressive digest + entity pass over a book, printing per-chapter progress."""
     iconn, _pconn = _open_dbs()
@@ -363,6 +424,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--force", action="store_true")
     p_ingest.add_argument("--json", action="store_true")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_covers = sub.add_parser("covers", help="backfill covers for already-ingested books")
+    p_covers.add_argument("--force", action="store_true", help="overwrite an existing cover")
+    p_covers.add_argument("--json", action="store_true")
+    p_covers.set_defaults(func=cmd_covers)
 
     p_digest = sub.add_parser("digest", help="run the progressive digest + entity pass over a book")
     p_digest.add_argument("book_id")

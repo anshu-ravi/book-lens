@@ -7,35 +7,58 @@
 		seriesId,
 		positionInSeries,
 		size = 'medium',
+		coverUrl = null,
 	}: {
 		title: string;
 		author?: string;
 		seriesId: string;
 		positionInSeries?: number;
-		size?: 'small' | 'medium' | 'large';
+		size?: 'thumb' | 'small' | 'medium' | 'large';
+		coverUrl?: string | null;
 	} = $props();
 
 	const bg = $derived(seriesColor(seriesId));
 	const authorSurname = $derived(author ? (author.split(' ').pop() ?? author) : '');
 
 	const dims = {
+		thumb: { w: 34, h: 51 },
 		small: { w: 100, h: 150 },
 		medium: { w: 160, h: 240 },
 		large: { w: 280, h: 400 },
 	};
 	const { w, h } = $derived(dims[size]);
+
+	// The parent only ever passes a URL when has_cover is true, but a real
+	// cover can still fail to load at runtime -- fall back rather than break.
+	let coverFailed = $state(false);
+	$effect(() => {
+		coverUrl;
+		coverFailed = false;
+	});
 </script>
 
-<div class="cover" style="width:{w}px;height:{h}px;background:{bg};">
-	<div class="cover-top small-caps">{authorSurname}</div>
-	<div class="cover-title">{title}</div>
-	<div class="cover-bottom small-caps">
-		{#if positionInSeries}<span class="vol">{positionInSeries}</span>{/if}
-		<span class="brand-mark">Booklens</span>
+{#if coverUrl && !coverFailed}
+	<div class="cover" style="width:{w}px;height:{h}px;">
+		<img src={coverUrl} alt="" loading="lazy" onerror={() => (coverFailed = true)} />
 	</div>
-</div>
+{:else}
+	<div class="cover" style="width:{w}px;height:{h}px;background:{bg};">
+		<div class="cover-top small-caps">{authorSurname}</div>
+		<div class="cover-title">{title}</div>
+		<div class="cover-bottom small-caps">
+			{#if positionInSeries}<span class="vol">{positionInSeries}</span>{/if}
+			<span class="brand-mark">Booklens</span>
+		</div>
+	</div>
+{/if}
 
 <style>
+	.cover img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		border-radius: var(--r-cover);
+	}
 	.cover {
 		border-radius: var(--r-cover);
 		position: relative;

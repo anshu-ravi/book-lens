@@ -16,6 +16,7 @@ from pathlib import Path
 
 from booklens import classify, db, paths
 from booklens.extract import extract_book
+from booklens.extract.cover import _extension_for, extract_cover
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -71,6 +72,23 @@ def _unique_book_id(iconn: sqlite3.Connection, base: str) -> str:
         candidate = f"{base}-{n}"
         n += 1
     return candidate
+
+
+def _write_cover(path: Path, book_dir: Path) -> str | None:
+    """Extract and write the book's cover, returning the tier used or None.
+
+    Never raises -- a cover extraction failure must not fail the (expensive,
+    resumable) ingest pass.
+    """
+    try:
+        cover = extract_cover(path)
+    except Exception:
+        return None
+    if cover is None:
+        return None
+    ext = _extension_for(cover.media_type, cover.zip_path)
+    (book_dir / f"cover{ext}").write_bytes(cover.data)
+    return cover.tier
 
 
 def _skip_result(iconn: sqlite3.Connection, sha256: str) -> IngestResult:
@@ -230,10 +248,13 @@ def ingest_book(
     }
     (book_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
+    cover_tier = _write_cover(path, book_dir)
+
     manifest = {
         "schema_version": db.SCHEMA_VERSION,
         "sequence_tier": book.sequence_tier,
         "label_tier": book.label_tier,
+        "cover_tier": cover_tier,
         "ingested_at": _now(),
         "documents": len(book.documents),
         "chapters": chapters_written,

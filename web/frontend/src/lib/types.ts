@@ -15,6 +15,7 @@ export interface Book {
 	chapter_count: number;
 	chapters_read: number;
 	percent: number;
+	has_cover: boolean;
 }
 
 export interface SeriesGroup {

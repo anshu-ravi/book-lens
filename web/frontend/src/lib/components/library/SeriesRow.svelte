@@ -2,6 +2,7 @@
 	import type { Book, SeriesGroup } from '$lib/types';
 	import DottedLeader from './DottedLeader.svelte';
 	import StateChip from './StateChip.svelte';
+	import BookCover from './BookCover.svelte';
 	import { seriesName } from '$lib/utils/series-name';
 
 	let {
@@ -34,6 +35,16 @@
 				{#each sorted as book (book.id)}
 					<tr>
 						<td class="order mono">{book.book_order}</td>
+						<td class="thumb-cell">
+							<BookCover
+								title={book.title}
+								author={book.author}
+								seriesId={series.id}
+								positionInSeries={book.book_order}
+								size="thumb"
+								coverUrl={book.has_cover ? `/api/books/${book.id}/cover` : null}
+							/>
+						</td>
 						<td class="title-cell">
 							<button class="title-btn" onclick={() => onbookclick(book)}>{book.title}</button>
 						</td>
@@ -91,6 +102,10 @@
 	.order {
 		color: var(--bone-muted);
 		width: 2.5em;
+	}
+	.thumb-cell {
+		width: 34px;
+		padding-right: var(--sp-3);
 	}
 	.title-cell {
 		width: 60%;

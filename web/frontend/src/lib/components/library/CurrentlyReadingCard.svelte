@@ -21,7 +21,14 @@
 
 <div class="card">
 	<button class="cover-col" onclick={() => onupdate(book)} aria-label="Update progress for {book.title}">
-		<BookCover title={book.title} author={book.author} seriesId={series.id} positionInSeries={book.book_order} size="medium" />
+		<BookCover
+			title={book.title}
+			author={book.author}
+			seriesId={series.id}
+			positionInSeries={book.book_order}
+			size="medium"
+			coverUrl={book.has_cover ? `/api/books/${book.id}/cover` : null}
+		/>
 	</button>
 	<div class="meta-col">
 		<div class="series-label small-caps">{seriesLabel}</div>
