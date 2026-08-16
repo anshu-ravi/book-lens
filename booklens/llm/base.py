@@ -30,6 +30,8 @@ class Response:
     output_tokens: int | None
     model: str | None
     cost_usd: float | None = None
+    cached_tokens: int | None = None
+    cache_write_tokens: int | None = None
 
 
 class LLM(Protocol):
@@ -87,8 +89,14 @@ class BudgetedLLM:
         system: str | None = None,
         max_tokens: int = 4096,
         temperature: float = 0.0,
+        cache_breakpoint: int | None = None,
     ) -> Response:
-        """Call the wrapped provider, retrying transient failures, never exceeding the budget."""
+        """Call the wrapped provider, retrying transient failures, never exceeding the budget.
+
+        `cache_breakpoint` is forwarded only when given, so providers that don't accept the
+        kwarg (fake, claude-sdk) are unaffected -- only opting in to it can break on them.
+        """
+        extra = {} if cache_breakpoint is None else {"cache_breakpoint": cache_breakpoint}
         attempt = 0
         while True:
             if self.calls_made >= self.max_calls:
@@ -99,7 +107,7 @@ class BudgetedLLM:
             self.calls_made += 1
             try:
                 response = self.inner.complete(
-                    messages, system=system, max_tokens=max_tokens, temperature=temperature
+                    messages, system=system, max_tokens=max_tokens, temperature=temperature, **extra
                 )
             except FatalLLMError:
                 raise
@@ -126,4 +134,8 @@ def get_provider(name: str | None = None, **kwargs) -> LLM:
         from booklens.llm.claude_sdk import ClaudeSDKProvider
 
         return ClaudeSDKProvider(**kwargs)
-    raise ValueError(f"unknown LLM provider: {name!r} (valid: 'fake', 'claude-sdk')")
+    if name == "openrouter":
+        from booklens.llm.openrouter import OpenRouterProvider
+
+        return OpenRouterProvider(**kwargs)
+    raise ValueError(f"unknown LLM provider: {name!r} (valid: 'fake', 'claude-sdk', 'openrouter')")

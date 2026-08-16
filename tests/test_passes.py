@@ -34,12 +34,12 @@ def _seed_book(iconn, book_id="b1", book_order=1, with_front=False, part_labels=
         iconn.execute(
             "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, "
             "chapter_label, text, kind) VALUES (?, ?, 0, ?, ?, 'Dramatis Personae', "
-            "'INVENTED front matter: Alpha is also called Ay', 'front')",
+            "'INVENTED front matter: Alpha is also called Ay', 'reference')",
             (book_id, next_idx, gseq, next_idx),
         )
         iconn.execute(
             "INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq, kind) "
-            "VALUES (?, ?, 'Dramatis Personae', NULL, ?, ?, 'front')",
+            "VALUES (?, ?, 'Dramatis Personae', NULL, ?, ?, 'reference')",
             (book_id, next_idx, gseq, gseq),
         )
         next_idx += 1

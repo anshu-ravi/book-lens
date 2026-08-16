@@ -1,0 +1,27 @@
+{
+  "name": "book-lens-frontend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "@fontsource/inter-tight": "^5.2.7",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/source-serif-4": "^5.2.9",
+    "marked": "^15.0.12"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.8",
+    "@sveltejs/kit": "^2.21.4",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "svelte": "^5.33.1",
+    "svelte-check": "^4.1.7",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

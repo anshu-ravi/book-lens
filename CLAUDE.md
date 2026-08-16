@@ -27,7 +27,7 @@ There is no meta mode. When working on this repo:
 
 Use books the user has **finished**, so that a leak during development costs nothing.
 
-**Primary: Red Rising #1–2** — `Red rising _ Book I of The Red Rising Trilogy.epub` and `Golden Son_ Book 2 of the Red Rising Saga -- Pierce Brown.epub`.
+**Primary: Red Rising #1–3** — `Red rising _ Book I of The Red Rising Trilogy.epub`, `Golden Son_ Book 2 of the Red Rising Saga -- Pierce Brown.epub`, and `Morning Star -- Pierce Brown.epub`. All three are ingested under series `red-rising`, in that order.
 
 **Secondary: Mistborn #1–2** — `The Final Empire (Mistborn, Book 1) ... .epub` and `The Well of Ascension _ book two of Mistborn -- Sanderson, Brandon.epub`.
 
@@ -106,8 +106,9 @@ Do not add a vector database. If semantic search is needed, use `sqlite-vec` in 
 - **Phase 1** — progress model, multi-book. *Done.* The digest and entity passes also shipped here and are now dormant; see `DECISIONS.md` Appendix A.
 - **Phase 2 — the core feature.** Split into two shipping steps:
   - **V1** — `booklens chat --book red-rising --chapter N`. Multi-turn terminal REPL, ceiling fixed at launch. Context assembly over the full readable set, OpenRouter provider, citation-grounded answers in conversational prose, `--debug` for tokens/cost/citations, `booklens credits`. One new mechanical test: the assembler never emits above the ceiling. Red Rising book 1 only. **Auditor, golden sets, and cross-book are deliberately out** — V1 exists to be *used*, and on a finished book a leak costs nothing while teaching us how bad parametric leakage actually is.
-  - **V1.1** — Golden Son and Morning Star, the entailment auditor, and both eval harnesses.
-- **Phase 3** — Story So Far / cast screen, first-appearance index, session recaps. Deferred deliberately: the question-answering loop has to work first. Reviving this is what un-dormants the digest and entity passes.
-- **Phase 4** — local web UI.
+  - **V1.1** — Golden Son and Morning Star, and multi-book sessions: a chat session is a lens on one series, with earlier volumes whole and later ones absent. See `DECISIONS.md` section 20. *Done.*
+- **Phase 4 — local web UI.** Library with progress bars, Upload, Chat. SvelteKit static SPA served by the same FastAPI process; see `DECISIONS.md` section 21.
+- **Phase 3** — Story So Far / cast screen, first-appearance index, session recaps. Deferred behind the UI. Reviving this is what un-dormants the digest and entity passes.
+- **V3** — the entailment auditor and both semantic eval harnesses, designed against real transcripts from a multi-book library rather than speculatively. See the amendment to `DECISIONS.md` section 14 for why they moved.
 
-Ship the eval harnesses at V1.1, before anything is built on top of the answering path. Spoiler safety cannot be eyeballed.
+The mechanical invariant tests are not deferred and never were — they run on every commit. It is the *semantic* harness that waits for real usage. Spoiler safety still cannot be eyeballed; the bet is that the structural guarantee holds while the parametric one is measured later.

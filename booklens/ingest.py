@@ -19,6 +19,12 @@ from booklens.extract import extract_book
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
+# A short chapter isn't dropped -- section 3 rejects length-based exclusion --
+# but it's worth an operator's eye: this is the gap between real short
+# chapters (a prologue) and the boilerplate the classifier already catches.
+LIKELY_BOILERPLATE_BODY_WORDS = 400
+LIKELY_BOILERPLATE_REFERENCE_WORDS = 250
+
 
 @dataclass(frozen=True)
 class IngestResult:
@@ -134,6 +140,7 @@ def ingest_book(
     chapters_written = 0
     skipped_empty_chapters: list[str] = []
     excerpt_summary: list[dict] = []
+    size_flags: list[dict] = []
 
     try:
         iconn.execute(
@@ -199,6 +206,14 @@ def ingest_book(
             if kind == "excerpt":
                 excerpt_summary.append({"label": ch.label, "paragraphs": len(rows_for_chapter)})
 
+            word_count = sum(len(text.split()) for *_ignored, text in rows_for_chapter)
+            threshold = {
+                "body": LIKELY_BOILERPLATE_BODY_WORDS,
+                "reference": LIKELY_BOILERPLATE_REFERENCE_WORDS,
+            }.get(kind)
+            if threshold is not None and word_count < threshold:
+                size_flags.append({"label": ch.label, "kind": kind, "words": word_count})
+
         iconn.commit()
     except Exception:
         iconn.rollback()
@@ -226,6 +241,7 @@ def ingest_book(
         "excerpt_paragraphs": total_excerpt_paragraphs,
         "excerpt_chapters": excerpt_summary,
         "skipped_empty_chapters": skipped_empty_chapters,
+        "size_flags": size_flags,
     }
     (book_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     paths.digests_dir(book.sha256)  # created empty; Phase 1 fills it

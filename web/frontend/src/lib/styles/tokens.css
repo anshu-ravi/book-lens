@@ -1,0 +1,45 @@
+:root {
+  /* Palette — §2.1 */
+  --ink-bg:        #0b1118;
+  --ink-surface:   #101821;
+  --ink-hairline:  #1f2a36;
+  --bone:          #e9e1cf;
+  --bone-muted:    #a39c8c;
+  --bone-faint:    #6c685e;
+  --brass:         #b8924a;
+  --brass-dim:     #5a4830;
+  --oxblood:       #a14a3a;
+  --sage:          #6a8f72;
+  --quote:         #c79a52;
+
+  /* Typography — §2.2 */
+  --serif-display: 'Source Serif 4', Georgia, serif;
+  --serif-body:    'Source Serif 4', Georgia, serif;
+  --sans-caps:     'Inter Tight', system-ui, sans-serif;
+  --mono:          'JetBrains Mono', ui-monospace, monospace;
+
+  /* Type scale — §2.3 */
+  --fs-12: .75rem;   --fs-13: .8125rem; --fs-14: .875rem;
+  --fs-16: 1rem;     --fs-18: 1.125rem; --fs-22: 1.375rem;
+  --fs-28: 1.75rem;  --fs-40: 2.5rem;   --fs-56: 3.5rem;
+
+  /* Spacing */
+  --sp-1:  4px;  --sp-2:  8px;  --sp-3: 12px;  --sp-4:  16px;
+  --sp-6: 24px;  --sp-8: 32px;  --sp-12: 48px;
+  --sp-16: 64px; --sp-24: 96px;
+
+  /* Radii / hairline / layout */
+  --r-chip:       2px;
+  --r-cover:      4px;
+  --tracking-caps: 0.18em;
+  --hairline:     1px solid var(--ink-hairline);
+  --frame-inset:  var(--sp-8);
+  --header-h:     80px;
+}
+
+.small-caps {
+  font-family: var(--sans-caps);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  font-size: var(--fs-12);
+}

@@ -7,6 +7,8 @@ placeholders) -- no real book content, per project policy.
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from booklens import db, progress, tools
@@ -84,6 +86,71 @@ def build_fixture(tmp_path):
 
 def _set_ceiling(pconn, iconn, book_id, ceiling_seq):
     progress.reset_ceiling(pconn, book_id, ceiling_seq)
+
+
+# -- schema guard fires on the Tools construction path, not just connect_index --
+
+
+def _build_stale_v3_db(tmp_path) -> sqlite3.Connection:
+    """A hand-built, fully v3-complete database (old 3-kind CHECK, digest/entity
+    tables present) opened with plain sqlite3.connect -- exactly the path that
+    used to silently serve degraded results, because the schema guard only ran
+    inside db.connect_index."""
+    path = tmp_path / "stale_v3.db"
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.executescript(
+        """
+        CREATE TABLE book(
+          id TEXT PRIMARY KEY, sha256 TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+          author TEXT, source_path TEXT NOT NULL, series_id TEXT NOT NULL,
+          book_order INTEGER NOT NULL, sequence_tier TEXT NOT NULL, label_tier TEXT NOT NULL,
+          ingested_at TEXT NOT NULL, UNIQUE(series_id, book_order)
+        );
+        CREATE TABLE chapter(
+          book_id TEXT NOT NULL, chapter_idx INTEGER NOT NULL, label TEXT NOT NULL,
+          part_label TEXT, start_seq INTEGER NOT NULL, end_seq INTEGER NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'body' CHECK(kind IN ('body','front','excerpt')),
+          PRIMARY KEY(book_id, chapter_idx)
+        );
+        CREATE TABLE para(
+          id INTEGER PRIMARY KEY, book_id TEXT NOT NULL, spine_idx INTEGER NOT NULL,
+          para_idx INTEGER NOT NULL, global_seq INTEGER NOT NULL UNIQUE,
+          chapter_idx INTEGER NOT NULL, chapter_label TEXT NOT NULL, text TEXT NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'body' CHECK(kind IN ('body','front','excerpt'))
+        );
+        CREATE TABLE digest(id INTEGER PRIMARY KEY);
+        CREATE TABLE entity_node(id INTEGER PRIMARY KEY);
+        CREATE TABLE entity_edge(id INTEGER PRIMARY KEY);
+        CREATE TABLE entity_attr(id INTEGER PRIMARY KEY);
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO book(id, sha256, title, author, source_path, series_id,
+                          book_order, sequence_tier, label_tier, ingested_at)
+        VALUES ('stale1', 'sha-stale1', 'Stale Book', 'Author', '/x.epub', 's1', 1, 'S1', 'L1', '2026-01-01')
+        """
+    )
+    conn.execute(
+        "INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq, kind) "
+        "VALUES ('stale1', 0, 'Front Matter', NULL, 1000000, 1000000, 'front')"
+    )
+    conn.execute(
+        "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text, kind) "
+        "VALUES ('stale1', 0, 0, 1000000, 0, 'Front Matter', 'lorem stale front matter', 'front')"
+    )
+    conn.commit()
+    return conn
+
+
+def test_tools_construction_rejects_stale_v3_schema(tmp_path):
+    iconn = _build_stale_v3_db(tmp_path)
+    pconn = db.connect_progress(tmp_path / "progress.db")
+    progress.reset_ceiling(pconn, "stale1", 1000000)
+    with pytest.raises(db.SchemaVersionError):
+        tools.Tools(iconn, pconn)
 
 
 # -- citation id helpers -----------------------------------------------------
@@ -332,3 +399,99 @@ def test_context_raises_on_unknown_book(tmp_path):
     t = tools.Tools(iconn, pconn)
     with pytest.raises(ValueError):
         t.context("nope:0:p0")
+
+
+# -- reader-facing chapter addressing ----------------------------------------
+
+
+def _build_offset_book(tmp_path, book_id="off1", book_order=1):
+    """A book shaped like the real corpus: internal chapter_idx runs ahead of
+    the printed chapter number because of leading front matter and a part
+    divider -- exactly the gap tools.resolve_chapter_ref exists to close."""
+    iconn = db.connect_index(tmp_path / "index.db")
+    pconn = db.connect_progress(tmp_path / "progress.db")
+    iconn.execute(
+        """
+        INSERT INTO book(id, sha256, title, author, source_path, series_id,
+                          book_order, sequence_tier, label_tier, ingested_at)
+        VALUES (?, ?, 'Offset Book', 'Author', '/x.epub', 's1', ?, 'S1', 'L1', '2026-01-01')
+        """,
+        (book_id, f"sha-{book_id}", book_order),
+    )
+    rows = [
+        (0, "Cover", None, "boilerplate"),
+        (1, "Map", None, "reference"),
+        (2, "Prologue", None, "body"),
+        (3, "Part I: Slave", "Part I", "body"),
+        (4, "1: Alpha", "Part I", "body"),
+        (5, "2: Beta", "Part I", "body"),
+    ]
+    for chapter_idx, label, part_label, kind in rows:
+        gseq = db.global_seq(book_order, chapter_idx, 0)
+        iconn.execute(
+            """
+            INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq, kind)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (book_id, chapter_idx, label, part_label, gseq, gseq, kind),
+        )
+    iconn.commit()
+    pconn.commit()
+    return iconn, pconn
+
+
+def test_resolve_chapter_ref_named_division(tmp_path):
+    iconn, pconn = _build_offset_book(tmp_path)
+    assert tools.resolve_chapter_ref(iconn, "off1", "prologue") == 2
+    assert tools.resolve_chapter_ref(iconn, "off1", "Prologue") == 2
+
+
+def test_resolve_chapter_ref_printed_number_offset_from_internal_index(tmp_path):
+    iconn, pconn = _build_offset_book(tmp_path)
+    # Printed "1" is internal chapter_idx 4, not 1 -- the whole point of resolution.
+    assert tools.resolve_chapter_ref(iconn, "off1", "1") == 4
+    assert tools.resolve_chapter_ref(iconn, "off1", 2) == 5
+
+
+def test_resolve_chapter_ref_part_divider_not_addressable(tmp_path):
+    iconn, pconn = _build_offset_book(tmp_path)
+    with pytest.raises(ValueError):
+        tools.resolve_chapter_ref(iconn, "off1", "Part I: Slave")
+    with pytest.raises(ValueError):
+        tools.resolve_chapter_ref(iconn, "off1", "Part I")
+
+
+def test_resolve_chapter_ref_out_of_range_names_valid_options(tmp_path):
+    iconn, pconn = _build_offset_book(tmp_path)
+    with pytest.raises(ValueError, match=r"1-2"):
+        tools.resolve_chapter_ref(iconn, "off1", "999")
+
+
+def test_resolve_chapter_ref_unknown_book(tmp_path):
+    iconn, pconn = _build_offset_book(tmp_path)
+    with pytest.raises(ValueError):
+        tools.resolve_chapter_ref(iconn, "nonexistent-book", "1")
+
+
+def test_list_chapter_positions_hides_titles_above_ceiling(tmp_path):
+    iconn, pconn = _build_offset_book(tmp_path)
+    end_of_prologue = db.global_seq(1, 2, 0)
+    progress.reset_ceiling(pconn, "off1", end_of_prologue)
+    t = tools.Tools(iconn, pconn)
+    result = t.list_chapter_positions("off1")
+
+    by_number = {e["number"]: e for e in result["positions"] if "number" in e}
+    assert "label" not in by_number[1]
+    assert "label" not in by_number[2]
+
+    named = [e for e in result["positions"] if e.get("name") == "prologue"]
+    assert named[0]["label"] == "Prologue"
+
+
+def test_list_chapter_positions_shows_part_boundary_once_as_structure(tmp_path):
+    iconn, pconn = _build_offset_book(tmp_path)
+    progress.reset_ceiling(pconn, "off1", db.global_seq(1, 5, 0))
+    t = tools.Tools(iconn, pconn)
+    result = t.list_chapter_positions("off1")
+    parts = [e for e in result["positions"] if "part" in e]
+    assert parts == [{"part": "Part I: Slave"}]

@@ -1,0 +1,44 @@
+@import '@fontsource/source-serif-4/400.css';
+@import '@fontsource/source-serif-4/400-italic.css';
+@import '@fontsource/source-serif-4/700.css';
+@import '@fontsource/source-serif-4/700-italic.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/inter-tight/400.css';
+@import '$lib/styles/tokens.css';
+
+*, *::before, *::after {
+	box-sizing: border-box;
+}
+
+html, body {
+	margin: 0;
+	padding: 0;
+	background: var(--ink-bg);
+	color: var(--bone);
+	font-family: var(--serif-body);
+	font-size: var(--fs-16);
+	line-height: 1.6;
+	-webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+button {
+	font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+	outline: 2px solid var(--brass);
+	outline-offset: 2px;
+}
+
+.small-caps {
+	font-family: var(--sans-caps);
+	text-transform: uppercase;
+	letter-spacing: var(--tracking-caps);
+	font-size: var(--fs-12);
+}

@@ -408,6 +408,8 @@ class LLM(Protocol):
 
 ## 14. Evaluation
 
+**Amendment (2026-08-16, after the first real V1 sessions):** the *mechanical* harness stands as written and is already in place. The **entailment auditor and the semantic golden sets are deferred to V3**, past the web UI. Two sessions against Red Rising at chapters 20 and 44 produced no observed spoiler and no observed parametric leak — every answer stayed inside the assembled text, including on questions that invited a look-ahead. That is not evidence that leakage is solved; it is evidence that the cost of running without an auditor is currently low enough to spend the effort elsewhere. What it also showed is that the interesting failures will surface on the *later* volumes, where the model's trained knowledge of a famous series is strongest and the reader's position is furthest from the book's end — so the auditor should be designed against real transcripts from a multi-book library rather than speculatively. Building the UI first is what produces those transcripts.
+
 **Decision:** Build both harnesses before building on top of the answering path. Spoiler safety cannot be eyeballed.
 
 **Mechanical (must be perfect):** property test that for random ceilings and random queries, **zero returned rows have `global_seq > ceiling`** — extended under section 7 to the assembled context string itself, not only to tool results. Fuzz the tool layer with adversarial arguments — negative indices, huge ranges, nonexistent chapter names, SQL-ish strings. 100% coverage, runs on every commit.
@@ -493,6 +495,32 @@ Operational detail lives in `CLAUDE.md`, including the scoping note that stops a
 - Whether `inferable` coreference edges should be surfaced to the user as "the app thinks these may be the same person", or kept internal. Surfacing is more useful; it also risks nudging.
 - Whether to support user-authored notes and corrections that participate in retrieval, and how to seq-tag them.
 - What happens when a series genuinely exceeds the context window (section 7's raise). Deliberately left undesigned until a real case exists.
+
+## 20. A chat session is a lens on one series
+
+**Decision (2026-08-16):** the progress state a chat session runs against is built from scratch for exactly one series, and is never a copy of `data/progress.db`. For a session pinned at book N chapter C: every book in that series with a lower `book_order` is `finished`, whole; book N is pinned at exactly the end of chapter C, never watermarked upward; every book with a higher `book_order`, and every book in every other series, gets no row at all and therefore contributes nothing to the readable ranges.
+
+**Why earlier volumes are forced whole.** Nobody reads book 3 without books 1 and 2. The previous behaviour carried over whatever `progress.db` happened to say, so a reader who had never explicitly marked the earlier volumes read got a book-3 session with no book-3 context worth speaking of — the assistant knew nothing about anyone. The cascade already exists in `set_position` for the same reason; the session now simply inherits it.
+
+**Why later volumes are excluded.** `--chapter` is documented as a lens on the corpus, not a claim about what the reader has read. Under the old behaviour a session pinned at *book 1, chapter 20* silently dragged the whole of book 3 into context if the reader had finished it. Nothing there is a spoiler to that reader, but the lens is then not the lens they asked for, and it makes the position useless as a way to test what the app does at a given point in a book. Exactness wins.
+
+**Why other series are excluded.** Cross-series knowledge is out of scope (section 18, item 4). Scoping the session's progress state to one series makes that a structural property of the readable ranges rather than a filter the assembler has to remember to apply.
+
+**A discovered hazard, unfixed in the data layer.** Red Rising was first ingested under series `red-rising-trilogy` while books 2 and 3 went to `red-rising`. Nothing warned; the two simply were not one series, and the failure presented as "book 1 is missing from the context" rather than as a data error. The mitigation is in the UI — the upload form picks a series from the ones that exist rather than accepting free text — not in ingest, which has no way to know whether two similar names were meant to be the same thing.
+
+## 21. The web UI: SvelteKit as a static SPA over the same FastAPI process
+
+**Decision (2026-08-16):** Phase 4's UI is SvelteKit 2 / Svelte 5 built with `adapter-static` into a plain SPA, served by the same FastAPI process that serves `/api`. Phase 3 (Story So Far, cast screen, first-appearance index) is deferred behind it, and the digest and entity passes stay dormant.
+
+**Why Svelte and not the "FastAPI + HTMX or a small React front end" originally written down.** The predecessor project already contains a complete, well-realised Svelte 5 design system for exactly this product — a dark literary palette, a typographic grammar, and a set of components (generated book covers, dotted leaders, drop zones, catalog tables) that were built against the same three screens. That work is the single most reusable asset from the previous attempt and it is Svelte-shaped. Rewriting it in HTMX would mean re-deriving all of it; rewriting it in React would mean re-deriving the components while keeping only the CSS. Runes give the reactive state the library and chat screens need with roughly the boilerplate of vanilla JS.
+
+**Why static SPA rather than SvelteKit's server.** There is exactly one user and one machine. A Node runtime in production buys nothing and costs a second process to supervise; `npm run build` produces files, and Python serves them.
+
+**What the previous version's UI contributes and what it does not.** Kept: the design tokens verbatim, the page chrome, the library's currently-reading cards and series index, the upload flow's stepped rail and catalog entry. Dropped entirely: Supabase, authentication, the login screen, the knowledge-graph "Explore" screen, and the Ask screen's layout, which was over-designed. The chat screen is rebuilt simpler in the same typographic voice.
+
+**One addition the old design did not have: the progress bar.** It showed a bare percentage. Reading position is the central concept of this product and deserves to be visible as a position, not a number.
+
+**The scope line is the product.** Every chat screen carries a persistent line naming every volume in context and the exact chapter the ceiling sits at, followed by *"Answers will not reach beyond this point."* The promise has to be legible on screen, because the reader cannot verify it any other way.
 
 ---
 

@@ -11,8 +11,11 @@ import json
 import sys
 from pathlib import Path
 
-from booklens import db, ingest, passes, paths, progress, tools
-from booklens.llm.base import BudgetedLLM, BudgetExceeded, FatalLLMError, get_provider
+from dotenv import load_dotenv
+
+from booklens import chat, context, db, ingest, passes, paths, progress, tools
+from booklens.llm.base import (BudgetedLLM, BudgetExceeded, FatalLLMError,
+                               get_provider)
 
 
 def _print(result, as_json: bool) -> None:
@@ -39,10 +42,7 @@ def _open_dbs() -> tuple:
 
 def _manifest_for(sha256: str) -> dict:
     """Load a book's ingest manifest, empty if it was never written."""
-    p = paths.book_dir(sha256) / "manifest.json"
-    if not p.is_file():
-        return {}
-    return json.loads(p.read_text())
+    return paths.manifest_for(sha256)
 
 
 # -- subcommands --------------------------------------------------------
@@ -84,6 +84,11 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         skipped_empty = manifest.get("skipped_empty_chapters", [])
         if skipped_empty:
             print(f"  chapters with zero extracted paragraphs (not stored): {skipped_empty}")
+        size_flags = manifest.get("size_flags", [])
+        if size_flags:
+            print("  SIZE FLAG (short for its kind -- check for misclassification, nothing was dropped):")
+            for entry in size_flags:
+                print(f"    - {entry['label']!r} ({entry['kind']}): {entry['words']} words")
     return 0
 
 
@@ -140,10 +145,17 @@ def cmd_books(args: argparse.Namespace) -> int:
 
 
 def cmd_progress(args: argparse.Namespace) -> int:
-    """Set reading position and confirm the boundary it resolved to."""
+    """Set reading position and confirm the boundary it resolved to.
+
+    `--chapter` takes the number printed in the book (or a named division
+    like "prologue"), never the internal chapter_idx.
+    """
     iconn, pconn = _open_dbs()
+    chapter_idx = None
+    if args.chapter is not None:
+        chapter_idx = tools.resolve_chapter_ref(iconn, args.book_id, args.chapter)
     prog = progress.set_position(
-        pconn, iconn, args.book_id, status=args.status, chapter_idx=args.chapter
+        pconn, iconn, args.book_id, status=args.status, chapter_idx=chapter_idx
     )
     with tools.Tools(iconn, pconn) as t:
         chapters = t.list_chapters(args.book_id)["chapters"]
@@ -170,6 +182,15 @@ def cmd_chapters(args: argparse.Namespace) -> int:
     iconn, pconn = _open_dbs()
     with tools.Tools(iconn, pconn) as t:
         result = t.list_chapters(args.book_id, part=args.part)
+    _print(result, args.json)
+    return 0
+
+
+def cmd_positions(args: argparse.Namespace) -> int:
+    """Show the reading-position picker: structure for the whole book, titles once reached."""
+    iconn, pconn = _open_dbs()
+    with tools.Tools(iconn, pconn) as t:
+        result = t.list_chapter_positions(args.book_id)
     _print(result, args.json)
     return 0
 
@@ -243,6 +264,75 @@ def cmd_cast(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_credits(args: argparse.Namespace) -> int:
+    """Report the configured OpenRouter key's remaining balance."""
+    from dataclasses import asdict
+
+    from booklens.llm.base import TransientLLMError
+    from booklens.llm.openrouter import get_credits
+
+    try:
+        credits = asdict(get_credits())
+    except (FatalLLMError, TransientLLMError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    _print(credits, args.json)
+    return 0
+
+
+def cmd_chat(args: argparse.Namespace) -> int:
+    """Resolve the reading position, assemble the readable set once, and start the REPL.
+
+    `--chapter` is the reader-facing reference (a printed number, or a named
+    division like 'prologue'); an unresolvable one exits with the error
+    `tools.resolve_chapter_ref` raises, which already names what's valid.
+    `--chapter` is a lens on the corpus, not a claim about what the reader has
+    read, so it is applied to an in-memory clone of progress and never
+    written to `data/progress.db` -- see `chat.ephemeral_ceiling_conn`.
+    """
+    iconn, _pconn = _open_dbs()
+    try:
+        chapter_idx = tools.resolve_chapter_ref(iconn, args.book_id, args.chapter)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    session_pconn = chat.ephemeral_ceiling_conn(iconn, args.book_id, chapter_idx)
+    series_id, target_order = progress.series_and_order(iconn, args.book_id)
+    prior_titles = [
+        row["title"]
+        for row in iconn.execute(
+            "SELECT title FROM book WHERE series_id = ? AND book_order < ? ORDER BY book_order",
+            (series_id, target_order),
+        )
+    ]
+
+    with tools.Tools(iconn, session_pconn) as t:
+        assembled = context.assemble(t)
+        chapters = t.list_chapters(args.book_id)["chapters"]
+        book = next((b for b in t.list_books() if b["id"] == args.book_id), None)
+
+    title = book["title"] if book else args.book_id
+    chapter_label = chapters[-1]["label"] if chapters else args.chapter
+
+    llm = chat.build_llm(args.provider)
+    session = chat.ChatSession(llm, assembled, temperature=args.temperature)
+    return chat.run_repl(
+        session, title=title, chapter_label=chapter_label, prior_titles=prior_titles, debug=args.debug
+    )
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Run the local web API (and, if built, the SPA) with uvicorn."""
+    try:
+        import uvicorn
+    except ImportError:
+        print("error: uvicorn is not installed; `pip install booklens[web]`", file=sys.stderr)
+        return 1
+    uvicorn.run("booklens.web.app:app", host=args.host, port=args.port, reload=args.reload)
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
@@ -262,6 +352,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     """Assemble the argument parser and its subcommands."""
+    load_dotenv()
     parser = argparse.ArgumentParser(prog="booklens")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -288,7 +379,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_progress = sub.add_parser("progress", help="set a book's reading position")
     p_progress.add_argument("book_id")
     p_progress.add_argument("--status", required=True, choices=["unread", "reading", "finished"])
-    p_progress.add_argument("--chapter", type=int, default=None)
+    p_progress.add_argument(
+        "--chapter", default=None,
+        help="the printed chapter number or a named division (e.g. 'prologue'), not the internal index",
+    )
     p_progress.add_argument("--json", action="store_true")
     p_progress.set_defaults(func=cmd_progress)
 
@@ -297,6 +391,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_chapters.add_argument("--part", default=None)
     p_chapters.add_argument("--json", action="store_true")
     p_chapters.set_defaults(func=cmd_chapters)
+
+    p_positions = sub.add_parser("positions", help="show the reading-position picker")
+    p_positions.add_argument("book_id")
+    p_positions.add_argument("--json", action="store_true")
+    p_positions.set_defaults(func=cmd_positions)
 
     p_read = sub.add_parser("read", help="read raw paragraphs in a chapter range")
     p_read.add_argument("book_id")
@@ -328,9 +427,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_cast.add_argument("--json", action="store_true")
     p_cast.set_defaults(func=cmd_cast)
 
+    p_chat = sub.add_parser("chat", help="interactive chat bounded to a fixed reading position")
+    p_chat.add_argument("--book", dest="book_id", required=True)
+    p_chat.add_argument(
+        "--chapter", required=True,
+        help="the printed chapter number or a named division (e.g. 'prologue'), fixed for the session",
+    )
+    p_chat.add_argument("--temperature", type=float, default=chat.DEFAULT_TEMPERATURE)
+    p_chat.add_argument("--debug", action="store_true", help="start with per-turn debug output on")
+    p_chat.add_argument("--provider", default="openrouter", help="LLM provider name (default: openrouter)")
+    p_chat.set_defaults(func=cmd_chat)
+
+    p_serve = sub.add_parser("serve", help="run the local web API")
+    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--port", type=int, default=8000)
+    p_serve.add_argument("--reload", action="store_true")
+    p_serve.set_defaults(func=cmd_serve)
+
     p_status = sub.add_parser("status", help="show data dir, schema, and ceiling info")
     p_status.add_argument("--json", action="store_true")
     p_status.set_defaults(func=cmd_status)
+
+    p_credits = sub.add_parser("credits", help="show remaining OpenRouter credit balance")
+    p_credits.add_argument("--json", action="store_true")
+    p_credits.set_defaults(func=cmd_credits)
 
     return parser
 

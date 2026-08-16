@@ -9,6 +9,8 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from booklens import db
+
 
 @dataclass(frozen=True)
 class BookProgress:
@@ -52,37 +54,44 @@ def _book_exists(iconn: sqlite3.Connection, book_id: str) -> bool:
     )
 
 
-def _chapter_end_seq(
+_CHAPTER_END_SEQ_SQL = (
+    "SELECT end_seq FROM chapter WHERE book_id = ? AND chapter_idx = ? AND kind IN "
+    + db.SERVABLE_KINDS_SQL
+)
+_BOOK_MAX_END_SEQ_SQL = (
+    "SELECT MAX(end_seq) AS m FROM chapter WHERE book_id = ? AND kind IN " + db.SERVABLE_KINDS_SQL
+)
+
+
+def chapter_end_seq(
     iconn: sqlite3.Connection, book_id: str, chapter_idx: int
 ) -> int:
     """End of a chapter the reader can actually claim to have finished.
 
-    Excerpt chapters are excluded; they belong to another book and are never a
-    valid position in this one.
+    Excerpt and boilerplate chapters are excluded; neither is a valid
+    position -- one belongs to another book, the other isn't the book proper.
+    Public because `booklens/chat.py` needs the same "end of this chapter"
+    arithmetic `set_position` uses, to build an exact (not watermarked)
+    ceiling for a session it never persists.
     """
-    row = iconn.execute(
-        "SELECT end_seq FROM chapter WHERE book_id = ? AND chapter_idx = ? AND kind != 'excerpt'",
-        (book_id, chapter_idx),
-    ).fetchone()
+    row = iconn.execute(_CHAPTER_END_SEQ_SQL, (book_id, chapter_idx)).fetchone()
     if row is None:
         raise ValueError(f"unknown chapter_idx {chapter_idx} for book {book_id!r}")
     return row["end_seq"]
 
 
-def _book_max_end_seq(iconn: sqlite3.Connection, book_id: str) -> int:
+def book_max_end_seq(iconn: sqlite3.Connection, book_id: str) -> int:
     """End of the book proper, so 'finished' never sets a ceiling into the
-    next book's opening chapters sitting in this book's back matter."""
-    row = iconn.execute(
-        "SELECT MAX(end_seq) AS m FROM chapter WHERE book_id = ? AND kind != 'excerpt'",
-        (book_id,),
-    ).fetchone()
+    back matter (an excerpt of the next book, or boilerplate like an
+    afterword) that follows the book's own last chapter."""
+    row = iconn.execute(_BOOK_MAX_END_SEQ_SQL, (book_id,)).fetchone()
     if row is None or row["m"] is None:
         # Nothing ingested for this book yet.
         return 0
     return row["m"]
 
 
-def _series_and_order(iconn: sqlite3.Connection, book_id: str) -> tuple[str, int]:
+def series_and_order(iconn: sqlite3.Connection, book_id: str) -> tuple[str, int]:
     """A book's series and its order within that series."""
     row = iconn.execute(
         "SELECT series_id, book_order FROM book WHERE id = ?", (book_id,)
@@ -94,7 +103,7 @@ def _earlier_books_in_series(
     iconn: sqlite3.Connection, book_id: str
 ) -> list[str]:
     """Every book in the same series with a strictly lower `book_order`."""
-    series_id, book_order = _series_and_order(iconn, book_id)
+    series_id, book_order = series_and_order(iconn, book_id)
     rows = iconn.execute(
         "SELECT id FROM book WHERE series_id = ? AND book_order < ?",
         (series_id, book_order),
@@ -131,12 +140,14 @@ def set_position(
         if chapter_idx is None:
             candidate = 0
         else:
-            candidate = _chapter_end_seq(iconn, book_id, chapter_idx)
+            candidate = chapter_end_seq(iconn, book_id, chapter_idx)
     else:  # finished
-        candidate = _book_max_end_seq(iconn, book_id)
+        candidate = book_max_end_seq(iconn, book_id)
 
     existing = get_progress(pconn, book_id)
-    new_ceiling = max(existing.ceiling_seq, candidate)
+    # 'unread' is the explicit "I have not read this one" the watermark rule
+    # exempts (section 4); every other move only ever raises the ceiling.
+    new_ceiling = 0 if status == "unread" else max(existing.ceiling_seq, candidate)
 
     pconn.execute(
         """
@@ -155,7 +166,7 @@ def set_position(
     if status in ("reading", "finished"):
         for earlier_id in _earlier_books_in_series(iconn, book_id):
             earlier = get_progress(pconn, earlier_id)
-            earlier_candidate = _book_max_end_seq(iconn, earlier_id)
+            earlier_candidate = book_max_end_seq(iconn, earlier_id)
             earlier_ceiling = max(earlier.ceiling_seq, earlier_candidate)
             pconn.execute(
                 """

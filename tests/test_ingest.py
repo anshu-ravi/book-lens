@@ -296,6 +296,45 @@ def test_meta_and_manifest_json_written(tmp_path):
     assert manifest["paragraphs"] == result.paragraphs
 
 
+# -- size flags: reported, never enforced --------------------------------
+
+
+def test_short_body_chapters_are_flagged_but_still_stored(tmp_path):
+    epub = _simple_epub(tmp_path)  # every chapter here is a few words long
+    iconn = _iconn(tmp_path)
+    result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
+
+    manifest = json.loads((paths.book_dir(result.sha256) / "manifest.json").read_text())
+    flagged = {f["label"]: f for f in manifest["size_flags"]}
+    assert flagged.keys() == {"Prologue", "Chapter 1", "Chapter 2"}
+    for entry in flagged.values():
+        assert entry["kind"] == "body"
+        assert entry["words"] < ingest.LIKELY_BOILERPLATE_BODY_WORDS
+
+    # The flag is a report, not a filter -- nothing was dropped or reclassified.
+    assert result.chapters == 3
+    assert result.paragraphs == 5
+    kinds = {
+        r["label"]: r["kind"]
+        for r in iconn.execute("SELECT label, kind FROM chapter WHERE book_id = ?", (result.book_id,))
+    }
+    assert kinds == {"Prologue": "body", "Chapter 1": "body", "Chapter 2": "body"}
+
+
+def test_long_body_chapter_is_not_flagged(tmp_path):
+    long_paragraph = " ".join(["word"] * (ingest.LIKELY_BOILERPLATE_BODY_WORDS + 50))
+    epub = _make_epub(
+        tmp_path / "long.epub",
+        "Long Chapter Book",
+        [("Chapter 1", [long_paragraph])],
+    )
+    iconn = _iconn(tmp_path)
+    result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
+
+    manifest = json.loads((paths.book_dir(result.sha256) / "manifest.json").read_text())
+    assert manifest["size_flags"] == []
+
+
 def test_digests_dir_created_empty(tmp_path):
     epub = _simple_epub(tmp_path)
     iconn = _iconn(tmp_path)
