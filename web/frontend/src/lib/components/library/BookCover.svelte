@@ -42,7 +42,7 @@
 		<img src={coverUrl} alt="" loading="lazy" onerror={() => (coverFailed = true)} />
 	</div>
 {:else}
-	<div class="cover" style="width:{w}px;height:{h}px;background:{bg};">
+	<div class="cover generated" style="width:{w}px;height:{h}px;background:{bg};">
 		<div class="cover-top small-caps">{authorSurname}</div>
 		<div class="cover-title">{title}</div>
 		<div class="cover-bottom small-caps">
@@ -70,18 +70,31 @@
 		flex-shrink: 0;
 		container-type: inline-size;
 	}
+	/* The generated jacket background (seriesColor) is a fixed dark literal,
+	   independent of the page theme, so its overlay text must be too -- the
+	   themed --bone tokens would go dark-on-dark once the page flips to light. */
+	.generated {
+		--cover-fg: #e9e1cf;
+		--cover-fg-muted: #a39c8c;
+		--cover-fg-faint: #6c685e;
+		--cover-accent: #b8924a;
+	}
+	:global(:root[data-theme='light']) .generated {
+		border: 1px solid var(--ink-hairline);
+		box-shadow: 0 1px 6px rgba(31, 36, 32, 0.18);
+	}
 	.cover-top {
 		position: absolute;
 		top: 10px;
 		left: 10px;
 		right: 10px;
 		font-size: var(--fs-12);
-		color: var(--bone-muted);
+		color: var(--cover-fg-muted);
 	}
 	.cover-title {
 		font-family: var(--serif-display);
 		font-style: italic;
-		color: var(--bone);
+		color: var(--cover-fg);
 		font-size: clamp(0.75rem, 12cqw, 1.125rem);
 		text-align: center;
 		padding: 8px;
@@ -96,9 +109,9 @@
 		display: flex;
 		justify-content: space-between;
 		font-size: 9px;
-		color: var(--bone-faint);
+		color: var(--cover-fg-faint);
 	}
 	.vol {
-		color: var(--brass);
+		color: var(--cover-accent);
 	}
 </style>

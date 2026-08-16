@@ -241,6 +241,11 @@
 		border: 1px solid var(--brass);
 		color: var(--ink-bg);
 	}
+	/* --ink-bg is near-white in the light theme, so brass-on-ink-bg loses
+	   contrast there -- --bone (near-black in light) reads correctly instead. */
+	:global(:root[data-theme='light']) .btn-primary {
+		color: var(--bone);
+	}
 	.btn-primary:disabled,
 	.btn-ghost:disabled {
 		opacity: 0.6;

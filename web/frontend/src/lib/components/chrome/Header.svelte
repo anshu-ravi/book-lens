@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import ThemeToggle from './ThemeToggle.svelte';
 
 	const links = [
 		{ href: '/', label: 'Library' },
@@ -26,6 +27,10 @@
 				</a>
 			{/each}
 		</nav>
+
+		<div class="header-end">
+			<ThemeToggle />
+		</div>
 	</div>
 </header>
 
@@ -41,7 +46,8 @@
 	.header-inner {
 		height: 100%;
 		padding: 0 var(--frame-inset);
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr auto 1fr;
 		align-items: center;
 		gap: var(--sp-8);
 	}
@@ -50,6 +56,7 @@
 		align-items: baseline;
 		gap: var(--sp-2);
 		flex-shrink: 0;
+		min-width: 0;
 	}
 	.brand {
 		font-family: var(--serif-display);
@@ -64,11 +71,20 @@
 		color: var(--bone-muted);
 	}
 	.nav {
-		flex: 1;
 		display: flex;
 		align-items: center;
 		justify-content: center;
 		gap: var(--sp-8);
+	}
+	.header-end {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+	}
+	@media (max-width: 700px) {
+		.tagline {
+			display: none;
+		}
 	}
 	.nav-link {
 		color: var(--bone-muted);
