@@ -6,12 +6,17 @@
 	let {
 		sessionId,
 		citationId,
+		anchor,
 		onclose,
 	}: {
 		sessionId: string;
 		citationId: string;
+		anchor: DOMRect;
 		onclose: () => void;
 	} = $props();
+
+	const WIDTH = 380;
+	const MARGIN = 16;
 
 	let paragraphs = $state<CitationParagraph[] | null>(null);
 	let error = $state('');
@@ -24,9 +29,30 @@
 			error = e instanceof ApiError ? e.detail : 'Could not load that passage.';
 		}
 	});
+
+	const left = $derived.by(() => {
+		const vw = window.innerWidth;
+		let l = anchor.right + MARGIN;
+		if (l + WIDTH + MARGIN > vw) {
+			l = anchor.left - WIDTH - MARGIN;
+		}
+		return Math.max(MARGIN, Math.min(l, vw - WIDTH - MARGIN));
+	});
+
+	const top = $derived.by(() => {
+		const vh = window.innerHeight;
+		const maxHeight = Math.min(vh * 0.6, 520);
+		let t = anchor.top;
+		return Math.max(MARGIN, Math.min(t, vh - maxHeight - MARGIN));
+	});
 </script>
 
-<div class="drawer" role="complementary" aria-label="Cited passage">
+<div
+	class="citation-popover"
+	role="dialog"
+	aria-label="Cited passage"
+	style="left: {left}px; top: {top}px;"
+>
 	<div class="drawer-head">
 		<span class="small-caps">Cited passage</span>
 		<button class="close-btn" onclick={onclose} aria-label="Close">×</button>
@@ -47,13 +73,17 @@
 </div>
 
 <style>
-	.drawer {
+	.citation-popover {
+		position: fixed;
+		width: 380px;
+		max-height: min(60vh, 520px);
+		overflow-y: auto;
 		border: var(--hairline);
 		border-radius: var(--r-cover);
-		padding: var(--sp-6);
-		margin: var(--sp-4) 0;
+		padding: var(--sp-4);
 		background: var(--ink-surface);
-		max-width: 68ch;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+		z-index: 90;
 	}
 	.drawer-head {
 		display: flex;

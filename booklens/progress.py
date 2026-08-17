@@ -91,6 +91,20 @@ def book_max_end_seq(iconn: sqlite3.Connection, book_id: str) -> int:
     return row["m"]
 
 
+def last_addressable_chapter_idx(iconn: sqlite3.Connection, book_id: str) -> int | None:
+    """The last chapter a reader can be positioned at -- what 'finished' means."""
+    rows = iconn.execute(
+        "SELECT chapter_idx, label FROM chapter WHERE book_id = ? AND kind IN "
+        + db.ADDRESSABLE_KINDS_SQL
+        + " ORDER BY chapter_idx DESC",
+        (book_id,),
+    ).fetchall()
+    for r in rows:
+        if not db.is_part_divider(r["label"]):
+            return r["chapter_idx"]
+    return None
+
+
 def series_and_order(iconn: sqlite3.Connection, book_id: str) -> tuple[str, int]:
     """A book's series and its order within that series."""
     row = iconn.execute(
@@ -122,8 +136,10 @@ def set_position(
     """Move the reader to a position, dragging the ceiling forward if needed.
 
     `chapter_idx` is the chapter just completed. The ceiling only ever rises
-    here; moving backward leaves it where it was. Setting a book to `reading`
-    or `finished` also cascades: no one reads a series out of order, so every
+    here; moving backward leaves it where it was. `finished` without an explicit
+    chapter pins the position at the book's last chapter and `unread` clears it,
+    so a status never disagrees with the position it implies. Setting a book to
+    `reading` or `finished` also cascades: no one reads a series out of order, so every
     earlier book in the same series is advanced to `finished` too (watermark
     rule still applies -- their ceilings only rise, never lower). `unread`
     does not cascade.
@@ -143,6 +159,8 @@ def set_position(
             candidate = chapter_end_seq(iconn, book_id, chapter_idx)
     else:  # finished
         candidate = book_max_end_seq(iconn, book_id)
+        if chapter_idx is None:
+            chapter_idx = last_addressable_chapter_idx(iconn, book_id)
 
     existing = get_progress(pconn, book_id)
     # 'unread' is the explicit "I have not read this one" the watermark rule
@@ -168,6 +186,7 @@ def set_position(
             earlier = get_progress(pconn, earlier_id)
             earlier_candidate = book_max_end_seq(iconn, earlier_id)
             earlier_ceiling = max(earlier.ceiling_seq, earlier_candidate)
+            earlier_chapter_idx = last_addressable_chapter_idx(iconn, earlier_id)
             pconn.execute(
                 """
                 INSERT INTO book_progress(book_id, status, position_chapter_idx, ceiling_seq, updated_at)
@@ -178,7 +197,7 @@ def set_position(
                     ceiling_seq = excluded.ceiling_seq,
                     updated_at = excluded.updated_at
                 """,
-                (earlier_id, earlier.position_chapter_idx, earlier_ceiling, _now()),
+                (earlier_id, earlier_chapter_idx, earlier_ceiling, _now()),
             )
         pconn.commit()
 

@@ -6,12 +6,10 @@
 
 	let {
 		series,
-		expanded,
-		ontoggle,
+		onopen,
 	}: {
 		series: SeriesGroup;
-		expanded: boolean;
-		ontoggle: () => void;
+		onopen: () => void;
 	} = $props();
 
 	const sorted = $derived([...series.books].sort((a, b) => a.book_order - b.book_order));
@@ -25,52 +23,55 @@
 </script>
 
 <div class="carousel-item">
-	<button class="card" class:expanded onclick={ontoggle} aria-expanded={expanded}>
-		<BookCover
-			title={firstBook.title}
-			author={firstBook.author}
-			seriesId={series.id}
-			positionInSeries={firstBook.book_order}
-			size="medium"
-			coverUrl={firstBook.has_cover ? `/api/books/${firstBook.id}/cover` : null}
-		/>
-		<div class="meta">
-			<div class="name">{seriesName(series.id)}</div>
-			<div class="counts small-caps">
-				{series.books.length} vol. · {finishedCount}/{series.books.length} finished
-			</div>
-			<ProgressBar {percent} />
+	<button class="card" onclick={onopen}>
+		<div class="cover-row">
+			<BookCover
+				title={firstBook.title}
+				author={firstBook.author}
+				seriesId={series.id}
+				positionInSeries={firstBook.book_order}
+				size="small"
+				coverUrl={firstBook.has_cover ? `/api/books/${firstBook.id}/cover` : null}
+			/>
 		</div>
+		<div class="name">{seriesName(series.id)}</div>
+		<div class="counts small-caps">
+			{series.books.length} vol. · {finishedCount}/{series.books.length} finished
+		</div>
+		<ProgressBar {percent} />
 	</button>
 </div>
 
 <style>
 	.card {
+		width: 168px;
+		height: 100%;
 		display: flex;
 		flex-direction: column;
-		gap: var(--sp-3);
-		width: 160px;
-		background: none;
-		border: none;
-		padding: 0 0 var(--sp-2);
+		gap: var(--sp-2);
+		background: var(--ink-surface);
+		border: var(--hairline);
+		border-radius: var(--r-cover);
+		padding: var(--sp-3);
 		cursor: pointer;
 		text-align: left;
-		border-bottom: 2px solid transparent;
 	}
-	.card.expanded {
-		border-bottom-color: var(--brass);
-	}
-	.meta {
+	.cover-row {
 		display: flex;
-		flex-direction: column;
-		gap: var(--sp-1);
+		justify-content: center;
 	}
 	.name {
 		font-family: var(--serif-display);
 		font-style: italic;
-		font-size: var(--fs-18);
+		font-size: var(--fs-16);
 		color: var(--bone);
 		line-height: 1.25;
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
+		min-height: calc(1.25em * 2);
 		transition: color 0.15s;
 	}
 	.card:hover .name {

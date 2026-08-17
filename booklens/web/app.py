@@ -64,9 +64,11 @@ class ProgressUpdate(BaseModel):
     chapter: str | None = None
 
 
-class ShelfUpdate(BaseModel):
-    """Body of `PUT /api/books/{book_id}/shelf`."""
+class BookEdit(BaseModel):
+    """Body of `PUT /api/books/{book_id}`."""
 
+    title: str
+    author: str | None = None
     series_id: str
     book_order: int
     standalone: bool
@@ -109,8 +111,8 @@ def _book_payload(iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id:
 
     with tools.Tools(iconn, pconn) as t:
         chapters = t.list_chapters(book_id)["chapters"]
+        chapters_read = t.count_chapters_read(book_id)
     chapter_count = tools.count_addressable_chapters(iconn, book_id)
-    chapters_read = len(chapters)
     prog = progress.get_progress(pconn, book_id)
     percent = round(100 * chapters_read / chapter_count) if chapter_count else 0
 
@@ -159,12 +161,15 @@ def _humanize_series_id(series_id: str) -> str:
 
 def _suggest_series(iconn: sqlite3.Connection, book) -> dict:
     """The series-suggestion ladder: EPUB3 collection, then Calibre series, then shared authorship."""
-    rows = iconn.execute("SELECT series_id, book_order, author FROM book").fetchall()
+    rows = iconn.execute("SELECT series_id, book_order, author, standalone FROM book").fetchall()
     stats: dict[str, dict] = {}
     for r in rows:
-        s = stats.setdefault(r["series_id"], {"count": 0, "max_order": 0, "authors": set()})
+        s = stats.setdefault(
+            r["series_id"], {"count": 0, "max_order": 0, "authors": set(), "standalone": 0}
+        )
         s["count"] += 1
         s["max_order"] = max(s["max_order"], r["book_order"])
+        s["standalone"] += int(bool(r["standalone"]))
         if r["author"]:
             s["authors"].add(r["author"])
 
@@ -187,7 +192,11 @@ def _suggest_series(iconn: sqlite3.Connection, book) -> dict:
         }
 
     if book.author:
-        candidates = [(sid, s) for sid, s in stats.items() if book.author in s["authors"]]
+        candidates = [
+            (sid, s)
+            for sid, s in stats.items()
+            if book.author in s["authors"] and not (s["count"] == 1 and s["standalone"] == 1)
+        ]
         if candidates:
             sid, s = max(candidates, key=lambda kv: kv[1]["count"])
             return {
@@ -261,12 +270,12 @@ def put_book_progress(book_id: str, body: ProgressUpdate, dbs: DbDep):
     return _book_payload(iconn, pconn, book_id)
 
 
-@app.put("/api/books/{book_id}/shelf")
-def put_book_shelf(book_id: str, body: ShelfUpdate, dbs: DbDep):
-    """Move a book to a different series/position, or flip its standalone flag.
+@app.put("/api/books/{book_id}")
+def put_book(book_id: str, body: BookEdit, dbs: DbDep):
+    """Edit a book's title, author, standalone flag, and series placement.
 
-    An unchanged (series_id, book_order) is just a flag flip. A real move
-    re-derives every paragraph's `global_seq` via a forced re-ingest (the
+    An unchanged (series_id, book_order) is just a metadata update. A real
+    move re-derives every paragraph's `global_seq` via a forced re-ingest (the
     only path allowed to touch seq), then rebases the reading-position
     ceiling -- the old ceiling encodes the pre-move book_order and is
     otherwise meaningless.
@@ -278,9 +287,15 @@ def put_book_shelf(book_id: str, body: ShelfUpdate, dbs: DbDep):
     if row is None:
         raise HTTPException(status_code=404, detail=f"unknown book_id {book_id!r}")
 
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title must not be empty")
+    author = body.author.strip() if body.author and body.author.strip() else None
+
     if row["series_id"] == body.series_id and row["book_order"] == body.book_order:
         iconn.execute(
-            "UPDATE book SET standalone = ? WHERE id = ?", (int(body.standalone), book_id)
+            "UPDATE book SET title = ?, author = ?, standalone = ? WHERE id = ?",
+            (title, author, int(body.standalone), book_id),
         )
         iconn.commit()
         return _book_payload(iconn, pconn, book_id)
@@ -304,6 +319,8 @@ def put_book_shelf(book_id: str, body: ShelfUpdate, dbs: DbDep):
         iconn=iconn,
         force=True,
         standalone=body.standalone,
+        title=title,
+        author=author,
     )
 
     if prior_progress.status == "unread":
@@ -343,19 +360,25 @@ def get_book_cover(book_id: str, dbs: DbDep):
 
 @app.get("/api/series")
 def get_series(dbs: DbDep):
-    """Existing series names and each one's next `book_order`, to seed the upload form."""
+    """Existing series names and each one's next `book_order`, to seed the upload form.
+
+    Standalone shelves are omitted -- they are one book's own container, never
+    something a second volume joins.
+    """
     iconn, _pconn = dbs
-    rows = iconn.execute("SELECT series_id, book_order FROM book").fetchall()
+    rows = iconn.execute("SELECT series_id, book_order, standalone FROM book").fetchall()
 
     agg: dict[str, dict] = {}
     for r in rows:
-        entry = agg.setdefault(r["series_id"], {"book_count": 0, "max_order": 0})
+        entry = agg.setdefault(r["series_id"], {"book_count": 0, "max_order": 0, "standalone": 0})
         entry["book_count"] += 1
         entry["max_order"] = max(entry["max_order"], r["book_order"])
+        entry["standalone"] += int(bool(r["standalone"]))
 
     series = [
         {"id": sid, "book_count": v["book_count"], "next_order": v["max_order"] + 1}
         for sid, v in sorted(agg.items())
+        if not (v["book_count"] == 1 and v["standalone"] == 1)
     ]
     return {"series": series}
 
@@ -384,14 +407,6 @@ async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
     body_chapters = [ch for ch in book.chapters if kinds[ch.chapter_idx] == "body"]
     has_prologue = any(ch.label.strip().lower().startswith("prologue") for ch in body_chapters)
 
-    doc_paragraphs = {d.spine_idx: d.paragraphs for d in book.documents}
-    word_count = sum(
-        len(p.text.split())
-        for ch in body_chapters
-        for spine_idx in range(ch.start_spine_idx, ch.end_spine_idx + 1)
-        for p in doc_paragraphs.get(spine_idx, ())
-    )
-
     try:
         has_cover = extract_cover(stash_path) is not None
     except Exception:
@@ -407,7 +422,6 @@ async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
         "author": book.author,
         "chapters_detected": len(body_chapters),
         "has_prologue": has_prologue,
-        "word_count": word_count,
         "has_cover": has_cover,
         **_suggest_series(iconn, book),
         "already_ingested": existing is not None,
@@ -486,14 +500,19 @@ def commit_upload(body: UploadCommitRequest, dbs: DbDep):
 @app.post("/api/chat/sessions")
 def create_chat_session(body: CreateSessionRequest, dbs: DbDep):
     """Start a session ceilinged at the reader's real, persisted position -- never a client-supplied one."""
-    _iconn, pconn = dbs
+    iconn, pconn = dbs
     prog = progress.get_progress(pconn, body.book_id)
-    if prog.position_chapter_idx is None or prog.status == "unread":
+    chapter_idx = prog.position_chapter_idx
+    # A book marked finished before positions were recorded for 'finished' has no
+    # stored position; the last chapter is what finished has always meant.
+    if chapter_idx is None and prog.status == "finished":
+        chapter_idx = progress.last_addressable_chapter_idx(iconn, body.book_id)
+    if chapter_idx is None or prog.status == "unread":
         raise HTTPException(status_code=409, detail=f"no reading position set for {body.book_id}")
 
     session_iconn = db.connect_index(check_same_thread=False)
     session_pconn = chat.ephemeral_ceiling_conn(
-        session_iconn, body.book_id, prog.position_chapter_idx, check_same_thread=False
+        session_iconn, body.book_id, chapter_idx, check_same_thread=False
     )
     try:
         with tools.Tools(session_iconn, session_pconn) as t:

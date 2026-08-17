@@ -93,6 +93,15 @@ def test_library_shape_and_percent(tmp_path, monkeypatch):
     assert book["position_label"] == "Chapter 1"
 
 
+def test_library_finished_book_reports_100_percent(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status="finished", chapter=None)
+
+    book = client.get("/api/library").json()["series"][0]["books"][0]
+    assert book["status"] == "finished"
+    assert book["chapters_read"] == book["chapter_count"]
+    assert book["percent"] == 100
+
+
 def test_book_without_cover_reports_false_and_cover_route_404s(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch, status="reading", chapter="1")
 
@@ -173,6 +182,18 @@ def test_series_reports_next_order(tmp_path, monkeypatch):
     assert series == [{"id": "s1", "book_count": 1, "next_order": 2}]
 
 
+def test_series_omits_standalone_shelves(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+
+    resp = client.put(
+        "/api/books/sample-book",
+        json={"title": "Sample Book", "series_id": "s1", "book_order": 1, "standalone": True},
+    )
+    assert resp.status_code == 200
+
+    assert client.get("/api/series").json()["series"] == []
+
+
 def _inspect(tmp_path, monkeypatch, epub_path: Path, filename: str | None = None):
     monkeypatch.setenv("BOOKLENS_DATA_DIR", str(tmp_path / "data"))
     db.connect_index().close()  # establish the data dir before inspecting
@@ -192,10 +213,7 @@ def test_inspect_parses_metadata_and_writes_nothing_to_index(tmp_path, monkeypat
     assert body["title"] == "Sample Book"
     assert body["chapters_detected"] == 3  # Prologue, Chapter 1, Chapter 2 -- all body
     assert body["has_prologue"] is True
-    assert body["word_count"] == sum(
-        len(w.split())
-        for w in ["Once upon a time.", "The story begins.", "It continues.", "More happens.", "Then it ends."]
-    )
+    assert "word_count" not in body
     assert body["already_ingested"] is False
     assert body["existing_book_id"] is None
 
@@ -341,8 +359,8 @@ def test_library_marks_single_book_series_standalone_only_when_flagged(tmp_path,
     assert series[0]["standalone"] is False
 
     resp = client.put(
-        "/api/books/sample-book/shelf",
-        json={"series_id": "s1", "book_order": 1, "standalone": True},
+        "/api/books/sample-book",
+        json={"title": "Sample Book", "series_id": "s1", "book_order": 1, "standalone": True},
     )
     assert resp.status_code == 200
 
@@ -361,8 +379,8 @@ def test_shelf_flag_only_toggle_does_not_reingest(tmp_path, monkeypatch):
     ]
 
     resp = client.put(
-        "/api/books/sample-book/shelf",
-        json={"series_id": "s1", "book_order": 1, "standalone": True},
+        "/api/books/sample-book",
+        json={"title": "Sample Book", "series_id": "s1", "book_order": 1, "standalone": True},
     )
     assert resp.status_code == 200
     assert resp.json()["standalone"] is True
@@ -389,8 +407,8 @@ def test_shelf_move_to_occupied_slot_returns_409_and_changes_nothing(tmp_path, m
     )
 
     resp = client.put(
-        "/api/books/sample-book/shelf",
-        json={"series_id": "s1", "book_order": 2, "standalone": False},
+        "/api/books/sample-book",
+        json={"title": "Sample Book", "series_id": "s1", "book_order": 2, "standalone": False},
     )
     assert resp.status_code == 409
 
@@ -412,8 +430,8 @@ def test_shelf_move_rebases_ceiling_to_the_same_chapter(tmp_path, monkeypatch):
     assert before_paras  # sanity: reading position actually exposes text
 
     resp = client.put(
-        "/api/books/sample-book/shelf",
-        json={"series_id": "s1", "book_order": 3, "standalone": False},
+        "/api/books/sample-book",
+        json={"title": "Sample Book", "series_id": "s1", "book_order": 3, "standalone": False},
     )
     assert resp.status_code == 200
     book = resp.json()
@@ -442,6 +460,43 @@ def test_shelf_move_rebases_ceiling_to_the_same_chapter(tmp_path, monkeypatch):
     assert ceiling >= 3_000_000
 
 
+def test_edit_title_only_does_not_reingest(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+    iconn = db.connect_index()
+    before = iconn.execute(
+        "SELECT ingested_at FROM book WHERE id = 'sample-book'"
+    ).fetchone()["ingested_at"]
+
+    resp = client.put(
+        "/api/books/sample-book",
+        json={"title": "New Title", "series_id": "s1", "book_order": 1, "standalone": False},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["title"] == "New Title"
+
+    after = iconn.execute(
+        "SELECT title, ingested_at FROM book WHERE id = 'sample-book'"
+    ).fetchone()
+    assert after["title"] == "New Title"
+    assert after["ingested_at"] == before
+
+
+def test_edit_move_preserves_an_edited_title(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+
+    resp = client.put(
+        "/api/books/sample-book",
+        json={"title": "Renamed", "series_id": "s1", "book_order": 3, "standalone": False},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["title"] == "Renamed"
+
+    iconn = db.connect_index()
+    row = iconn.execute("SELECT title FROM book WHERE id = 'sample-book'").fetchone()
+    assert row["title"] == "Renamed"
+
+
 def test_shelf_move_400s_when_source_file_is_gone(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch, status=None)
     iconn = db.connect_index()
@@ -451,8 +506,8 @@ def test_shelf_move_400s_when_source_file_is_gone(tmp_path, monkeypatch):
     Path(source_path).unlink()
 
     resp = client.put(
-        "/api/books/sample-book/shelf",
-        json={"series_id": "s1", "book_order": 5, "standalone": False},
+        "/api/books/sample-book",
+        json={"title": "Sample Book", "series_id": "s1", "book_order": 5, "standalone": False},
     )
     assert resp.status_code == 400
 
@@ -518,6 +573,18 @@ def test_citation_above_session_ceiling_returns_404(tmp_path, monkeypatch):
     beyond_ceiling_citation = tools.format_citation_id("sample-book", 2, 0)
     resp = client.get(f"/api/chat/sessions/{sid}/citations/{beyond_ceiling_citation}")
     assert resp.status_code == 404
+
+
+def test_finished_book_has_a_position_and_can_start_a_chat_session(tmp_path, monkeypatch):
+    """A finished book must get a position (bug 1) so chat sessions accept it (bug 2)."""
+    _setup(tmp_path, monkeypatch, status="finished", chapter=None)
+
+    book = client.get("/api/library").json()["series"][0]["books"][0]
+    assert book["position_chapter_idx"] is not None
+    assert book["position_ref"] is not None
+
+    resp = client.post("/api/chat/sessions", json={"book_id": "sample-book"})
+    assert resp.status_code == 200
 
 
 def test_messages_404_for_unknown_session():

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Book, SeriesGroup } from '$lib/types';
-	import { seriesName } from '$lib/utils/series-name';
 	import BookCover from './BookCover.svelte';
 	import ProgressBar from './ProgressBar.svelte';
+	import StateChip from './StateChip.svelte';
 	import IconButton from './IconButton.svelte';
 
 	let {
@@ -16,33 +16,26 @@
 		onedit: (book: Book, focus: 'details' | 'reading') => void;
 		onask: (book: Book) => void;
 	} = $props();
-
-	const seriesLabel = $derived(`${seriesName(series.id)} · VOLUME ${book.book_order}/${series.books.length}`);
 </script>
 
-<div class="card">
-	<button class="cover-col" onclick={() => onedit(book, 'reading')} aria-label="Update progress for {book.title}">
-		<BookCover
-			title={book.title}
-			author={book.author}
-			seriesId={series.id}
-			positionInSeries={book.book_order}
-			size="medium"
-			coverUrl={book.has_cover ? `/api/books/${book.id}/cover` : null}
-		/>
-	</button>
-	<div class="meta-col">
-		<div class="series-label small-caps">{seriesLabel}</div>
+<div class="carousel-item">
+	<div class="card">
+		<div class="cover-row">
+			<BookCover
+				title={book.title}
+				author={book.author}
+				seriesId={series.id}
+				positionInSeries={book.book_order}
+				size="small"
+				coverUrl={book.has_cover ? `/api/books/${book.id}/cover` : null}
+			/>
+		</div>
 		<div class="title">{book.title}</div>
-		{#if book.author}
-			<div class="author">by {book.author}</div>
-		{/if}
-		{#if book.position_label}
-			<div class="chapter">your bookmark — {book.position_label}</div>
-		{/if}
+		<div class="author">{book.author ? `by ${book.author}` : ''}</div>
+		<div class="chip-row"><StateChip status={book.status} /></div>
 		<div class="progress-wrap">
 			<ProgressBar percent={book.percent} />
-			<span class="pct">{book.percent}%</span>
+			<span class="pct mono">{book.percent}%</span>
 		</div>
 		<div class="actions">
 			<IconButton icon="bookmark" label="Update reading position" onclick={() => onedit(book, 'reading')} />
@@ -54,58 +47,55 @@
 
 <style>
 	.card {
-		display: flex;
-		gap: var(--sp-6);
-		width: 100%;
-		max-width: 460px;
-	}
-	.cover-col {
-		flex-shrink: 0;
-		background: none;
-		border: none;
-		padding: 0;
-		cursor: pointer;
-	}
-	.meta-col {
+		width: 168px;
+		height: 100%;
 		display: flex;
 		flex-direction: column;
 		gap: var(--sp-2);
-		padding-top: var(--sp-2);
-		flex: 1;
-		min-width: 0;
+		background: var(--ink-surface);
+		border: var(--hairline);
+		border-radius: var(--r-cover);
+		padding: var(--sp-3);
 	}
-	.series-label {
-		color: var(--bone-muted);
-		font-size: 10px;
+	.cover-row {
+		display: flex;
+		justify-content: center;
 	}
 	.title {
 		font-family: var(--serif-display);
 		font-style: italic;
-		font-size: var(--fs-28);
+		font-size: var(--fs-16);
 		color: var(--bone);
-		line-height: 1.2;
+		line-height: 1.25;
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
+		min-height: calc(1.25em * 2);
 	}
 	.author {
 		font-family: var(--serif-body);
-		font-size: var(--fs-16);
+		font-size: var(--fs-13);
 		color: var(--bone-muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-height: 1.3em;
+		line-height: 1.3;
 	}
-	.chapter {
-		font-family: var(--serif-body);
-		font-size: var(--fs-14);
-		color: var(--bone-muted);
+	.chip-row {
+		display: flex;
 	}
 	.progress-wrap {
-		margin-top: var(--sp-2);
 		display: flex;
 		align-items: center;
-		gap: var(--sp-3);
+		gap: var(--sp-2);
 	}
 	.progress-wrap :global(.track) {
 		flex: 1;
 	}
 	.pct {
-		font-family: var(--mono);
 		font-size: var(--fs-13);
 		color: var(--brass);
 		flex-shrink: 0;
@@ -115,6 +105,6 @@
 		display: flex;
 		align-items: center;
 		gap: var(--sp-3);
-		padding-top: var(--sp-3);
+		padding-top: var(--sp-2);
 	}
 </style>

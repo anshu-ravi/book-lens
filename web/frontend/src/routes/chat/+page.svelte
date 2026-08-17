@@ -10,7 +10,7 @@
 	} from '$lib/api';
 	import type { Book, MessageDebug } from '$lib/types';
 	import { renderAnswer } from '$lib/utils/render-answer';
-	import CitationDrawer from '$lib/components/chat/CitationDrawer.svelte';
+	import CitationPopover from '$lib/components/chat/CitationPopover.svelte';
 
 	interface Turn {
 		question: string;
@@ -34,11 +34,21 @@
 	let question = $state('');
 	let sending = $state(false);
 	let debugOn = $state(false);
-	let openCitation = $state<string | null>(null);
+	let citation = $state<{ id: string; rect: DOMRect } | null>(null);
 	let controller: AbortController | null = null;
 
 	let threadEl = $state<HTMLDivElement | null>(null);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
+
+	// Chips are raw HTML from renderAnswer, so the "active" chip is tracked by
+	// syncing a class onto the DOM rather than through template bindings.
+	$effect(() => {
+		const activeId = citation?.id ?? null;
+		const chips = threadEl?.querySelectorAll<HTMLElement>('.citation-chip') ?? [];
+		for (const chip of chips) {
+			chip.classList.toggle('active', chip.dataset.citationId === activeId);
+		}
+	});
 
 	onMount(async () => {
 		try {
@@ -62,6 +72,7 @@
 		sessionId = null;
 		turns = [];
 		sessionCost = 0;
+		citation = null;
 		try {
 			const res = await createChatSession(bookId);
 			sessionId = res.session_id;
@@ -165,14 +176,36 @@
 		const chip = target.closest('.citation-chip') as HTMLElement | null;
 		if (chip) {
 			const id = chip.dataset.citationId;
-			if (id) openCitation = openCitation === id ? null : id;
+			if (!id) return;
+			if (citation?.id === id) {
+				citation = null;
+			} else {
+				citation = { id, rect: chip.getBoundingClientRect() };
+			}
 		}
+	}
+
+	function onThreadScroll() {
+		citation = null;
+	}
+
+	function onWindowClick(e: MouseEvent) {
+		if (!citation) return;
+		const target = e.target as HTMLElement;
+		if (target.closest('.citation-chip') || target.closest('.citation-popover')) return;
+		citation = null;
+	}
+
+	function onWindowKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') citation = null;
 	}
 </script>
 
 <svelte:head>
 	<title>BookLens · Chat</title>
 </svelte:head>
+
+<svelte:window onclick={onWindowClick} onkeydown={onWindowKeydown} />
 
 <div class="chat-page">
 	<div class="chat-head">
@@ -206,7 +239,13 @@
 	{#if sessionId}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div class="thread" bind:this={threadEl} onclick={onThreadClick} aria-live="polite">
+		<div
+			class="thread"
+			bind:this={threadEl}
+			onclick={onThreadClick}
+			onscroll={onThreadScroll}
+			aria-live="polite"
+		>
 			{#each turns as t, i (i)}
 				<div class="question-block">
 					<p class="question">{t.question}</p>
@@ -215,9 +254,6 @@
 					<div class="answer-block">
 						<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 						{@html renderAnswer(t.answer, t.citations ?? [])}
-						{#if openCitation && t.citations?.includes(openCitation)}
-							<CitationDrawer sessionId={sessionId} citationId={openCitation} onclose={() => (openCitation = null)} />
-						{/if}
 						{#if debugOn && t.debug}
 							<p class="debug-line mono">
 								ctx {t.debug.context_tokens} · prompt {t.debug.prompt_tokens ?? '?'} · cached {t.debug.cached_tokens ?? 0} · turn ${(t.debug.turn_cost_usd ?? 0).toFixed(4)} · session ${t.debug.session_cost_usd.toFixed(4)}
@@ -248,6 +284,15 @@
 				<button class="send-btn small-caps" onclick={submit} disabled={!question.trim()}>Send</button>
 			{/if}
 		</div>
+
+		{#if citation && sessionId}
+			<CitationPopover
+				sessionId={sessionId}
+				citationId={citation.id}
+				anchor={citation.rect}
+				onclose={() => (citation = null)}
+			/>
+		{/if}
 	{/if}
 </div>
 
@@ -255,6 +300,9 @@
 	.chat-page {
 		display: flex;
 		flex-direction: column;
+		width: 100%;
+		max-width: 820px;
+		margin: 0 auto;
 		height: calc(100vh - var(--header-h) - calc(var(--frame-inset) * 2) - calc(var(--sp-8) * 2));
 	}
 	.chat-head {
@@ -313,11 +361,12 @@
 		flex: 1;
 		overflow-y: auto;
 		padding-right: var(--sp-2);
+		padding-bottom: var(--sp-6);
 	}
 	.question-block {
 		display: flex;
 		justify-content: flex-end;
-		margin: var(--sp-8) 0 var(--sp-4);
+		margin: var(--sp-6) 0 var(--sp-3);
 	}
 	.question {
 		font-family: var(--serif-display);
@@ -325,11 +374,11 @@
 		font-size: var(--fs-22);
 		color: var(--bone);
 		text-align: right;
-		max-width: 68ch;
+		max-width: 100%;
 		margin: 0;
 	}
 	.answer-block {
-		max-width: 68ch;
+		max-width: 100%;
 		color: var(--bone);
 		line-height: 1.7;
 		margin-bottom: var(--sp-6);
@@ -349,6 +398,10 @@
 		padding: 1px 4px;
 		margin: 0 2px;
 		cursor: pointer;
+	}
+	.answer-block :global(.citation-chip.active) {
+		background: var(--brass);
+		color: var(--ink-bg);
 	}
 	.pending {
 		font-style: italic;

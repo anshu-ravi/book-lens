@@ -6,18 +6,15 @@
 	import CurrentlyReadingCard from '$lib/components/library/CurrentlyReadingCard.svelte';
 	import Carousel from '$lib/components/library/Carousel.svelte';
 	import SeriesCard from '$lib/components/library/SeriesCard.svelte';
-	import SeriesExpandedPanel from '$lib/components/library/SeriesExpandedPanel.svelte';
-	import StandaloneCard from '$lib/components/library/StandaloneCard.svelte';
-	import ProgressModal from '$lib/components/library/ProgressModal.svelte';
-	import ShelfModal from '$lib/components/library/ShelfModal.svelte';
+	import SeriesModal from '$lib/components/library/SeriesModal.svelte';
+	import BookCard from '$lib/components/library/BookCard.svelte';
+	import BookEditModal from '$lib/components/library/BookEditModal.svelte';
 
 	let series = $state<SeriesGroup[]>([]);
 	let loading = $state(true);
 	let error = $state('');
-	let expandedId = $state<string | null>(null);
-	let modalBook = $state<Book | null>(null);
-	let shelfBook = $state<Book | null>(null);
-	let shelfSeriesId = $state<string>('');
+	let modalSeries = $state<SeriesGroup | null>(null);
+	let editing = $state<{ book: Book; seriesId: string; focus: 'details' | 'reading' } | null>(null);
 
 	const totalVolumes = $derived(series.reduce((n, s) => n + s.books.length, 0));
 	const reading = $derived(
@@ -44,41 +41,41 @@
 
 	onMount(load);
 
-	function toggle(id: string) {
-		expandedId = expandedId === id ? null : id;
-	}
-
 	function askAbout(book: Book) {
 		goto(`/chat?book=${encodeURIComponent(book.id)}`);
 	}
 
-	function closeModal() {
-		modalBook = null;
+	function openEdit(book: Book, seriesId: string, focus: 'details' | 'reading') {
+		editing = { book, seriesId, focus };
+	}
+
+	function closeEdit() {
+		editing = null;
 	}
 
 	async function onSaved() {
-		modalBook = null;
+		editing = null;
 		await load();
 	}
 
-	function openShelfModal(book: Book, seriesId: string) {
-		shelfBook = book;
-		shelfSeriesId = seriesId;
+	function closeSeriesModal() {
+		modalSeries = null;
 	}
 
-	function closeShelfModal() {
-		shelfBook = null;
-	}
-
-	async function onShelfSaved() {
-		shelfBook = null;
-		await load();
+	// One handler for both layers, so Escape closes the edit modal on top of the
+	// series pop-up rather than the pop-up underneath it.
+	function onKeydown(e: KeyboardEvent) {
+		if (e.key !== 'Escape') return;
+		if (editing) editing = null;
+		else if (modalSeries) modalSeries = null;
 	}
 </script>
 
 <svelte:head>
 	<title>BookLens · Library</title>
 </svelte:head>
+
+<svelte:window onkeydown={onKeydown} />
 
 {#if loading}
 	<p class="loading-text">Opening the index…</p>
@@ -108,9 +105,8 @@
 					<CurrentlyReadingCard
 						{book}
 						series={s}
-						onupdate={(b) => (modalBook = b)}
+						onedit={(b, focus) => openEdit(b, s.id, focus)}
 						onask={askAbout}
-						onshelf={(b) => openShelfModal(b, s.id)}
 					/>
 				{/each}
 			</div>
@@ -128,21 +124,9 @@
 				<span class="small-caps subsection-heading">Series</span>
 				<Carousel>
 					{#each multiBookSeries as s (s.id)}
-						<SeriesCard series={s} expanded={expandedId === s.id} ontoggle={() => toggle(s.id)} />
+						<SeriesCard series={s} onopen={() => (modalSeries = s)} />
 					{/each}
 				</Carousel>
-				{#if expandedId}
-					{#each multiBookSeries as s (s.id)}
-						{#if s.id === expandedId}
-							<SeriesExpandedPanel
-								series={s}
-								onupdate={(b) => (modalBook = b)}
-								onask={askAbout}
-								onshelf={(b) => openShelfModal(b, s.id)}
-							/>
-						{/if}
-					{/each}
-				{/if}
 			</div>
 		{/if}
 
@@ -151,13 +135,12 @@
 				<span class="small-caps subsection-heading">Standalones</span>
 				<Carousel>
 					{#each standalones as { book, series: s } (book.id)}
-						<StandaloneCard
-						{book}
-						series={s}
-						onupdate={(b) => (modalBook = b)}
-						onask={askAbout}
-						onshelf={(b) => openShelfModal(b, s.id)}
-					/>
+						<BookCard
+							{book}
+							series={s}
+							onedit={(b, focus) => openEdit(b, s.id, focus)}
+							onask={askAbout}
+						/>
 					{/each}
 				</Carousel>
 			</div>
@@ -165,12 +148,23 @@
 	</section>
 {/if}
 
-{#if modalBook}
-	<ProgressModal book={modalBook} onclose={closeModal} onsaved={onSaved} />
+{#if modalSeries}
+	<SeriesModal
+		series={modalSeries}
+		onclose={closeSeriesModal}
+		onedit={(b, focus) => openEdit(b, modalSeries!.id, focus)}
+		onask={askAbout}
+	/>
 {/if}
 
-{#if shelfBook}
-	<ShelfModal book={shelfBook} seriesId={shelfSeriesId} onclose={closeShelfModal} onsaved={onShelfSaved} />
+{#if editing}
+	<BookEditModal
+		book={editing.book}
+		seriesId={editing.seriesId}
+		focus={editing.focus}
+		onclose={closeEdit}
+		onsaved={onSaved}
+	/>
 {/if}
 
 <style>

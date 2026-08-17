@@ -11,7 +11,7 @@ import type {
 	SeriesResponse,
 	UndoResponse,
 	UpdateProgressRequest,
-	UpdateShelfRequest,
+	UpdateBookRequest,
 	Book,
 } from './types';
 
@@ -70,8 +70,8 @@ export function updateProgress(bookId: string, body: UpdateProgressRequest): Pro
 	});
 }
 
-export function updateShelf(bookId: string, body: UpdateShelfRequest): Promise<Book> {
-	return request<Book>(`/books/${bookId}/shelf`, {
+export function updateBook(bookId: string, body: UpdateBookRequest): Promise<Book> {
+	return request<Book>(`/books/${bookId}`, {
 		method: 'PUT',
 		body: JSON.stringify(body),
 	});
