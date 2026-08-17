@@ -127,3 +127,36 @@ There is clearly attraction between them: they become physically close during th
   [debug] context_tokens=185553 prompt_tokens=801180 cached_tokens=593613 cache_write_tokens=0 turn_cost_usd=0.0558 session_cost_usd=0.2108 citations=['red-rising:53:p12', 'red-rising:53:p14', 'red-rising:53:p18', 'red-rising:43:p39', 'red-rising:43:p50', 'red-rising:43:p56', 'red-rising:43:p64', 'red-rising:43:p73', 'red-rising:43:p78', 'red-rising:43:p106', 'red-rising:43:p108', 'red-rising:52:p19', 'red-rising:52:p20', 'red-rising:52:p21', 'red-rising:52:p22']
 
 ```
+
+## Triage — 2026-08-17 (the More Notes below)
+
+| Observation | Verdict | Where it went |
+| --- | --- | --- |
+| Series and Standalones must both be swipeable carousels | **fixed** | `Carousel.svelte` — drag-to-swipe, chevron arrows that appear only when there is somewhere to scroll, keyboard arrows, and the wheel handling it already had. Both shelves and the series pop-up use it. |
+| Cards are different heights because titles and author names differ | **fixed** | `BookCard.svelte` — one fixed-width card surface with reserved heights for the title (two lines), author (one line), and status, so a row aligns whatever the text is. `DECISIONS.md` section 23. |
+| "Update progress" / "Ask about this" / "Edit shelf" are too wordy | **fixed** | `IconButton.svelte` — a bookmark, a speech bubble, and a pencil, each with a tooltip on hover and focus, used on every card. |
+| Fold editing the book and its status into one icon | **fixed** | `BookEditModal.svelte` replaces the progress and shelf dialogs: title, author, standalone, series, position in series, status, and reading position in one place. The bookmark opens it at the reading section, the pencil at the details section. |
+| A finished book reports 117% | **fixed** | `tools.Tools.count_chapters_read` — the numerator counted `reference` chapters and part dividers the denominator excluded. Both now mean the same thing. `DECISIONS.md` section 22. |
+| Clicking a series opens a second row; want a pop-up with an inner carousel | **fixed** | `SeriesModal.svelte` replaces `SeriesExpandedPanel`. |
+| A finished book warns "you haven't set a reading position" | **fixed** | `progress.set_position` — `finished` pins the position at the last chapter and `unread` clears it, both directions, and session creation falls back to the last chapter for rows written before the rule. `DECISIONS.md` section 22. |
+| Chat spans the full window; question/answer spacing is off | **fixed** | `routes/chat/+page.svelte` — a centred 820px column and a tightened vertical rhythm. |
+| A citation should be a small side pop-up, not everything at the bottom | **fixed** | `CitationPopover.svelte` replaces `CitationDrawer` — fixed-position, anchored beside the chip, closes on outside click, Escape, or thread scroll. |
+
+Found while fixing these, not reported: the edit dialog's "new series" field passed the typed name through as the series id, so *Red Rising* would have created a shelf beside `red-rising`. It slugifies now, as the upload form already did. And a shelf move re-ingested without passing the book's current title and author, silently reverting an edited title to whatever the EPUB claims.
+
+## More Notes 
+![alt text](image.png)
+I need these to be in a caraousel - Not just this - both Series and Standalone need to be designed as a carousel that I can swipe across.
+Also as you can see each book card is slightly of different size bcause of the size of the Book + author Name - Put all this into "card" so that the full cards are aligned 
+Also Update Progress, Ask about this and edit shelf seem too wordy - replace them with Icons and when I hiver over an icon, there is a desc as to what it helps me do (do this in all places)
+Fold Editing the book (title, author, series or not, position etc) and its status all from the same icon
+![alt text](image-1.png)
+when I finish a book why does it say 117%?
+![alt text](image-2.png)
+This not how I want it to be - this opens up a second row (which is not what I want). When the user clicks on a Series I want these books to once again appear in a inner carousel with swiping as a pop up "Card". 
+![alt text](image-3.png)
+i set some books to finished reading and for those I get this warning. As soon as I set a book to finished the reading position is automatically the last position of the book 
+and the same way needs to be undone to, if I move a book from finished to unread, it should reset the position to 0
+![alt text](image-4.png)
+The reply and input question spacing seems out of wack. The chat need be spanning the full window - make it smaller (width)
+Also when I click on a citation I don't everything to be displayed at the btotom (i want a small pop up on the side correspondoing to only that citationb that stays on as long as my screen is there or until I click somewhere else)

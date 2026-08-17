@@ -522,6 +522,32 @@ Operational detail lives in `CLAUDE.md`, including the scoping note that stops a
 
 **The scope line is the product.** Every chat screen carries a persistent line naming every volume in context and the exact chapter the ceiling sits at, followed by *"Answers will not reach beyond this point."* The promise has to be legible on screen, because the reader cannot verify it any other way.
 
+## 22. A status is a claim about a position
+
+**Decision (2026-08-17):** status and reading position are never allowed to disagree. Marking a book `finished` pins its position at the book's last addressable chapter; marking it `unread` clears the position and drops the ceiling to zero. Neither is a separate action the reader has to remember to take.
+
+**Why.** The two were independent fields, and `finished` only moved the ceiling. A book the reader had marked finished therefore had `position_chapter_idx = NULL`, which the chat screen reads as "no reading position set" — so finishing a book made it impossible to ask questions about, which is exactly backwards. The reader's mental model is that finishing a book means being at the end of it; the data now says so too. Session creation additionally falls back to the last chapter for rows written before this rule existed, because a stored `NULL` on a finished book was never meaningful.
+
+**A related arithmetic bug worth remembering.** The library's percentage read was computed with a numerator and denominator on different bases: chapters *begun* counted `body` and `reference` chapters including part dividers, while chapters *total* counted only `body` chapters excluding them. A finished book reported 117%. Both sides now come from the same definition of "a chapter a reader can be positioned at", and the part-divider test that defines it lives in one place (`db.is_part_divider`) rather than being re-expressed per call site.
+
+## 23. Library shape: cards of one height, icons with names, one modal per book
+
+**Decision (2026-08-17):** every shelf row is a horizontally swipeable carousel of fixed-width cards; a card's title, author, and status blocks have reserved heights so a long title never makes one card taller than its neighbour. Clicking a series opens a pop-up containing an inner carousel of its volumes, rather than expanding a second row underneath the shelf.
+
+**Why the pop-up and not the expanding row.** The inline panel pushed everything below it down and gave a series a different visual grammar from a standalone book. A series is a container; opening it should feel like opening a container, and the volumes inside it are the same cards used everywhere else.
+
+**Decision:** the three per-book actions are icons with hover/focus tooltips, not text links, and two of them lead to the same place. One modal owns a book entirely — title, author, standalone, series, position in series, status, and reading position — with the bookmark icon opening it focused on the reading section and the pencil on the details section.
+
+**Why one modal.** Status and reading position were in one dialog while series placement was in another, so "this book is really volume 2 and I've finished it" was two dialogs and two saves. They are all answers to *what is this book, and where am I in it*. The modal writes them in a fixed order — details first, then progress — because a series move re-ingests the book and rebases its ceiling, and a progress write landing before that would be rebased away.
+
+**A quiet hazard closed on the way.** The edit modal's "new series" field passed the typed name through as the series id, so typing *Red Rising* would have created a shelf named `Red Rising` beside the existing `red-rising` — the same failure section 20 records, from the other direction. It now slugifies, as the upload form already did.
+
+## 24. The chat screen is a column, and a citation is a footnote beside the text
+
+**Decision (2026-08-17):** the chat thread is a centred 820px column, not the full window width; a citation opens a fixed-position panel anchored beside the chip that was clicked, and closes on an outside click, on Escape, or when the thread scrolls.
+
+**Why.** At full window width a right-aligned question and a left-aligned answer sat at opposite ends of a very wide row with nothing between them, and the citation drawer rendered inline at the bottom of the answer — so clicking a footnote in the second paragraph pushed the rest of the answer down and put the passage far from the sentence that cited it. A citation is a marginal note; it belongs beside the claim, and it should not move the prose it annotates.
+
 ---
 
 # Appendix: superseded and rejected decisions
