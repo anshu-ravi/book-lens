@@ -55,7 +55,9 @@ export interface UpdateProgressRequest {
 	chapter: string | null;
 }
 
-export interface UpdateShelfRequest {
+export interface UpdateBookRequest {
+	title: string;
+	author: string | null;
 	series_id: string;
 	book_order: number;
 	standalone: boolean;
