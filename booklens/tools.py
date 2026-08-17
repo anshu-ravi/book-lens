@@ -17,7 +17,6 @@ _CITATION_RE = re.compile(r"^(?P<book>[^:]+):(?P<spine>\d+):p(?P<para>\d+)$")
 
 # Recognise the *shape* of a reader-facing chapter label -- never used to
 # reorder anything; spine order (chapter_idx) remains the only sequence.
-_PART_DIVIDER_RE = re.compile(r"^\s*part\b", re.IGNORECASE)
 _NAMED_DIVISION_RE = re.compile(r"^\s*(prologue|epilogue|interlude\w*)\b", re.IGNORECASE)
 _PRINTED_NUMBER_RE = re.compile(r"^\s*(?:chapter\s+)?(\d+)\b", re.IGNORECASE)
 
@@ -78,7 +77,7 @@ def count_addressable_chapters(iconn: sqlite3.Connection, book_id: str) -> int:
     """
     query = "SELECT label FROM chapter WHERE book_id = ? AND kind IN " + db.ADDRESSABLE_KINDS_SQL
     rows = iconn.execute(query, (book_id,)).fetchall()
-    return sum(1 for r in rows if not _PART_DIVIDER_RE.match(r["label"].strip()))
+    return sum(1 for r in rows if not db.is_part_divider(r["label"]))
 
 
 def chapter_ref_for(iconn: sqlite3.Connection, book_id: str, chapter_idx: int) -> str | None:
@@ -120,7 +119,7 @@ def resolve_chapter_ref(iconn: sqlite3.Connection, book_id: str, ref: str | int)
     names: dict[str, int] = {}
     for r in rows:
         label = r["label"]
-        if _PART_DIVIDER_RE.match(label.strip()):
+        if db.is_part_divider(label):
             continue
         identity = _printed_identity(label)
         if identity is None:
@@ -325,6 +324,22 @@ class Tools:
             result.update(marker)
         return result
 
+    def count_chapters_read(self, book: str) -> int:
+        """Addressable chapters the reader has begun -- the numerator that matches
+        `count_addressable_chapters`."""
+        rows = self._iconn.execute(
+            f"""
+            SELECT label FROM chapter AS c
+            WHERE c.book_id = ? AND c.kind IN {db.ADDRESSABLE_KINDS_SQL}
+              AND EXISTS (
+                SELECT 1 FROM {self._table} r
+                WHERE r.book_id = c.book_id AND c.start_seq BETWEEN r.lo AND r.hi
+              )
+            """,
+            (book,),
+        ).fetchall()
+        return sum(1 for r in rows if not db.is_part_divider(r["label"]))
+
     def list_chapter_positions(self, book: str) -> dict:
         """The reading-position picker: reader-facing numbers for the whole book.
 
@@ -345,7 +360,7 @@ class Tools:
         seen_parts: set[str] = set()
         for r in rows:
             label = r["label"]
-            if _PART_DIVIDER_RE.match(label.strip()):
+            if db.is_part_divider(label):
                 if label not in seen_parts:
                     positions.append({"part": label})
                     seen_parts.add(label)

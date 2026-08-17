@@ -247,3 +247,28 @@ def test_set_position_unread_lowers_the_ceiling(pconn, iconn):
     progress.set_position(pconn, iconn, "b1", status="unread")
     assert progress.get_progress(pconn, "b1").ceiling_seq == 0
     assert progress.readable_ranges(pconn, iconn) == []
+
+
+def test_last_addressable_chapter_idx(iconn):
+    assert progress.last_addressable_chapter_idx(iconn, "b1") == 2
+    assert progress.last_addressable_chapter_idx(iconn, "b2") == 1
+
+
+def test_set_position_finished_records_last_addressable_chapter(pconn, iconn):
+    p = progress.set_position(pconn, iconn, "b1", status="finished")
+    assert p.position_chapter_idx == 2
+
+
+def test_set_position_unread_clears_the_position(pconn, iconn):
+    progress.set_position(pconn, iconn, "b1", status="finished")
+    p = progress.set_position(pconn, iconn, "b1", status="unread")
+    assert p.position_chapter_idx is None
+    assert p.ceiling_seq == 0
+
+
+def test_cascade_to_finished_gives_earlier_volume_a_position(pconn, iconn3):
+    progress.set_position(pconn, iconn3, "b3", status="reading", chapter_idx=0)
+    b1 = progress.get_progress(pconn, "b1")
+    b2 = progress.get_progress(pconn, "b2")
+    assert b1.position_chapter_idx == 1  # b1's last addressable chapter
+    assert b2.position_chapter_idx == 1  # b2's last addressable chapter

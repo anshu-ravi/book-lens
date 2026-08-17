@@ -31,6 +31,16 @@ SERVABLE_KINDS = ("body", "reference")
 # list, a map) and part dividers are structure, not positions.
 ADDRESSABLE_KINDS = ("body",)
 
+# Recognises the *shape* of a reader-facing chapter label -- never used to
+# reorder anything; spine order (chapter_idx) remains the only sequence.
+_PART_DIVIDER_RE = re.compile(r"^\s*part\b", re.IGNORECASE)
+
+
+def is_part_divider(label: str) -> bool:
+    """Whether a chapter label names a structural part ("Part One"), which is
+    never a reading position."""
+    return _PART_DIVIDER_RE.match(label.strip()) is not None
+
 
 def _kinds_sql(kinds: tuple[str, ...]) -> str:
     """Render a kind tuple as a SQL `IN (...)` list. Kinds are code constants,
