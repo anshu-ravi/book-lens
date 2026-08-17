@@ -173,6 +173,18 @@ def test_series_reports_next_order(tmp_path, monkeypatch):
     assert series == [{"id": "s1", "book_count": 1, "next_order": 2}]
 
 
+def test_series_omits_standalone_shelves(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+
+    resp = client.put(
+        "/api/books/sample-book/shelf",
+        json={"series_id": "s1", "book_order": 1, "standalone": True},
+    )
+    assert resp.status_code == 200
+
+    assert client.get("/api/series").json()["series"] == []
+
+
 def _inspect(tmp_path, monkeypatch, epub_path: Path, filename: str | None = None):
     monkeypatch.setenv("BOOKLENS_DATA_DIR", str(tmp_path / "data"))
     db.connect_index().close()  # establish the data dir before inspecting
@@ -192,10 +204,7 @@ def test_inspect_parses_metadata_and_writes_nothing_to_index(tmp_path, monkeypat
     assert body["title"] == "Sample Book"
     assert body["chapters_detected"] == 3  # Prologue, Chapter 1, Chapter 2 -- all body
     assert body["has_prologue"] is True
-    assert body["word_count"] == sum(
-        len(w.split())
-        for w in ["Once upon a time.", "The story begins.", "It continues.", "More happens.", "Then it ends."]
-    )
+    assert "word_count" not in body
     assert body["already_ingested"] is False
     assert body["existing_book_id"] is None
 

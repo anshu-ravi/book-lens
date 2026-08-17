@@ -84,7 +84,6 @@ export interface InspectResponse {
 	author: string | null;
 	chapters_detected: number;
 	has_prologue: boolean;
-	word_count: number;
 	has_cover: boolean;
 	suggested_series_id: string | null;
 	suggested_series_name: string | null;

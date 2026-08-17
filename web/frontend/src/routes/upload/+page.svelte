@@ -84,8 +84,20 @@
 			inspectResult = res;
 			title = res.title;
 			author = res.author ?? '';
-			selectedSeries = res.suggested_series_id ?? '';
-			newSeriesName = '';
+			// A suggested series is only offered when it's already on the shelf;
+			// otherwise it seeds the "new series" name and the user confirms it.
+			const onShelf =
+				!!res.suggested_series_id && allSeries.some((s) => s.id === res.suggested_series_id);
+			if (onShelf) {
+				selectedSeries = res.suggested_series_id ?? '';
+				newSeriesName = '';
+			} else if (res.suggested_series_name) {
+				selectedSeries = NEW_SERIES;
+				newSeriesName = res.suggested_series_name;
+			} else {
+				selectedSeries = '';
+				newSeriesName = '';
+			}
 			bookOrder = res.suggested_book_order;
 			standalone = false;
 		} catch (e) {
@@ -195,11 +207,6 @@
 										<fieldset class="inline-field" disabled={committing || standalone}>
 											<select bind:value={selectedSeries}>
 												<option value="" disabled>Choose a series…</option>
-												{#if inspectResult.suggested_series_id && !allSeries.some((s) => s.id === inspectResult?.suggested_series_id)}
-													<option value={inspectResult.suggested_series_id}>
-														{inspectResult.suggested_series_name} (new)
-													</option>
-												{/if}
 												{#each allSeries as s (s.id)}
 													<option value={s.id}>{seriesName(s.id)}</option>
 												{/each}
@@ -247,10 +254,6 @@
 									{inspectResult.chapters_detected}
 									{#if inspectResult.has_prologue}· with prologue{/if}
 								</td>
-							</tr>
-							<tr>
-								<td class="label small-caps">Word count</td>
-								<td class="value">{inspectResult.word_count.toLocaleString()}</td>
 							</tr>
 							{#if editing}
 								<tr>

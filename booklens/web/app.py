@@ -159,12 +159,15 @@ def _humanize_series_id(series_id: str) -> str:
 
 def _suggest_series(iconn: sqlite3.Connection, book) -> dict:
     """The series-suggestion ladder: EPUB3 collection, then Calibre series, then shared authorship."""
-    rows = iconn.execute("SELECT series_id, book_order, author FROM book").fetchall()
+    rows = iconn.execute("SELECT series_id, book_order, author, standalone FROM book").fetchall()
     stats: dict[str, dict] = {}
     for r in rows:
-        s = stats.setdefault(r["series_id"], {"count": 0, "max_order": 0, "authors": set()})
+        s = stats.setdefault(
+            r["series_id"], {"count": 0, "max_order": 0, "authors": set(), "standalone": 0}
+        )
         s["count"] += 1
         s["max_order"] = max(s["max_order"], r["book_order"])
+        s["standalone"] += int(bool(r["standalone"]))
         if r["author"]:
             s["authors"].add(r["author"])
 
@@ -187,7 +190,11 @@ def _suggest_series(iconn: sqlite3.Connection, book) -> dict:
         }
 
     if book.author:
-        candidates = [(sid, s) for sid, s in stats.items() if book.author in s["authors"]]
+        candidates = [
+            (sid, s)
+            for sid, s in stats.items()
+            if book.author in s["authors"] and not (s["count"] == 1 and s["standalone"] == 1)
+        ]
         if candidates:
             sid, s = max(candidates, key=lambda kv: kv[1]["count"])
             return {
@@ -343,19 +350,25 @@ def get_book_cover(book_id: str, dbs: DbDep):
 
 @app.get("/api/series")
 def get_series(dbs: DbDep):
-    """Existing series names and each one's next `book_order`, to seed the upload form."""
+    """Existing series names and each one's next `book_order`, to seed the upload form.
+
+    Standalone shelves are omitted -- they are one book's own container, never
+    something a second volume joins.
+    """
     iconn, _pconn = dbs
-    rows = iconn.execute("SELECT series_id, book_order FROM book").fetchall()
+    rows = iconn.execute("SELECT series_id, book_order, standalone FROM book").fetchall()
 
     agg: dict[str, dict] = {}
     for r in rows:
-        entry = agg.setdefault(r["series_id"], {"book_count": 0, "max_order": 0})
+        entry = agg.setdefault(r["series_id"], {"book_count": 0, "max_order": 0, "standalone": 0})
         entry["book_count"] += 1
         entry["max_order"] = max(entry["max_order"], r["book_order"])
+        entry["standalone"] += int(bool(r["standalone"]))
 
     series = [
         {"id": sid, "book_count": v["book_count"], "next_order": v["max_order"] + 1}
         for sid, v in sorted(agg.items())
+        if not (v["book_count"] == 1 and v["standalone"] == 1)
     ]
     return {"series": series}
 
@@ -384,14 +397,6 @@ async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
     body_chapters = [ch for ch in book.chapters if kinds[ch.chapter_idx] == "body"]
     has_prologue = any(ch.label.strip().lower().startswith("prologue") for ch in body_chapters)
 
-    doc_paragraphs = {d.spine_idx: d.paragraphs for d in book.documents}
-    word_count = sum(
-        len(p.text.split())
-        for ch in body_chapters
-        for spine_idx in range(ch.start_spine_idx, ch.end_spine_idx + 1)
-        for p in doc_paragraphs.get(spine_idx, ())
-    )
-
     try:
         has_cover = extract_cover(stash_path) is not None
     except Exception:
@@ -407,7 +412,6 @@ async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
         "author": book.author,
         "chapters_detected": len(body_chapters),
         "has_prologue": has_prologue,
-        "word_count": word_count,
         "has_cover": has_cover,
         **_suggest_series(iconn, book),
         "already_ingested": existing is not None,
