@@ -54,13 +54,15 @@
 		return seriesName(selectedSeries);
 	});
 
-	onMount(async () => {
+	async function loadSeries() {
 		try {
 			allSeries = (await getSeries()).series;
 		} catch {
 			// non-fatal: "new series" still works without the list
 		}
-	});
+	}
+
+	onMount(loadSeries);
 
 	function fileSizeLabel(bytes: number): string {
 		const mb = bytes / (1024 * 1024);
@@ -120,6 +122,7 @@
 				book_order: standalone ? 1 : bookOrder,
 				standalone,
 			});
+			await loadSeries();
 		} catch (e) {
 			commitError = e instanceof ApiError ? e.detail : 'Could not shelve the volume.';
 		} finally {
@@ -135,6 +138,7 @@
 		commitResult = null;
 		commitError = '';
 		committing = false;
+		loadSeries();
 	}
 </script>
 
@@ -203,8 +207,10 @@
 							<tr>
 								<td class="label small-caps">Series</td>
 								<td class="value">
-									{#if editing}
-										<fieldset class="inline-field" disabled={committing || standalone}>
+									{#if standalone}
+										Standalone
+									{:else if editing}
+										<fieldset class="inline-field" disabled={committing}>
 											<select bind:value={selectedSeries}>
 												<option value="" disabled>Choose a series…</option>
 												{#each allSeries as s (s.id)}
@@ -233,26 +239,22 @@
 									{/if}
 								</td>
 							</tr>
-							<tr>
-								<td class="label small-caps">Position in series</td>
-								<td class="value">
-									{#if editing}
-										<input
-											type="number"
-											min="1"
-											bind:value={bookOrder}
-											disabled={committing || standalone}
-										/>
-									{:else}
-										Volume {toRoman(bookOrder)}
-									{/if}
-								</td>
-							</tr>
+							{#if !standalone}
+								<tr>
+									<td class="label small-caps">Position in series</td>
+									<td class="value">
+										{#if editing}
+											<input type="number" min="1" bind:value={bookOrder} disabled={committing} />
+										{:else}
+											Volume {toRoman(bookOrder)}
+										{/if}
+									</td>
+								</tr>
+							{/if}
 							<tr>
 								<td class="label small-caps">Chapters detected</td>
 								<td class="value">
 									{inspectResult.chapters_detected}
-									{#if inspectResult.has_prologue}· with prologue{/if}
 								</td>
 							</tr>
 							{#if editing}

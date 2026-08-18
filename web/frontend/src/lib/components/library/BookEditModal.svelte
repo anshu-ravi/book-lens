@@ -207,28 +207,30 @@
 				<p class="explainer">A standalone sits on its own shelf, outside any series carousel.</p>
 			{/if}
 
-			<fieldset class="field" disabled={saving || standalone}>
-				<label class="small-caps" for="edit-series">Series</label>
-				<select id="edit-series" bind:value={selectedSeries}>
-					<option value={seriesId}>{seriesName(seriesId)}</option>
-					{#each allSeries.filter((s) => s.id !== seriesId) as s (s.id)}
-						<option value={s.id}>{seriesName(s.id)}</option>
-					{/each}
-					<option value={NEW_SERIES}>＋ new series…</option>
-				</select>
-			</fieldset>
+			{#if !standalone}
+				<fieldset class="field" disabled={saving}>
+					<label class="small-caps" for="edit-series">Series</label>
+					<select id="edit-series" bind:value={selectedSeries}>
+						<option value={seriesId}>{seriesName(seriesId)}</option>
+						{#each allSeries.filter((s) => s.id !== seriesId) as s (s.id)}
+							<option value={s.id}>{seriesName(s.id)}</option>
+						{/each}
+						<option value={NEW_SERIES}>＋ new series…</option>
+					</select>
+				</fieldset>
 
-			{#if isNewSeries && !standalone}
-				<div class="field">
-					<label class="small-caps" for="edit-new-series">New series name</label>
-					<input id="edit-new-series" type="text" bind:value={newSeriesName} disabled={saving} />
-				</div>
+				{#if isNewSeries}
+					<div class="field">
+						<label class="small-caps" for="edit-new-series">New series name</label>
+						<input id="edit-new-series" type="text" bind:value={newSeriesName} disabled={saving} />
+					</div>
+				{/if}
+
+				<fieldset class="field" disabled={saving}>
+					<label class="small-caps" for="edit-order">Position in series</label>
+					<input id="edit-order" type="number" min="1" bind:value={bookOrder} />
+				</fieldset>
 			{/if}
-
-			<fieldset class="field" disabled={saving || standalone}>
-				<label class="small-caps" for="edit-order">Position in series</label>
-				<input id="edit-order" type="number" min="1" bind:value={bookOrder} />
-			</fieldset>
 		</section>
 
 		<section class="modal-section" bind:this={readingSectionEl}>

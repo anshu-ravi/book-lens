@@ -8,6 +8,7 @@
 		positionInSeries,
 		size = 'medium',
 		coverUrl = null,
+		fill = false,
 	}: {
 		title: string;
 		author?: string;
@@ -15,6 +16,7 @@
 		positionInSeries?: number;
 		size?: 'thumb' | 'small' | 'medium' | 'large' | 'plate';
 		coverUrl?: string | null;
+		fill?: boolean;
 	} = $props();
 
 	const bg = $derived(seriesColor(seriesId));
@@ -29,6 +31,9 @@
 		plate: { w: 240, h: 360 },
 	};
 	const { w, h } = $derived(dims[size]);
+	const dimStyle = $derived(
+		fill ? 'width:100%;aspect-ratio:2 / 3;' : `width:${w}px;height:${h}px;`,
+	);
 
 	// The parent only ever passes a URL when has_cover is true, but a real
 	// cover can still fail to load at runtime -- fall back rather than break.
@@ -40,11 +45,11 @@
 </script>
 
 {#if coverUrl && !coverFailed}
-	<div class="cover" style="width:{w}px;height:{h}px;">
+	<div class="cover" style={dimStyle}>
 		<img src={coverUrl} alt="" loading="lazy" onerror={() => (coverFailed = true)} />
 	</div>
 {:else}
-	<div class="cover generated" style="width:{w}px;height:{h}px;background:{bg};">
+	<div class="cover generated" style="{dimStyle}background:{bg};">
 		<div class="cover-top small-caps">{authorSurname}</div>
 		<div class="cover-title">{title}</div>
 		<div class="cover-bottom small-caps">

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { SeriesGroup } from '$lib/types';
+	import type { BookStatus, SeriesGroup } from '$lib/types';
 	import { seriesName } from '$lib/utils/series-name';
 	import BookCover from './BookCover.svelte';
-	import ProgressBar from './ProgressBar.svelte';
+	import StateChip from './StateChip.svelte';
 
 	let {
 		series,
@@ -14,11 +14,12 @@
 
 	const sorted = $derived([...series.books].sort((a, b) => a.book_order - b.book_order));
 	const firstBook = $derived(sorted[0]);
-	const finishedCount = $derived(series.books.filter((b) => b.status === 'finished').length);
-	const percent = $derived.by(() => {
-		const totalChapters = series.books.reduce((n, b) => n + b.chapter_count, 0);
-		const readChapters = series.books.reduce((n, b) => n + b.chapters_read, 0);
-		return totalChapters > 0 ? Math.round((readChapters / totalChapters) * 100) : 0;
+	const seriesStatus = $derived.by<BookStatus>(() => {
+		if (series.books.every((b) => b.status === 'finished')) return 'finished';
+		const inProgress = series.books.some(
+			(b) => b.status === 'finished' || b.status === 'reading' || b.chapters_read > 0,
+		);
+		return inProgress ? 'reading' : 'unread';
 	});
 </script>
 
@@ -30,21 +31,18 @@
 				author={firstBook.author}
 				seriesId={series.id}
 				positionInSeries={firstBook.book_order}
-				size="small"
 				coverUrl={firstBook.has_cover ? `/api/books/${firstBook.id}/cover` : null}
+				fill
 			/>
+			<StateChip status={seriesStatus} overlay />
 		</div>
 		<div class="name">{seriesName(series.id)}</div>
-		<div class="counts small-caps">
-			{series.books.length} vol. · {finishedCount}/{series.books.length} finished
-		</div>
-		<ProgressBar {percent} />
 	</button>
 </div>
 
 <style>
 	.card {
-		width: 168px;
+		width: 200px;
 		height: 100%;
 		display: flex;
 		flex-direction: column;
@@ -57,6 +55,7 @@
 		text-align: left;
 	}
 	.cover-row {
+		position: relative;
 		display: flex;
 		justify-content: center;
 	}
@@ -76,8 +75,5 @@
 	}
 	.card:hover .name {
 		color: var(--brass);
-	}
-	.counts {
-		color: var(--bone-muted);
 	}
 </style>
