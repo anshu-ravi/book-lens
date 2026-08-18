@@ -97,7 +97,7 @@ def _skip_result(iconn: sqlite3.Connection, sha256: str) -> IngestResult:
         "SELECT id, title, book_order, sequence_tier, label_tier FROM book WHERE sha256 = ?",
         (sha256,),
     ).fetchone()
-    manifest_path = paths.book_dir(sha256) / "manifest.json"
+    manifest_path = paths.book_dir(row["id"]) / "manifest.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
     return IngestResult(
         book_id=row["id"],
@@ -112,6 +112,33 @@ def _skip_result(iconn: sqlite3.Connection, sha256: str) -> IngestResult:
         label_tier=row["label_tier"],
         skipped=True,
     )
+
+
+def relocate_source(iconn: sqlite3.Connection, book_id: str, new_path: str | Path) -> None:
+    """Move a book's retained source file to `new_path`, keeping `book.source_path`
+    and `meta.json` in agreement with where it actually is.
+
+    A no-op move (source already at `new_path`) still rewrites the records,
+    which is cheap and keeps this idempotent.
+    """
+    row = iconn.execute("SELECT source_path FROM book WHERE id = ?", (book_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"unknown book_id {book_id!r}")
+
+    old_path = Path(row["source_path"])
+    new_path = Path(new_path)
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    if old_path != new_path and old_path.is_file():
+        old_path.replace(new_path)
+
+    iconn.execute("UPDATE book SET source_path = ? WHERE id = ?", (str(new_path), book_id))
+    iconn.commit()
+
+    meta_path = paths.book_dir(book_id) / "meta.json"
+    if meta_path.is_file():
+        meta = json.loads(meta_path.read_text())
+        meta["source_path"] = str(new_path)
+        meta_path.write_text(json.dumps(meta, indent=2))
 
 
 def ingest_book(
@@ -256,7 +283,7 @@ def ingest_book(
         iconn.rollback()
         raise
 
-    book_dir = paths.book_dir(book.sha256)
+    book_dir = paths.book_dir(resolved_book_id)
     meta = {
         "title": resolved_title,
         "author": resolved_author,
@@ -284,7 +311,7 @@ def ingest_book(
         "size_flags": size_flags,
     }
     (book_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
-    paths.digests_dir(book.sha256)  # created empty; Phase 1 fills it
+    paths.digests_dir(resolved_book_id)  # created empty; Phase 1 fills it
 
     return IngestResult(
         book_id=resolved_book_id,

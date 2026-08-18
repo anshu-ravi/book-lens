@@ -70,14 +70,6 @@ def _slugify_part(label: str) -> str:
     return slug or "part"
 
 
-def _book_sha256(iconn: sqlite3.Connection, book_id: str) -> str:
-    """The hash that keys this book's on-disk digest directory."""
-    row = iconn.execute("SELECT sha256 FROM book WHERE id = ?", (book_id,)).fetchone()
-    if row is None:
-        raise ValueError(f"unknown book_id {book_id!r}")
-    return row["sha256"]
-
-
 def _existing_digest(
     iconn: sqlite3.Connection, book_id: str, level: str, chapter_idx: int | None, part_label: str | None
 ) -> sqlite3.Row | None:
@@ -264,7 +256,6 @@ def run_chapter_pass(
     DECISIONS.md section 3. Committed per chapter so an interrupted run can
     resume without redoing completed work.
     """
-    sha256 = _book_sha256(iconn, book_id)
     result = PassResult(book_id=book_id)
 
     all_chapters = iconn.execute(
@@ -299,7 +290,7 @@ def run_chapter_pass(
             registry=registry,
             paragraphs=paragraphs,
         )
-        digest_path = paths.digests_dir(sha256) / "ch" / f"{chapter_idx:04d}.md"
+        digest_path = paths.digests_dir(book_id) / "ch" / f"{chapter_idx:04d}.md"
 
         # A malformed or unvalidatable response is retried once with a fresh
         # model call, since these are stochastic formatting slips, not
@@ -344,7 +335,7 @@ def run_chapter_pass(
                 # Final attempt failed -- dump the raw response so it can be
                 # inspected, without letting a dump failure mask the real error.
                 try:
-                    diag_path = paths.failed_response_path(sha256, chapter_idx)
+                    diag_path = paths.failed_response_path(book_id, chapter_idx)
                     diag_path.write_text(response.text, encoding="utf-8")
                     logger.warning(
                         "chapter %s (%r) failed on final attempt; raw response written to %s",
@@ -436,7 +427,6 @@ def run_rollups(
     them; a chapter pass rerun is what invalidates a rollup, and this
     function has no way to know that short of always refreshing.
     """
-    sha256 = _book_sha256(iconn, book_id)
     result = PassResult(book_id=book_id)
 
     chapter_digests = iconn.execute(
@@ -455,7 +445,7 @@ def run_rollups(
     part_digest_rows: list[sqlite3.Row] = []
     for part_label in part_labels:
         rows = [r for r in chapter_digests if r["part_label"] == part_label]
-        digest_path = paths.digests_dir(sha256) / "part" / f"{_slugify_part(part_label)}.md"
+        digest_path = paths.digests_dir(book_id) / "part" / f"{_slugify_part(part_label)}.md"
         rerolls = _rollup_one(
             iconn,
             llm,
@@ -476,7 +466,7 @@ def run_rollups(
 
     book_source_rows = part_digest_rows if part_digest_rows else chapter_digests
     if book_source_rows:
-        digest_path = paths.digests_dir(sha256) / "book.md"
+        digest_path = paths.digests_dir(book_id) / "book.md"
         rerolls = _rollup_one(
             iconn,
             llm,

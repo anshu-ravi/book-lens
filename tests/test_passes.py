@@ -401,12 +401,7 @@ def test_malformed_response_raises_and_writes_nothing(iconn):
         passes.run_chapter_pass(iconn, llm, "b1")
 
     assert iconn.execute("SELECT 1 FROM digest WHERE book_id='b1'").fetchone() is None
-    from pathlib import Path
-
-    from booklens import paths
-
-    sha256 = iconn.execute("SELECT sha256 FROM book WHERE id='b1'").fetchone()["sha256"]
-    ch_dir = paths.digests_dir(sha256) / "ch"
+    ch_dir = paths.digests_dir("b1") / "ch"
     assert not ch_dir.is_dir() or list(ch_dir.iterdir()) == []
 
 
@@ -462,8 +457,7 @@ def test_chapter_failing_twice_writes_diagnostic_response_dump(iconn):
     with pytest.raises(ValueError):
         passes.run_chapter_pass(iconn, llm, "b1")
 
-    sha256 = iconn.execute("SELECT sha256 FROM book WHERE id='b1'").fetchone()["sha256"]
-    diag_path = paths.failed_response_path(sha256, 0)
+    diag_path = paths.failed_response_path("b1", 0)
     assert diag_path.is_file()
     assert diag_path.read_text() == "not valid json, malformed on purpose, twice"
 
