@@ -65,7 +65,7 @@ def _fixture_context(text="[rr:0:p0] a paragraph of invented text.") -> Assemble
     return AssembledContext(
         text=text,
         para_count=1,
-        max_global_seq=1000000,
+        max_global_seq=db.global_seq(1, 0, 0),
         token_estimate=len(text) // 4,
         chapter_span=("rr: Prologue", "rr: Prologue"),
         content_hash="deadbeef",

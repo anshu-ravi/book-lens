@@ -22,19 +22,19 @@ def iconn(tmp_path):
         VALUES ('b2', 'sha2', 'Book Two', 'Auth', '/y.epub', 's1', 2, 'S1', 'L1', '2026-01-01')
         """
     )
-    # b1: 3 chapters
-    for i, (start, end) in enumerate([(1000000, 1000999), (1001000, 1001999), (1002000, 1002999)]):
+    # b1: 3 chapters, one spine document each
+    for i in range(3):
         conn.execute(
             "INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq) "
             "VALUES ('b1', ?, ?, NULL, ?, ?)",
-            (i, f"Chapter {i}", start, end),
+            (i, f"Chapter {i}", db.global_seq(1, i, 0), db.global_seq(1, i, 999)),
         )
-    # b2: 2 chapters
-    for i, (start, end) in enumerate([(2000000, 2000999), (2001000, 2001999)]):
+    # b2: 2 chapters, one spine document each
+    for i in range(2):
         conn.execute(
             "INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq) "
             "VALUES ('b2', ?, ?, NULL, ?, ?)",
-            (i, f"Chapter {i}", start, end),
+            (i, f"Chapter {i}", db.global_seq(2, i, 0), db.global_seq(2, i, 999)),
         )
     conn.commit()
     return conn
@@ -60,7 +60,7 @@ def test_set_position_unread(pconn, iconn):
 
 def test_set_position_reading_advances_ceiling(pconn, iconn):
     p = progress.set_position(pconn, iconn, "b1", status="reading", chapter_idx=1)
-    assert p.ceiling_seq == 1001999
+    assert p.ceiling_seq == db.global_seq(1, 1, 999)
     assert p.status == "reading"
     assert p.position_chapter_idx == 1
 
@@ -72,14 +72,14 @@ def test_set_position_reading_no_chapter_idx(pconn, iconn):
 
 def test_set_position_finished_uses_max_end_seq(pconn, iconn):
     p = progress.set_position(pconn, iconn, "b1", status="finished")
-    assert p.ceiling_seq == 1002999
+    assert p.ceiling_seq == db.global_seq(1, 2, 999)
 
 
 def test_watermark_never_lowers_via_set_position(pconn, iconn):
     progress.set_position(pconn, iconn, "b1", status="finished")
     p = progress.set_position(pconn, iconn, "b1", status="reading", chapter_idx=0)
     # Dropping back to chapter 0 must NOT lower the ceiling below "finished".
-    assert p.ceiling_seq == 1002999
+    assert p.ceiling_seq == db.global_seq(1, 2, 999)
     # But the current position DOES move back.
     assert p.position_chapter_idx == 0
     assert p.status == "reading"
@@ -87,8 +87,8 @@ def test_watermark_never_lowers_via_set_position(pconn, iconn):
 
 def test_reset_ceiling_is_the_only_way_down(pconn, iconn):
     progress.set_position(pconn, iconn, "b1", status="finished")
-    p = progress.reset_ceiling(pconn, "b1", 1000500)
-    assert p.ceiling_seq == 1000500
+    p = progress.reset_ceiling(pconn, "b1", db.global_seq(1, 0, 500))
+    assert p.ceiling_seq == db.global_seq(1, 0, 500)
 
 
 def test_reset_ceiling_rejects_negative(pconn):
@@ -114,7 +114,7 @@ def test_set_position_invalid_status_raises(pconn, iconn):
 def test_ceiling_for_is_max_across_books(pconn, iconn):
     progress.set_position(pconn, iconn, "b1", status="reading", chapter_idx=0)
     progress.set_position(pconn, iconn, "b2", status="finished")
-    assert progress.ceiling_for(pconn, iconn) == 2001999
+    assert progress.ceiling_for(pconn, iconn) == db.global_seq(2, 1, 999)
 
 
 def test_ceiling_for_with_no_progress_is_zero(pconn, iconn):
@@ -126,21 +126,27 @@ def test_readable_ranges_is_a_true_union(pconn, iconn):
     # Finishing b2 cascades b1 to finished too (series read in order); pull
     # b1 back to a partial ceiling with reset_ceiling, the only way down, to
     # exercise a genuinely disjoint union.
-    progress.reset_ceiling(pconn, "b1", 1000999)
+    progress.reset_ceiling(pconn, "b1", db.global_seq(1, 0, 999))
     ranges = progress.readable_ranges(pconn, iconn)
-    # b1's range floors at its own book_order * 1_000_000, not 0, so the two
+    # b1's range floors at its own book_floor_seq, not 0, so the two
     # stay disjoint -- this is exactly the union DECISIONS.md section 4 calls for.
-    assert sorted(ranges) == [("b1", 1000000, 1000999), ("b2", 2000000, 2001999)]
+    assert sorted(ranges) == [
+        ("b1", db.book_floor_seq(1), db.global_seq(1, 0, 999)),
+        ("b2", db.book_floor_seq(2), db.global_seq(2, 1, 999)),
+    ]
 
 
 def test_readable_ranges_does_not_merge_overlapping_books(pconn, iconn):
     # Contrived but valid: b1's ceiling reaches into b2's own floor. Each book
     # still gets its own span, scoped by book_id -- merging is gone, since a
     # merged interval can no longer tell two same-book_order series apart.
-    progress.reset_ceiling(pconn, "b1", 2000500)
+    progress.reset_ceiling(pconn, "b1", db.global_seq(2, 0, 500))
     progress.set_position(pconn, iconn, "b2", status="reading", chapter_idx=0)
     ranges = progress.readable_ranges(pconn, iconn)
-    assert sorted(ranges) == [("b1", 1000000, 2000500), ("b2", 2000000, 2000999)]
+    assert sorted(ranges) == [
+        ("b1", db.book_floor_seq(1), db.global_seq(2, 0, 500)),
+        ("b2", db.book_floor_seq(2), db.global_seq(2, 0, 999)),
+    ]
 
 
 def test_readable_ranges_empty_when_nothing_read(pconn, iconn):
@@ -165,10 +171,10 @@ def iconn3(tmp_path):
             """,
             (book_id, f"sha-{book_id}", f"Book {order}", path, order),
         )
-    for book_id, chapters in [
-        ("b1", [(1000000, 1000999), (1001000, 1001999)]),
-        ("b2", [(2000000, 2000999), (2001000, 2001999)]),
-        ("b3", [(3000000, 3000999), (3001000, 3001999)]),
+    for book_id, order, chapters in [
+        ("b1", 1, [(db.global_seq(1, 0, 0), db.global_seq(1, 0, 999)), (db.global_seq(1, 1, 0), db.global_seq(1, 1, 999))]),
+        ("b2", 2, [(db.global_seq(2, 0, 0), db.global_seq(2, 0, 999)), (db.global_seq(2, 1, 0), db.global_seq(2, 1, 999))]),
+        ("b3", 3, [(db.global_seq(3, 0, 0), db.global_seq(3, 0, 999)), (db.global_seq(3, 1, 0), db.global_seq(3, 1, 999))]),
     ]:
         for i, (start, end) in enumerate(chapters):
             conn.execute(
@@ -186,9 +192,9 @@ def test_set_position_reading_cascades_earlier_books_to_finished(pconn, iconn3):
     b1 = progress.get_progress(pconn, "b1")
     b2 = progress.get_progress(pconn, "b2")
     assert b1.status == "finished"
-    assert b1.ceiling_seq == 1001999
+    assert b1.ceiling_seq == db.global_seq(1, 1, 999)
     assert b2.status == "finished"
-    assert b2.ceiling_seq == 2001999
+    assert b2.ceiling_seq == db.global_seq(2, 1, 999)
 
 
 def test_set_position_on_first_book_does_not_touch_later_books(pconn, iconn3):
@@ -213,7 +219,8 @@ def test_cascade_is_confined_to_the_same_series(pconn, iconn3):
     )
     iconn3.execute(
         "INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq) "
-        "VALUES ('other', 0, 'Chapter 0', NULL, 9000000, 9000999)"
+        "VALUES ('other', 0, 'Chapter 0', NULL, ?, ?)",
+        (db.global_seq(1, 0, 0), db.global_seq(1, 0, 999)),
     )
     iconn3.commit()
     progress.set_position(pconn, iconn3, "b3", status="finished")
@@ -228,15 +235,15 @@ def test_set_position_unread_does_not_cascade(pconn, iconn3):
     progress.set_position(pconn, iconn3, "b3", status="unread")
     b1 = progress.get_progress(pconn, "b1")
     assert b1.status == "finished"
-    assert b1.ceiling_seq == 1001999
+    assert b1.ceiling_seq == db.global_seq(1, 1, 999)
 
 
 def test_cascade_never_lowers_an_existing_higher_ceiling(pconn, iconn3):
     """If an earlier book's ceiling is already ahead of its own finish point, the cascade must not lower it."""
-    progress.reset_ceiling(pconn, "b1", 2001999)  # already exposed to book 2's content
+    progress.reset_ceiling(pconn, "b1", db.global_seq(2, 1, 999))  # already exposed to book 2's content
     progress.set_position(pconn, iconn3, "b3", status="reading", chapter_idx=0)
     b1 = progress.get_progress(pconn, "b1")
-    assert b1.ceiling_seq == 2001999
+    assert b1.ceiling_seq == db.global_seq(2, 1, 999)
 
 
 def test_set_position_unread_lowers_the_ceiling(pconn, iconn):

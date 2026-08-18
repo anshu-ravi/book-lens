@@ -10,6 +10,8 @@ from urllib.parse import unquote
 
 from lxml import etree
 
+from booklens.db import MAX_PARA_IDX, MAX_SPINE_IDX
+
 from .labels import resolve_labels
 from .sequence import resolve_href, resolve_sequence
 from .text import paragraphs_from_html
@@ -19,11 +21,6 @@ CONTAINER_NS = "urn:oasis:names:tc:opendocument:xmlns:container"
 OPF_NS = "http://www.idpf.org/2007/opf"
 DC_NS = "http://purl.org/dc/elements/1.1/"
 ENC_NS = "http://www.w3.org/2001/04/xmlenc#"
-
-# global_seq packs these into fixed digit ranges, so an overflow would
-# collide with the neighbouring document rather than just look wrong.
-MAX_SPINE_IDX = 1000
-MAX_PARA_IDX = 1000
 
 
 def _dirname(zip_path: str) -> str:

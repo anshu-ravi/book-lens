@@ -135,11 +135,13 @@ def _build_stale_v3_db(tmp_path) -> sqlite3.Connection:
     )
     conn.execute(
         "INSERT INTO chapter(book_id, chapter_idx, label, part_label, start_seq, end_seq, kind) "
-        "VALUES ('stale1', 0, 'Front Matter', NULL, 1000000, 1000000, 'front')"
+        "VALUES ('stale1', 0, 'Front Matter', NULL, ?, ?, 'front')",
+        (db.global_seq(1, 0, 0), db.global_seq(1, 0, 0)),
     )
     conn.execute(
         "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text, kind) "
-        "VALUES ('stale1', 0, 0, 1000000, 0, 'Front Matter', 'lorem stale front matter', 'front')"
+        "VALUES ('stale1', 0, 0, ?, 0, 'Front Matter', 'lorem stale front matter', 'front')",
+        (db.global_seq(1, 0, 0),),
     )
     conn.commit()
     return conn
@@ -148,7 +150,7 @@ def _build_stale_v3_db(tmp_path) -> sqlite3.Connection:
 def test_tools_construction_rejects_stale_v3_schema(tmp_path):
     iconn = _build_stale_v3_db(tmp_path)
     pconn = db.connect_progress(tmp_path / "progress.db")
-    progress.reset_ceiling(pconn, "stale1", 1000000)
+    progress.reset_ceiling(pconn, "stale1", db.global_seq(1, 0, 0))
     with pytest.raises(db.SchemaVersionError):
         tools.Tools(iconn, pconn)
 

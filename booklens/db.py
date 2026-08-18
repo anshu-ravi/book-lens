@@ -11,10 +11,20 @@ from pathlib import Path
 
 from booklens import paths
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
-_MAX_SPINE_IDX = 1000
-_MAX_PARA_IDX = 1000
+# Widened from the original 1000/1000 layout, which collided on any spine
+# document with 1000+ paragraphs. See `reseq.py` for the migration that
+# rescales databases written under the old layout.
+MAX_PARA_IDX = 1_000_000
+MAX_SPINE_IDX = 100_000
+SPINE_STRIDE = MAX_PARA_IDX
+BOOK_STRIDE = SPINE_STRIDE * MAX_SPINE_IDX
+
+# The old 1000/1000 layout, kept only so the migration can decode seq values
+# written under it -- never used for new encoding.
+_LEGACY_SPINE_STRIDE = 1000
+_LEGACY_BOOK_STRIDE = 1_000_000
 
 # The kind vocabulary, defined once so no call site can hardcode a stale or
 # partial list (see docs/implementation-notes.md for the incident that
@@ -67,11 +77,16 @@ def global_seq(book_order: int, spine_idx: int, para_idx: int) -> int:
             f"global_seq arguments must be non-negative: "
             f"book_order={book_order}, spine_idx={spine_idx}, para_idx={para_idx}"
         )
-    if spine_idx >= _MAX_SPINE_IDX:
-        raise ValueError(f"spine_idx {spine_idx} out of range (must be < {_MAX_SPINE_IDX})")
-    if para_idx >= _MAX_PARA_IDX:
-        raise ValueError(f"para_idx {para_idx} out of range (must be < {_MAX_PARA_IDX})")
-    return book_order * 1_000_000 + spine_idx * 1000 + para_idx
+    if spine_idx >= MAX_SPINE_IDX:
+        raise ValueError(f"spine_idx {spine_idx} out of range (must be < {MAX_SPINE_IDX})")
+    if para_idx >= MAX_PARA_IDX:
+        raise ValueError(f"para_idx {para_idx} out of range (must be < {MAX_PARA_IDX})")
+    return book_order * BOOK_STRIDE + spine_idx * SPINE_STRIDE + para_idx
+
+
+def book_floor_seq(book_order: int) -> int:
+    """The lowest seq that can belong to a book at this position in its series."""
+    return book_order * BOOK_STRIDE
 
 
 def _base_connect(path: Path, *, check_same_thread: bool = True) -> sqlite3.Connection:
@@ -332,18 +347,95 @@ def _apply_additive_migrations(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+# Columns that carried a seq value under the old 1000/1000 layout. Listed as
+# (table, column) so the migration can skip a table that never existed.
+_INDEX_SEQ_COLUMNS = (
+    ("para", "global_seq"),
+    ("chapter", "start_seq"),
+    ("chapter", "end_seq"),
+    ("digest", "source_start_seq"),
+    ("digest", "source_end_seq"),
+    ("entity_node", "first_seq"),
+    ("entity_edge", "revealed_at_seq"),
+    ("entity_attr", "first_seq"),
+)
+
+
+def _rescale_seq_sql(column: str) -> str:
+    """SQL expression rescaling a legacy-layout seq column to the current layout.
+
+    Monotonic, so every ordering and ceiling comparison survives unchanged.
+    `column` is always a hardcoded schema column name from `_INDEX_SEQ_COLUMNS`
+    or a literal, never external input.
+    """
+    return (
+        f"(({column} / {_LEGACY_BOOK_STRIDE}) * {BOOK_STRIDE}) + "
+        f"((({column} % {_LEGACY_BOOK_STRIDE}) / {_LEGACY_SPINE_STRIDE}) * {SPINE_STRIDE}) + "
+        f"({column} % {_LEGACY_SPINE_STRIDE})"
+    )
+
+
+def _user_version(conn: sqlite3.Connection) -> int:
+    """The database's `PRAGMA user_version`, used to gate one-time migrations."""
+    return conn.execute("PRAGMA user_version").fetchone()[0]
+
+
+def _migrate_seq_layout_index(conn: sqlite3.Connection) -> None:
+    """Rescale index.db's seq columns from the old 1000/1000 layout, once.
+
+    Arithmetic only -- never re-reads the source EPUB, which may no longer
+    exist on disk. Gated on `user_version` so it runs exactly once per database.
+    """
+    if _user_version(conn) >= SCHEMA_VERSION:
+        return
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    try:
+        for table, column in _INDEX_SEQ_COLUMNS:
+            if table not in tables:
+                continue
+            conn.execute(f"UPDATE {table} SET {column} = {_rescale_seq_sql(column)}")
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _migrate_seq_layout_progress(conn: sqlite3.Connection) -> None:
+    """Rescale progress.db's `ceiling_seq` from the old 1000/1000 layout, once.
+
+    Unread books (`ceiling_seq == 0`) are left alone -- 0 means the same thing
+    under either layout.
+    """
+    if _user_version(conn) >= SCHEMA_VERSION:
+        return
+    try:
+        conn.execute(
+            f"UPDATE book_progress SET ceiling_seq = {_rescale_seq_sql('ceiling_seq')} "
+            "WHERE ceiling_seq > 0"
+        )
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def init_index(conn: sqlite3.Connection) -> None:
     """Create the index tables if absent, refusing an outdated database."""
     _apply_additive_migrations(conn)
     check_schema_compat(conn)
     conn.executescript(_INDEX_DDL)
     conn.commit()
+    _migrate_seq_layout_index(conn)
+    paths.migrate_legacy_book_dirs(conn)
 
 
 def init_progress(conn: sqlite3.Connection) -> None:
     """Create the user-state tables if absent."""
     conn.executescript(_PROGRESS_DDL)
     conn.commit()
+    _migrate_seq_layout_progress(conn)
 
 
 def _regexp(pattern: str, value: str | None) -> bool:
