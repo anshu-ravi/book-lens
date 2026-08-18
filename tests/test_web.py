@@ -7,12 +7,13 @@ reach past a session's own ceiling.
 
 from __future__ import annotations
 
+import json
 import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from booklens import cli, db, progress, tools
+from booklens import cli, db, paths, progress, tools
 from booklens.web.app import app
 from booklens.web.sessions import registry
 from tests.test_ingest import CONTAINER_XML, _simple_epub
@@ -260,6 +261,33 @@ def test_commit_with_title_author_override_stores_overrides(tmp_path, monkeypatc
     assert row["author"] == "Renamed Author;"
 
 
+def test_commit_retains_source_epub_under_original_filename(tmp_path, monkeypatch):
+    epub_path = _simple_epub(tmp_path, name="uploaded.epub")
+    resp = _inspect(tmp_path, monkeypatch, epub_path, filename="My Book (v2).epub")
+    assert resp.status_code == 200
+    sha256 = resp.json()["sha256"]
+    body = {"sha256": sha256, "series_id": "s1", "book_order": 1, "standalone": False}
+    commit_resp = client.post("/api/upload/commit", json=body)
+    assert commit_resp.status_code == 200
+    book_id = commit_resp.json()["book_id"]
+
+    retained = paths.source_file_path(book_id)
+    assert retained is not None
+    assert retained.name == "My Book (v2).epub"
+    assert retained.parent == paths.book_dir(book_id)
+
+    iconn = db.connect_index()
+    row = iconn.execute("SELECT source_path FROM book WHERE id = ?", (book_id,)).fetchone()
+    assert Path(row["source_path"]) == retained
+
+    meta = json.loads((paths.book_dir(book_id) / "meta.json").read_text())
+    assert Path(meta["source_path"]) == retained
+
+    # The stash and its name sidecar are consumed, not left behind.
+    assert not paths.upload_stash_path(sha256).is_file()
+    assert not paths.upload_name_path(sha256).is_file()
+
+
 def test_commit_unknown_sha_returns_404(tmp_path, monkeypatch):
     monkeypatch.setenv("BOOKLENS_DATA_DIR", str(tmp_path / "data"))
     db.connect_index().close()
@@ -460,6 +488,33 @@ def test_shelf_move_rebases_ceiling_to_the_same_chapter(tmp_path, monkeypatch):
     assert ceiling >= 3_000_000
 
 
+def test_shelf_move_preserves_reader_position_and_shifts_ceiling(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status="reading", chapter="1")
+
+    before = client.get("/api/library").json()["series"][0]["books"][0]
+    pconn = db.connect_progress()
+    ceiling_before = pconn.execute(
+        "SELECT ceiling_seq FROM book_progress WHERE book_id = 'sample-book'"
+    ).fetchone()["ceiling_seq"]
+
+    resp = client.put(
+        "/api/books/sample-book",
+        json={"title": "Sample Book", "series_id": "s2", "book_order": 4, "standalone": False},
+    )
+    assert resp.status_code == 200
+    after = resp.json()
+
+    assert after["position_ref"] == before["position_ref"]
+    assert after["percent"] == before["percent"]
+
+    delta = (4 - 1) * db.BOOK_STRIDE
+    pconn2 = db.connect_progress()
+    ceiling_after = pconn2.execute(
+        "SELECT ceiling_seq FROM book_progress WHERE book_id = 'sample-book'"
+    ).fetchone()["ceiling_seq"]
+    assert ceiling_after == ceiling_before + delta
+
+
 def test_edit_title_only_does_not_reingest(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch, status=None)
     iconn = db.connect_index()
@@ -497,19 +552,47 @@ def test_edit_move_preserves_an_edited_title(tmp_path, monkeypatch):
     assert row["title"] == "Renamed"
 
 
-def test_shelf_move_400s_when_source_file_is_gone(tmp_path, monkeypatch):
+def test_shelf_move_succeeds_and_shifts_seq_when_source_file_is_gone(tmp_path, monkeypatch):
+    """A move is pure arithmetic on stored rows -- it never re-reads the EPUB,
+    so it must succeed even when the source file has vanished."""
     _setup(tmp_path, monkeypatch, status=None)
     iconn = db.connect_index()
     source_path = iconn.execute(
         "SELECT source_path FROM book WHERE id = 'sample-book'"
     ).fetchone()["source_path"]
+
+    before_paras = [
+        dict(r)
+        for r in iconn.execute(
+            "SELECT global_seq, text FROM para WHERE book_id = 'sample-book' ORDER BY id"
+        )
+    ]
     Path(source_path).unlink()
 
     resp = client.put(
         "/api/books/sample-book",
-        json={"title": "Sample Book", "series_id": "s1", "book_order": 5, "standalone": False},
+        json={"title": "Sample Book", "series_id": "s2", "book_order": 5, "standalone": False},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 200
+
+    iconn2 = db.connect_index()
+    row = iconn2.execute(
+        "SELECT series_id, book_order FROM book WHERE id = 'sample-book'"
+    ).fetchone()
+    assert row["series_id"] == "s2"
+    assert row["book_order"] == 5
+
+    after_paras = [
+        dict(r)
+        for r in iconn2.execute(
+            "SELECT global_seq, text FROM para WHERE book_id = 'sample-book' ORDER BY id"
+        )
+    ]
+    assert len(after_paras) == len(before_paras)
+    delta = (5 - 1) * db.BOOK_STRIDE
+    for before, after in zip(before_paras, after_paras):
+        assert after["global_seq"] == before["global_seq"] + delta
+        assert after["text"] == before["text"]
 
 
 # -- chat -----------------------------------------------------------------------
@@ -590,3 +673,83 @@ def test_finished_book_has_a_position_and_can_start_a_chat_session(tmp_path, mon
 def test_messages_404_for_unknown_session():
     resp = client.post("/api/chat/sessions/does-not-exist/messages", json={"question": "hi?"})
     assert resp.status_code == 404
+
+
+# -- delete -----------------------------------------------------------------
+
+
+def test_delete_unknown_book_404s():
+    resp = client.delete("/api/books/does-not-exist")
+    assert resp.status_code == 404
+
+
+def test_delete_removes_book_from_library_and_index_rows_and_fts(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status="reading", chapter="1")
+
+    resp = client.delete("/api/books/sample-book")
+    assert resp.status_code == 204
+
+    library = client.get("/api/library").json()
+    assert library["series"] == []
+
+    iconn = db.connect_index()
+    assert iconn.execute("SELECT 1 FROM book WHERE id = 'sample-book'").fetchone() is None
+    assert iconn.execute("SELECT 1 FROM para WHERE book_id = 'sample-book'").fetchone() is None
+    assert iconn.execute("SELECT 1 FROM chapter WHERE book_id = 'sample-book'").fetchone() is None
+    hits = iconn.execute("SELECT rowid FROM para_fts WHERE para_fts MATCH 'begins'").fetchall()
+    assert hits == []
+
+
+def test_delete_removes_progress_row(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status="reading", chapter="1")
+
+    resp = client.delete("/api/books/sample-book")
+    assert resp.status_code == 204
+
+    pconn = db.connect_progress()
+    assert pconn.execute(
+        "SELECT 1 FROM book_progress WHERE book_id = 'sample-book'"
+    ).fetchone() is None
+
+
+def test_delete_removes_data_directory(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status=None)
+
+    book_dir = paths.book_dir("sample-book")
+    assert book_dir.is_dir()
+
+    resp = client.delete("/api/books/sample-book")
+    assert resp.status_code == 204
+    assert not book_dir.exists()
+
+
+def test_delete_drops_a_live_chat_session_on_the_book(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status="reading", chapter="1")
+
+    create = client.post("/api/chat/sessions", json={"book_id": "sample-book"})
+    assert create.status_code == 200
+    sid = create.json()["session_id"]
+    assert registry.get(sid) is not None
+
+    resp = client.delete("/api/books/sample-book")
+    assert resp.status_code == 204
+    assert registry.get(sid) is None
+
+
+def test_delete_never_touches_a_source_file_outside_data_dir(tmp_path, monkeypatch):
+    """A CLI-ingested book's source_path points at the user's own read-only
+    Books directory (outside data/); deleting the book must never remove it."""
+    _setup(tmp_path, monkeypatch, status=None)
+
+    iconn = db.connect_index()
+    source_path = Path(
+        iconn.execute("SELECT source_path FROM book WHERE id = 'sample-book'").fetchone()[
+            "source_path"
+        ]
+    )
+    assert source_path.is_file()
+    assert not source_path.is_relative_to(paths.data_dir())
+
+    resp = client.delete("/api/books/sample-book")
+    assert resp.status_code == 204
+    assert source_path.is_file()

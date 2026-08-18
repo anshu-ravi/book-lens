@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import re
+import shutil
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
@@ -19,7 +21,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from booklens import chat, classify, context, db, ingest, paths, progress, tools
+from booklens import chat, classify, context, db, ingest, paths, progress, reseq, tools
 from booklens.extract import extract_book, extract_cover, read_series_hint
 from booklens.ingest import _slugify as _slugify_name
 from booklens.llm.base import FatalLLMError, TransientLLMError
@@ -103,7 +105,7 @@ class AskRequest(BaseModel):
 def _book_payload(iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id: str) -> dict:
     """The `Book` shape shared by `/api/library` and the progress-update response."""
     row = iconn.execute(
-        "SELECT id, title, author, book_order, sha256, standalone FROM book WHERE id = ?",
+        "SELECT id, title, author, book_order, standalone FROM book WHERE id = ?",
         (book_id,),
     ).fetchone()
     if row is None:
@@ -132,7 +134,7 @@ def _book_payload(iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id:
         "chapter_count": chapter_count,
         "chapters_read": chapters_read,
         "percent": percent,
-        "has_cover": paths.cover_path(row["sha256"]) is not None,
+        "has_cover": paths.cover_path(book_id) is not None,
         "standalone": bool(row["standalone"]),
     }
 
@@ -152,6 +154,20 @@ def _check_slot_free(
             status_code=409,
             detail=f"series {series_id!r} already has a book at position {book_order}",
         )
+
+
+_UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9 ._()\[\]-]+")
+
+
+def _safe_upload_filename(original: str, book_id: str) -> str:
+    """A filesystem-safe basename for the retained EPUB, derived from the
+    upload's own name; falls back to `<book_id>.epub` if that name is missing
+    or sanitises to nothing."""
+    name = Path(original).name if original else ""
+    name = _UNSAFE_FILENAME_RE.sub("_", name).strip(" ._")
+    if name and not name.lower().endswith(".epub"):
+        name = f"{name}.epub"
+    return name or f"{book_id}.epub"
 
 
 def _humanize_series_id(series_id: str) -> str:
@@ -274,15 +290,15 @@ def put_book_progress(book_id: str, body: ProgressUpdate, dbs: DbDep):
 def put_book(book_id: str, body: BookEdit, dbs: DbDep):
     """Edit a book's title, author, standalone flag, and series placement.
 
-    An unchanged (series_id, book_order) is just a metadata update. A real
-    move re-derives every paragraph's `global_seq` via a forced re-ingest (the
-    only path allowed to touch seq), then rebases the reading-position
-    ceiling -- the old ceiling encodes the pre-move book_order and is
-    otherwise meaningless.
+    A move to a new (series_id, book_order) is a metadata and seq-shift
+    operation only -- it never reads the EPUB. `global_seq` packs
+    `book_order` into its high digits, so a change of position is a constant
+    arithmetic shift of every seq the book owns (`reseq.rebase_book_order`);
+    a change of `series_id` alone doesn't touch seq at all.
     """
     iconn, pconn = dbs
     row = iconn.execute(
-        "SELECT series_id, book_order, source_path FROM book WHERE id = ?", (book_id,)
+        "SELECT series_id, book_order FROM book WHERE id = ?", (book_id,)
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"unknown book_id {book_id!r}")
@@ -292,61 +308,62 @@ def put_book(book_id: str, body: BookEdit, dbs: DbDep):
         raise HTTPException(status_code=400, detail="title must not be empty")
     author = body.author.strip() if body.author and body.author.strip() else None
 
-    if row["series_id"] == body.series_id and row["book_order"] == body.book_order:
-        iconn.execute(
-            "UPDATE book SET title = ?, author = ?, standalone = ? WHERE id = ?",
-            (title, author, int(body.standalone), book_id),
-        )
-        iconn.commit()
-        return _book_payload(iconn, pconn, book_id)
-
-    source_path = Path(row["source_path"])
-    if not source_path.is_file():
-        raise HTTPException(
-            status_code=400,
-            detail=f"source file no longer exists: {source_path}",
-        )
-
-    _check_slot_free(iconn, body.series_id, body.book_order, exclude_book_id=book_id)
-
-    prior_progress = progress.get_progress(pconn, book_id)
-
-    ingest.ingest_book(
-        source_path,
-        series_id=body.series_id,
-        book_order=body.book_order,
-        book_id=book_id,
-        iconn=iconn,
-        force=True,
-        standalone=body.standalone,
-        title=title,
-        author=author,
+    iconn.execute(
+        "UPDATE book SET title = ?, author = ?, standalone = ? WHERE id = ?",
+        (title, author, int(body.standalone), book_id),
     )
+    iconn.commit()
 
-    if prior_progress.status == "unread":
-        progress.reset_ceiling(pconn, book_id, 0)
-    elif prior_progress.status == "reading":
-        if prior_progress.position_chapter_idx is not None:
-            new_ceiling = progress.chapter_end_seq(
-                iconn, book_id, prior_progress.position_chapter_idx
-            )
-        else:
-            new_ceiling = 0
-        progress.reset_ceiling(pconn, book_id, new_ceiling)
-    else:  # finished
-        progress.reset_ceiling(pconn, book_id, progress.book_max_end_seq(iconn, book_id))
+    if row["series_id"] != body.series_id or row["book_order"] != body.book_order:
+        _check_slot_free(iconn, body.series_id, body.book_order, exclude_book_id=book_id)
+        reseq.rebase_book_order(iconn, pconn, book_id, body.book_order, series_id=body.series_id)
 
     return _book_payload(iconn, pconn, book_id)
+
+
+@app.delete("/api/books/{book_id}", status_code=204)
+def delete_book(book_id: str, dbs: DbDep):
+    """Remove a book entirely: live sessions, index rows (cascading), progress row, and its data directory.
+
+    Sessions are dropped first, before their `index.db` connections are
+    orphaned by the row disappearing underneath them. The data directory is
+    only ever removed after being confirmed to sit inside `paths.data_dir()`
+    -- a CLI-ingested book's `source_path` points outside it, at the user's
+    own read-only Books directory, and must never be touched.
+    """
+    iconn, pconn = dbs
+    row = iconn.execute("SELECT 1 FROM book WHERE id = ?", (book_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"unknown book_id {book_id!r}")
+
+    sessions.registry.drop_for_book(book_id)
+
+    iconn.execute("DELETE FROM book WHERE id = ?", (book_id,))
+    iconn.commit()
+
+    pconn.execute("DELETE FROM book_progress WHERE book_id = ?", (book_id,))
+    pconn.commit()
+
+    book_dir = paths.book_dir(book_id).resolve()
+    data_root = paths.data_dir().resolve()
+    if book_dir == data_root or data_root not in book_dir.parents:
+        raise HTTPException(
+            status_code=500,
+            detail=f"refusing to delete book_dir outside data_dir: {book_dir}",
+        )
+    shutil.rmtree(book_dir, ignore_errors=True)
+
+    return Response(status_code=204)
 
 
 @app.get("/api/books/{book_id}/cover")
 def get_book_cover(book_id: str, dbs: DbDep):
     """The book's real EPUB cover art, content-addressed by hash so it's safe to cache long."""
     iconn, _pconn = dbs
-    row = iconn.execute("SELECT sha256 FROM book WHERE id = ?", (book_id,)).fetchone()
+    row = iconn.execute("SELECT 1 FROM book WHERE id = ?", (book_id,)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail=f"unknown book_id {book_id!r}")
-    cover_file = paths.cover_path(row["sha256"])
+    cover_file = paths.cover_path(book_id)
     if cover_file is None:
         raise HTTPException(status_code=404, detail=f"no cover for book_id {book_id!r}")
     media_type = mimetypes.guess_type(str(cover_file))[0] or "application/octet-stream"
@@ -396,6 +413,7 @@ async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
 
     stash_path = paths.upload_stash_path(sha256)
     stash_path.write_bytes(data)
+    paths.upload_name_path(sha256).write_text(file.filename or "")
     paths.prune_stale_uploads()
 
     try:
@@ -475,10 +493,20 @@ def commit_upload(body: UploadCommitRequest, dbs: DbDep):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"could not shelve this EPUB: {exc}") from exc
 
-    stash_path.unlink(missing_ok=True)
+    name_path = paths.upload_name_path(body.sha256)
+    if result.skipped:
+        # The book row (and its retained source, if any) already existed --
+        # this stash contributed nothing new to keep.
+        stash_path.unlink(missing_ok=True)
+    else:
+        original_name = name_path.read_text().strip() if name_path.is_file() else ""
+        safe_name = _safe_upload_filename(original_name, result.book_id)
+        new_path = paths.book_dir(result.book_id) / safe_name
+        ingest.relocate_source(iconn, result.book_id, new_path)
+    name_path.unlink(missing_ok=True)
 
     author_row = iconn.execute("SELECT author FROM book WHERE id = ?", (result.book_id,)).fetchone()
-    manifest = paths.manifest_for(result.sha256)
+    manifest = paths.manifest_for(result.book_id)
 
     return {
         "book_id": result.book_id,

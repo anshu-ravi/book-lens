@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
 	import type { Book, BookStatus, Position, SeriesSummary } from '$lib/types';
-	import { getPositions, getSeries, updateBook, updateProgress, ApiError } from '$lib/api';
+	import { deleteBook, getPositions, getSeries, updateBook, updateProgress, ApiError } from '$lib/api';
 	import { seriesName, slugify } from '$lib/utils/series-name';
 
 	const NEW_SERIES = '__new__';
@@ -38,6 +38,8 @@
 
 	let saving = $state(false);
 	let error = $state('');
+	let confirmingDelete = $state(false);
+	let deleting = $state(false);
 
 	let detailsSectionEl: HTMLElement | undefined = $state();
 	let readingSectionEl: HTMLElement | undefined = $state();
@@ -113,9 +115,6 @@
 	// Slugified, like the upload form does it: a typed "Red Rising" must land on
 	// the same shelf as the existing `red-rising`, not beside it.
 	const effectiveSeries = $derived(isNewSeries ? slugify(newSeriesName.trim()) : selectedSeries);
-	const isMoving = $derived(
-		!standalone && (effectiveSeries !== seriesId || bookOrder !== book.book_order),
-	);
 
 	const detailsChanged = $derived(
 		title.trim() !== book.title ||
@@ -160,6 +159,20 @@
 			error = e instanceof ApiError ? e.detail : 'Could not save changes.';
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function confirmDelete() {
+		error = '';
+		deleting = true;
+		try {
+			await deleteBook(book.id);
+			onsaved();
+		} catch (e) {
+			error = e instanceof ApiError ? e.detail : 'Could not delete this book.';
+			confirmingDelete = false;
+		} finally {
+			deleting = false;
 		}
 	}
 </script>
@@ -216,12 +229,6 @@
 				<label class="small-caps" for="edit-order">Position in series</label>
 				<input id="edit-order" type="number" min="1" bind:value={bookOrder} />
 			</fieldset>
-
-			{#if isMoving}
-				<p class="warning">
-					Changing this re-reads the book from its file — it takes a few seconds.
-				</p>
-			{/if}
 		</section>
 
 		<section class="modal-section" bind:this={readingSectionEl}>
@@ -301,17 +308,33 @@
 			<p class="error" role="alert">{error}</p>
 		{/if}
 
-		{#if saving && isMoving}
-			<div class="waiting">
-				<div class="waiting-bar"><div class="waiting-fill"></div></div>
-				<p class="waiting-copy">Saving…</p>
+		{#if confirmingDelete}
+			<div class="modal-actions confirm-row">
+				<p class="confirm-copy">Delete “{book.title}” and your progress? Your original file is untouched.</p>
+				<div class="confirm-buttons">
+					<button class="btn-ghost small-caps" onclick={() => (confirmingDelete = false)} disabled={deleting}>
+						Keep
+					</button>
+					<button class="btn-danger small-caps" onclick={confirmDelete} disabled={deleting}>
+						{deleting ? 'Deleting…' : 'Delete'}
+					</button>
+				</div>
 			</div>
 		{:else}
 			<div class="modal-actions">
-				<button class="btn-ghost small-caps" onclick={onclose} disabled={saving}>Cancel</button>
-				<button class="btn-primary small-caps" onclick={save} disabled={saving}>
-					{saving ? 'Saving…' : 'Save'}
+				<button
+					class="btn-delete small-caps"
+					onclick={() => (confirmingDelete = true)}
+					disabled={saving}
+				>
+					Delete book
 				</button>
+				<div class="modal-actions-right">
+					<button class="btn-ghost small-caps" onclick={onclose} disabled={saving}>Cancel</button>
+					<button class="btn-primary small-caps" onclick={save} disabled={saving}>
+						{saving ? 'Saving…' : 'Save'}
+					</button>
+				</div>
 			</div>
 		{/if}
 	</div>
@@ -404,12 +427,6 @@
 		color: var(--bone-muted);
 		margin: 0 0 var(--sp-5);
 	}
-	.warning {
-		font-style: italic;
-		font-size: var(--fs-13);
-		color: var(--brass);
-		margin: 0 0 var(--sp-2);
-	}
 	.status-group {
 		border: none;
 		padding: 0;
@@ -452,40 +469,14 @@
 		font-size: var(--fs-14);
 		margin-bottom: var(--sp-4);
 	}
-	.waiting {
-		display: flex;
-		flex-direction: column;
-		gap: var(--sp-3);
-	}
-	.waiting-bar {
-		height: 2px;
-		width: 100%;
-		background: var(--ink-hairline);
-		overflow: hidden;
-		border-radius: 1px;
-	}
-	.waiting-fill {
-		height: 100%;
-		width: 40%;
-		background: var(--brass);
-		animation: sweep 1.6s ease-in-out infinite;
-	}
-	@keyframes sweep {
-		0% {
-			transform: translateX(-100%);
-		}
-		100% {
-			transform: translateX(350%);
-		}
-	}
-	.waiting-copy {
-		font-style: italic;
-		color: var(--bone-muted);
-		font-size: var(--fs-14);
-	}
 	.modal-actions {
 		display: flex;
-		justify-content: flex-end;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--sp-4);
+	}
+	.modal-actions-right {
+		display: flex;
 		gap: var(--sp-4);
 	}
 	.btn-ghost,
@@ -511,6 +502,44 @@
 	}
 	.btn-primary:disabled,
 	.btn-ghost:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.btn-delete {
+		background: none;
+		border: none;
+		padding: var(--sp-2) 0;
+		color: var(--oxblood);
+		cursor: pointer;
+	}
+	.btn-delete:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+	.confirm-row {
+		flex-direction: column;
+		align-items: stretch;
+		gap: var(--sp-3);
+	}
+	.confirm-copy {
+		color: var(--bone);
+		font-size: var(--fs-14);
+		margin: 0;
+	}
+	.confirm-buttons {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--sp-4);
+	}
+	.btn-danger {
+		padding: var(--sp-2) var(--sp-4);
+		border-radius: var(--r-chip);
+		cursor: pointer;
+		background: var(--oxblood);
+		border: 1px solid var(--oxblood);
+		color: var(--bone);
+	}
+	.btn-danger:disabled {
 		opacity: 0.6;
 		cursor: default;
 	}

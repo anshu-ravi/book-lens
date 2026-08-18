@@ -56,6 +56,9 @@
 	async function onSaved() {
 		editing = null;
 		await load();
+		if (modalSeries) {
+			modalSeries = series.find((s) => s.id === modalSeries!.id) ?? null;
+		}
 	}
 
 	function closeSeriesModal() {
