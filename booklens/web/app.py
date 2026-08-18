@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
-import re
 import shutil
 import sqlite3
 from dataclasses import asdict
@@ -154,20 +153,6 @@ def _check_slot_free(
             status_code=409,
             detail=f"series {series_id!r} already has a book at position {book_order}",
         )
-
-
-_UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9 ._()\[\]-]+")
-
-
-def _safe_upload_filename(original: str, book_id: str) -> str:
-    """A filesystem-safe basename for the retained EPUB, derived from the
-    upload's own name; falls back to `<book_id>.epub` if that name is missing
-    or sanitises to nothing."""
-    name = Path(original).name if original else ""
-    name = _UNSAFE_FILENAME_RE.sub("_", name).strip(" ._")
-    if name and not name.lower().endswith(".epub"):
-        name = f"{name}.epub"
-    return name or f"{book_id}.epub"
 
 
 def _humanize_series_id(series_id: str) -> str:
@@ -326,10 +311,10 @@ def delete_book(book_id: str, dbs: DbDep):
     """Remove a book entirely: live sessions, index rows (cascading), progress row, and its data directory.
 
     Sessions are dropped first, before their `index.db` connections are
-    orphaned by the row disappearing underneath them. The data directory is
-    only ever removed after being confirmed to sit inside `paths.data_dir()`
-    -- a CLI-ingested book's `source_path` points outside it, at the user's
-    own read-only Books directory, and must never be touched.
+    orphaned by the row disappearing underneath them. The data directory --
+    including the library's own adopted copy of the EPUB -- is only ever
+    removed after being confirmed to sit inside `paths.data_dir()`; the
+    user's own original file, wherever it lives, is never touched.
     """
     iconn, pconn = dbs
     row = iconn.execute("SELECT 1 FROM book WHERE id = ?", (book_id,)).fetchone()
@@ -494,15 +479,14 @@ def commit_upload(body: UploadCommitRequest, dbs: DbDep):
         raise HTTPException(status_code=400, detail=f"could not shelve this EPUB: {exc}") from exc
 
     name_path = paths.upload_name_path(body.sha256)
-    if result.skipped:
-        # The book row (and its retained source, if any) already existed --
-        # this stash contributed nothing new to keep.
-        stash_path.unlink(missing_ok=True)
-    else:
+    if not result.skipped:
+        # `ingest_book` already adopted a copy of the stash under its own
+        # (hash) name; rename it to the name the user actually uploaded.
         original_name = name_path.read_text().strip() if name_path.is_file() else ""
-        safe_name = _safe_upload_filename(original_name, result.book_id)
-        new_path = paths.book_dir(result.book_id) / safe_name
-        ingest.relocate_source(iconn, result.book_id, new_path)
+        ingest.adopt_source(iconn, result.book_id, move=True, filename=original_name)
+    # The stash's own bytes are now redundant either way -- the book row (on
+    # skip) or the adopted copy (on a real ingest) is what's kept.
+    stash_path.unlink(missing_ok=True)
     name_path.unlink(missing_ok=True)
 
     author_row = iconn.execute("SELECT author FROM book WHERE id = ?", (result.book_id,)).fetchone()

@@ -144,6 +144,44 @@ def cmd_covers(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_adopt_sources(args: argparse.Namespace) -> int:
+    """Backfill the app's own copy of every book's EPUB into its library directory."""
+    iconn, _pconn = _open_dbs()
+    rows = iconn.execute("SELECT id FROM book ORDER BY series_id, book_order").fetchall()
+
+    results = []
+    for row in rows:
+        book_id = row["id"]
+        before = iconn.execute(
+            "SELECT source_path FROM book WHERE id = ?", (book_id,)
+        ).fetchone()["source_path"]
+
+        new_path = ingest.adopt_source(iconn, book_id)
+
+        if new_path is None:
+            entry = {"book_id": book_id, "outcome": "source_missing", "source_path": before}
+            results.append(entry)
+            if not args.json:
+                print(f"{book_id}: source file no longer at {before}")
+            continue
+
+        if str(new_path) == before:
+            entry = {"book_id": book_id, "outcome": "already_adopted", "source_path": before}
+            results.append(entry)
+            if not args.json:
+                print(f"{book_id}: already in the library ({before})")
+            continue
+
+        entry = {"book_id": book_id, "outcome": "adopted", "source_path": str(new_path)}
+        results.append(entry)
+        if not args.json:
+            print(f"{book_id}: adopted a copy at {new_path}")
+
+    if args.json:
+        print(json.dumps(results, indent=2))
+    return 0
+
+
 _COVER_EXT_MEDIA_TYPES = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
     ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
@@ -507,6 +545,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_covers.add_argument("--force", action="store_true", help="overwrite an existing cover")
     p_covers.add_argument("--json", action="store_true")
     p_covers.set_defaults(func=cmd_covers)
+
+    p_adopt = sub.add_parser(
+        "adopt-sources", help="backfill each book's own copy of its EPUB into the library"
+    )
+    p_adopt.add_argument("--json", action="store_true")
+    p_adopt.set_defaults(func=cmd_adopt_sources)
 
     p_reindex = sub.add_parser("reindex", help="rebuild index.db from its source EPUBs")
     p_reindex.add_argument("--json", action="store_true")

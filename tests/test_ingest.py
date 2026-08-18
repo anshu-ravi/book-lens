@@ -407,3 +407,139 @@ def test_global_seq_overflow_propagates_and_rolls_back(tmp_path, monkeypatch):
     assert iconn.execute("SELECT COUNT(*) c FROM book").fetchone()["c"] == 0
     assert iconn.execute("SELECT COUNT(*) c FROM chapter").fetchone()["c"] == 0
     assert iconn.execute("SELECT COUNT(*) c FROM para").fetchone()["c"] == 0
+
+
+# -- source adoption ------------------------------------------------------
+
+
+def test_ingest_adopts_a_copy_and_leaves_the_original_untouched(tmp_path):
+    src_dir = tmp_path / "readonly_source"
+    src_dir.mkdir()
+    epub = _make_epub(
+        src_dir / "adopt-me.epub", "Adopt Me Unique Book", [("Chapter 1", ["Text."])]
+    )
+    before = epub.read_bytes()
+    iconn = _iconn(tmp_path)
+
+    result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
+
+    adopted = paths.book_dir(result.book_id) / "adopt-me.epub"
+    assert adopted.is_file()
+    assert adopted.read_bytes() == before
+
+    book_row = iconn.execute(
+        "SELECT source_path FROM book WHERE id = ?", (result.book_id,)
+    ).fetchone()
+    assert book_row["source_path"] == str(adopted)
+
+    meta = json.loads((paths.book_dir(result.book_id) / "meta.json").read_text())
+    assert meta["source_path"] == str(adopted)
+
+    # The invariant that matters most: the user's own file is read-only.
+    assert epub.is_file()
+    assert epub.read_bytes() == before
+
+
+def test_reingest_with_force_does_not_duplicate_the_adopted_copy(tmp_path):
+    epub = _make_epub(tmp_path / "repeat.epub", "Repeat Unique Book", [("Chapter 1", ["Text."])])
+    iconn = _iconn(tmp_path)
+
+    result1 = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
+    result2 = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn, force=True)
+
+    assert result2.book_id == result1.book_id
+    book_dir = paths.book_dir(result1.book_id)
+    epub_copies = sorted(p.name for p in book_dir.glob("*.epub"))
+    assert epub_copies == ["repeat.epub"]  # no "repeat-2.epub" pile-up
+
+
+def test_ingest_still_works_when_source_file_is_later_deleted(tmp_path):
+    epub = _make_epub(tmp_path / "doomed.epub", "Doomed Unique Book", [("Chapter 1", ["Text."])])
+    iconn = _iconn(tmp_path)
+    result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
+
+    adopted = paths.book_dir(result.book_id) / "doomed.epub"
+    assert adopted.is_file()
+    epub.unlink()
+
+    # A fresh index (as if index.db were rebuilt) can still ingest this book,
+    # because the library kept its own copy.
+    iconn2 = db.connect_index(tmp_path / "index2.db")
+    result2 = ingest.ingest_book(
+        adopted, series_id="s1", book_order=1, iconn=iconn2, book_id=result.book_id
+    )
+    assert result2.skipped is False
+    assert result2.book_id == result.book_id
+
+
+def test_adopt_source_returns_none_for_a_dead_source_path_without_raising(tmp_path):
+    epub = _make_epub(tmp_path / "gone.epub", "Gone Unique Book", [("Chapter 1", ["Text."])])
+    iconn = _iconn(tmp_path)
+    result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
+
+    ghost = tmp_path / "ghost.epub"
+    iconn.execute("UPDATE book SET source_path = ? WHERE id = ?", (str(ghost), result.book_id))
+    iconn.commit()
+
+    assert ingest.adopt_source(iconn, result.book_id) is None
+
+    row = iconn.execute(
+        "SELECT source_path FROM book WHERE id = ?", (result.book_id,)
+    ).fetchone()
+    assert row["source_path"] == str(ghost)  # unchanged -- not this function's problem
+
+
+def test_adopt_source_unknown_book_id_raises(tmp_path):
+    iconn = _iconn(tmp_path)
+    with pytest.raises(ValueError):
+        ingest.adopt_source(iconn, "does-not-exist")
+
+
+def test_adopt_source_move_true_moves_rather_than_copies(tmp_path):
+    epub = _make_epub(
+        tmp_path / "move-src.epub", "Move Src Unique Book", [("Chapter 1", ["Text."])]
+    )
+    iconn = _iconn(tmp_path)
+    result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
+
+    # Point source_path at a second, still-external file so we can exercise
+    # `move=True` directly, independent of the ingest-time auto-adopt.
+    external = tmp_path / "external-copy.epub"
+    external.write_bytes(epub.read_bytes())
+    iconn.execute(
+        "UPDATE book SET source_path = ? WHERE id = ?", (str(external), result.book_id)
+    )
+    iconn.commit()
+
+    new_path = ingest.adopt_source(iconn, result.book_id, move=True)
+
+    assert new_path == paths.book_dir(result.book_id) / "external-copy.epub"
+    assert new_path.is_file()
+    assert not external.exists()  # moved, not copied
+
+
+def test_adopt_source_disambiguates_on_destination_collision(tmp_path):
+    epub = _make_epub(
+        tmp_path / "collide.epub", "Collide Unique Book", [("Chapter 1", ["Text."])]
+    )
+    iconn = _iconn(tmp_path)
+    result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
+
+    book_dir = paths.book_dir(result.book_id)
+    adopted = book_dir / "collide.epub"
+    assert adopted.is_file()  # from the ingest-time auto-adopt
+
+    # A second, genuinely different file that happens to sanitise to the
+    # same basename.
+    other = tmp_path / "other" / "collide.epub"
+    other.parent.mkdir()
+    other.write_bytes(b"a completely different epub's bytes")
+    iconn.execute("UPDATE book SET source_path = ? WHERE id = ?", (str(other), result.book_id))
+    iconn.commit()
+
+    new_path = ingest.adopt_source(iconn, result.book_id)
+
+    assert new_path == book_dir / "collide-2.epub"
+    assert adopted.is_file()  # untouched
+    assert new_path.is_file()
+    assert other.is_file()  # copy (default move=False), not move

@@ -736,10 +736,14 @@ def test_delete_drops_a_live_chat_session_on_the_book(tmp_path, monkeypatch):
     assert registry.get(sid) is None
 
 
-def test_delete_never_touches_a_source_file_outside_data_dir(tmp_path, monkeypatch):
-    """A CLI-ingested book's source_path points at the user's own read-only
-    Books directory (outside data/); deleting the book must never remove it."""
-    _setup(tmp_path, monkeypatch, status=None)
+def test_delete_never_touches_the_users_original_source_file(tmp_path, monkeypatch):
+    """Ingest adopts its own copy of the EPUB into data/; the user's own file
+    (outside data/) must never be touched, including on delete."""
+    monkeypatch.setenv("BOOKLENS_DATA_DIR", str(tmp_path / "data"))
+    original = _simple_epub(tmp_path)
+    rc = cli.main(["ingest", str(original), "--series", "s1"])
+    assert rc == 0
+    assert original.is_file()
 
     iconn = db.connect_index()
     source_path = Path(
@@ -747,9 +751,11 @@ def test_delete_never_touches_a_source_file_outside_data_dir(tmp_path, monkeypat
             "source_path"
         ]
     )
-    assert source_path.is_file()
-    assert not source_path.is_relative_to(paths.data_dir())
+    # The DB now points at the library's own adopted copy, not the original.
+    assert source_path.is_relative_to(paths.data_dir())
+    assert source_path != original
 
     resp = client.delete("/api/books/sample-book")
     assert resp.status_code == 204
-    assert source_path.is_file()
+    assert original.is_file()
+    assert not source_path.is_file()  # the app's own copy is fair game

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from booklens.extract import extract_book
 from booklens.extract.cover import _extension_for, extract_cover
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+_UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9 ._()\[\]-]+")
 
 # A short chapter isn't dropped -- section 3 rejects length-based exclusion --
 # but it's worth an operator's eye: this is the gap between real short
@@ -114,31 +116,99 @@ def _skip_result(iconn: sqlite3.Connection, sha256: str) -> IngestResult:
     )
 
 
-def relocate_source(iconn: sqlite3.Connection, book_id: str, new_path: str | Path) -> None:
-    """Move a book's retained source file to `new_path`, keeping `book.source_path`
-    and `meta.json` in agreement with where it actually is.
+def safe_source_filename(original: str, book_id: str) -> str:
+    """A filesystem-safe basename for a retained EPUB, derived from `original`;
+    falls back to `<book_id>.epub` if that name is missing or sanitises to
+    nothing."""
+    name = Path(original).name if original else ""
+    name = _UNSAFE_FILENAME_RE.sub("_", name).strip(" ._")
+    if name and not name.lower().endswith(".epub"):
+        name = f"{name}.epub"
+    return name or f"{book_id}.epub"
 
-    A no-op move (source already at `new_path`) still rewrites the records,
-    which is cheap and keeps this idempotent.
+
+def _is_within(path: Path, directory: Path) -> bool:
+    """Whether `path` resolves to somewhere inside `directory`."""
+    try:
+        path.resolve().relative_to(directory.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _files_equal(a: Path, b: Path) -> bool:
+    """Byte-for-byte comparison, used to tell a stale copy of the same
+    content from a genuine name collision."""
+    try:
+        if a.stat().st_size != b.stat().st_size:
+            return False
+        return a.read_bytes() == b.read_bytes()
+    except OSError:
+        return False
+
+
+def _unique_destination(dest: Path, current: Path) -> Path:
+    """`dest`, or a numeric-suffixed sibling if `dest` already holds different content.
+
+    A `dest` that already exists with byte-identical content to `current` is
+    reused rather than suffixed -- that's what keeps re-adopting the same
+    source idempotent instead of piling up `-2`, `-3`, ... copies of itself.
+    """
+    if not dest.exists() or dest.resolve() == current.resolve() or _files_equal(dest, current):
+        return dest
+    stem, suffix = dest.stem, dest.suffix
+    n = 2
+    while True:
+        candidate = dest.with_name(f"{stem}-{n}{suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def adopt_source(iconn: sqlite3.Connection, book_id: str, *, move: bool = False,
+                  filename: str | None = None) -> Path | None:
+    """Keep the app's own copy of a book's EPUB inside its library directory.
+
+    Idempotent: a `source_path` already inside `paths.book_dir(book_id)` is
+    returned unchanged (unless `filename` asks for a different basename). A
+    missing source file is not an error -- it returns `None` and changes
+    nothing, so a dead `source_path` can never fail an ingest.
     """
     row = iconn.execute("SELECT source_path FROM book WHERE id = ?", (book_id,)).fetchone()
     if row is None:
         raise ValueError(f"unknown book_id {book_id!r}")
 
-    old_path = Path(row["source_path"])
-    new_path = Path(new_path)
-    new_path.parent.mkdir(parents=True, exist_ok=True)
-    if old_path != new_path and old_path.is_file():
-        old_path.replace(new_path)
+    current = Path(row["source_path"])
+    bdir = paths.book_dir(book_id)
+    already_adopted = _is_within(current, bdir)
 
-    iconn.execute("UPDATE book SET source_path = ? WHERE id = ?", (str(new_path), book_id))
+    basename = safe_source_filename(filename if filename is not None else current.name, book_id)
+    if already_adopted and current.name == basename:
+        return current
+
+    if not current.is_file():
+        return None
+
+    dest = _unique_destination(bdir / basename, current)
+    if dest.resolve() == current.resolve():
+        return current
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if move:
+        shutil.move(str(current), str(dest))
+    else:
+        shutil.copy2(current, dest)
+
+    iconn.execute("UPDATE book SET source_path = ? WHERE id = ?", (str(dest), book_id))
     iconn.commit()
 
-    meta_path = paths.book_dir(book_id) / "meta.json"
+    meta_path = bdir / "meta.json"
     if meta_path.is_file():
         meta = json.loads(meta_path.read_text())
-        meta["source_path"] = str(new_path)
+        meta["source_path"] = str(dest)
         meta_path.write_text(json.dumps(meta, indent=2))
+
+    return dest
 
 
 def ingest_book(
@@ -312,6 +382,13 @@ def ingest_book(
     }
     (book_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     paths.digests_dir(resolved_book_id)  # created empty; Phase 1 fills it
+
+    try:
+        adopt_source(iconn, resolved_book_id)
+    except OSError:
+        # Out of disk, permissions, etc -- the ingest already succeeded, and
+        # `source_path` simply keeps pointing at the original file.
+        pass
 
     return IngestResult(
         book_id=resolved_book_id,

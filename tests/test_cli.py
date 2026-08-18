@@ -114,6 +114,73 @@ def test_ingest_second_run_is_skipped(data_dir, capsys):
     assert "skipped" in out
 
 
+# -- adopt-sources ---------------------------------------------------------
+
+
+def test_adopt_sources_reports_the_three_outcomes(data_dir, capsys):
+    from booklens import db as db_module
+    from booklens import paths
+
+    # A normal ingest is already self-contained -- ingest_book adopts its own
+    # copy as its final step.
+    already = _simple_epub(data_dir, name="already.epub", title="Already Book")
+    _run(["ingest", str(already), "--series", "s1"])
+    capsys.readouterr()
+
+    # A "legacy" row, as if ingested before this feature existed: its
+    # source_path is reset (by hand, simulating old data) to point outside
+    # the library, at a file that still exists.
+    external = _simple_epub(data_dir, name="external.epub", title="External Book")
+    _run(["ingest", str(external), "--series", "s2"])
+    capsys.readouterr()
+
+    iconn = db_module.connect_index(paths.index_db_path())
+    external_book_id = iconn.execute(
+        "SELECT id FROM book WHERE title = 'External Book'"
+    ).fetchone()["id"]
+    iconn.execute(
+        "UPDATE book SET source_path = ? WHERE id = ?", (str(external), external_book_id)
+    )
+    iconn.commit()
+
+    # A book whose source has vanished entirely -- original deleted, and
+    # (simulating data loss) its already-adopted copy deleted too.
+    doomed = _simple_epub(data_dir, name="doomed.epub", title="Doomed Book")
+    _run(["ingest", str(doomed), "--series", "s3"])
+    capsys.readouterr()
+    doomed_book_id = iconn.execute(
+        "SELECT id FROM book WHERE title = 'Doomed Book'"
+    ).fetchone()["id"]
+    adopted_doomed_copy = paths.book_dir(doomed_book_id) / "doomed.epub"
+    doomed.unlink()
+    adopted_doomed_copy.unlink()
+    # `adopt_source` only trusts the DB row, not the filesystem -- point it
+    # back at the now-deleted original so this book is genuinely sourceless.
+    iconn.execute(
+        "UPDATE book SET source_path = ? WHERE id = ?", (str(doomed), doomed_book_id)
+    )
+    iconn.commit()
+
+    rc = _run(["adopt-sources", "--json"])
+    assert rc == 0
+    results = json.loads(capsys.readouterr().out)
+    outcomes = {r["book_id"]: r["outcome"] for r in results}
+    assert outcomes[external_book_id] == "adopted"
+    assert outcomes["already-book"] == "already_adopted"
+    assert outcomes[doomed_book_id] == "source_missing"
+    assert external.is_file()  # adoption copies, never moves or deletes the user's file
+
+    # Safe to run again: the freshly-adopted book now reports
+    # "already_adopted", and nothing raises or duplicates.
+    rc = _run(["adopt-sources", "--json"])
+    assert rc == 0
+    results2 = json.loads(capsys.readouterr().out)
+    outcomes2 = {r["book_id"]: r["outcome"] for r in results2}
+    assert outcomes2[external_book_id] == "already_adopted"
+    assert outcomes2["already-book"] == "already_adopted"
+    assert outcomes2[doomed_book_id] == "source_missing"
+
+
 # -- reindex ----------------------------------------------------------------
 
 
@@ -139,10 +206,32 @@ def test_reindex_rebuilds_from_source_epubs(data_dir, capsys):
     assert books[0]["id"] == "sample-book"
 
 
-def test_reindex_aborts_and_restores_when_source_missing(data_dir, capsys):
+def test_reindex_survives_deletion_of_the_original_source_epub(data_dir, capsys):
+    """The point of ingest-time source adoption: moving or deleting the
+    user's own file no longer breaks reindex, because the library kept its
+    own copy."""
     epub = _simple_epub(data_dir, name="book.epub")
     _run(["ingest", str(epub), "--series", "s1"])
     capsys.readouterr()
+    epub.unlink()
+
+    rc = _run(["reindex", "--json"])
+    assert rc == 0
+
+
+def test_reindex_aborts_and_restores_when_source_missing(data_dir, capsys):
+    from booklens import db as db_module
+    from booklens import paths
+
+    epub = _simple_epub(data_dir, name="book.epub")
+    _run(["ingest", str(epub), "--series", "s1"])
+    capsys.readouterr()
+
+    # A genuinely sourceless book -- both the user's original and the
+    # library's own adopted copy are gone.
+    iconn = db_module.connect_index(paths.index_db_path())
+    book_id = iconn.execute("SELECT id FROM book").fetchone()["id"]
+    (paths.book_dir(book_id) / "book.epub").unlink()
     epub.unlink()
 
     rc = _run(["reindex", "--json"])
