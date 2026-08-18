@@ -42,9 +42,9 @@ def _open_dbs() -> tuple:
     return iconn, pconn
 
 
-def _manifest_for(sha256: str) -> dict:
+def _manifest_for(book_id: str) -> dict:
     """Load a book's ingest manifest, empty if it was never written."""
-    return paths.manifest_for(sha256)
+    return paths.manifest_for(book_id)
 
 
 # -- subcommands --------------------------------------------------------
@@ -74,7 +74,7 @@ def cmd_ingest(args: argparse.Namespace) -> int:
               f"label_tier={result.label_tier}")
         print(f"  documents={result.documents} chapters={result.chapters} "
               f"paragraphs={result.paragraphs}")
-        manifest = _manifest_for(result.sha256)
+        manifest = _manifest_for(result.book_id)
         excerpt_chapters = manifest.get("excerpt_chapters", [])
         if excerpt_chapters:
             print(f"  QUARANTINED as excerpt ({result.excerpt_paragraphs} paragraphs, "
@@ -99,14 +99,14 @@ def cmd_covers(args: argparse.Namespace) -> int:
     from booklens.ingest import _write_cover
 
     iconn, _pconn = _open_dbs()
-    rows = iconn.execute("SELECT id, sha256, source_path FROM book ORDER BY series_id, book_order").fetchall()
+    rows = iconn.execute("SELECT id, source_path FROM book ORDER BY series_id, book_order").fetchall()
 
     results = []
     for row in rows:
-        book_id, sha256, source_path = row["id"], row["sha256"], row["source_path"]
-        book_dir = paths.book_dir(sha256)
+        book_id, source_path = row["id"], row["source_path"]
+        book_dir = paths.book_dir(book_id)
 
-        if paths.cover_path(sha256) is not None and not args.force:
+        if paths.cover_path(book_id) is not None and not args.force:
             entry = {"book_id": book_id, "outcome": "skipped"}
             results.append(entry)
             if not args.json:
@@ -128,7 +128,7 @@ def cmd_covers(args: argparse.Namespace) -> int:
                 print(f"{book_id}: no cover found")
             continue
 
-        cover_file = paths.cover_path(sha256)
+        cover_file = paths.cover_path(book_id)
         size_kb = cover_file.stat().st_size // 1024
         media_type = _extension_for_report(cover_file)
         entry = {

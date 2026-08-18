@@ -306,7 +306,7 @@ def test_chapter_with_zero_paragraphs_is_skipped_not_stored(tmp_path):
     labels = {r["label"] for r in iconn.execute("SELECT label FROM chapter WHERE book_id = ?", (result.book_id,))}
     assert labels == {"Chapter 1"}
 
-    manifest = json.loads((paths.book_dir(result.sha256) / "manifest.json").read_text())
+    manifest = json.loads((paths.book_dir(result.book_id) / "manifest.json").read_text())
     assert "Cover" in manifest["skipped_empty_chapters"]
 
 
@@ -318,7 +318,7 @@ def test_meta_and_manifest_json_written(tmp_path):
     iconn = _iconn(tmp_path)
     result = ingest.ingest_book(epub, series_id="my-series", book_order=1, iconn=iconn)
 
-    book_dir = paths.book_dir(result.sha256)
+    book_dir = paths.book_dir(result.book_id)
     meta = json.loads((book_dir / "meta.json").read_text())
     assert meta["title"] == "Sample Book"
     assert meta["sha256"] == result.sha256
@@ -341,7 +341,7 @@ def test_short_body_chapters_are_flagged_but_still_stored(tmp_path):
     iconn = _iconn(tmp_path)
     result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
 
-    manifest = json.loads((paths.book_dir(result.sha256) / "manifest.json").read_text())
+    manifest = json.loads((paths.book_dir(result.book_id) / "manifest.json").read_text())
     flagged = {f["label"]: f for f in manifest["size_flags"]}
     assert flagged.keys() == {"Prologue", "Chapter 1", "Chapter 2"}
     for entry in flagged.values():
@@ -368,7 +368,7 @@ def test_long_body_chapter_is_not_flagged(tmp_path):
     iconn = _iconn(tmp_path)
     result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
 
-    manifest = json.loads((paths.book_dir(result.sha256) / "manifest.json").read_text())
+    manifest = json.loads((paths.book_dir(result.book_id) / "manifest.json").read_text())
     assert manifest["size_flags"] == []
 
 
@@ -376,7 +376,7 @@ def test_digests_dir_created_empty(tmp_path):
     epub = _simple_epub(tmp_path)
     iconn = _iconn(tmp_path)
     result = ingest.ingest_book(epub, series_id="s1", book_order=1, iconn=iconn)
-    ddir = paths.digests_dir(result.sha256)
+    ddir = paths.digests_dir(result.book_id)
     assert ddir.is_dir()
     assert list(ddir.iterdir()) == []
 

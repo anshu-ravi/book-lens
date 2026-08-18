@@ -160,3 +160,24 @@ and the same way needs to be undone to, if I move a book from finished to unread
 ![alt text](image-4.png)
 The reply and input question spacing seems out of wack. The chat need be spanning the full window - make it smaller (width)
 Also when I click on a citation I don't everything to be displayed at the btotom (i want a small pop up on the side correspondoing to only that citationb that stays on as long as my screen is there or until I click somewhere else)
+
+## Triage — 2026-08-18 (the More Notes Part 2 below)
+
+| Observation | Verdict | Where it went |
+| --- | --- | --- |
+| Renaming/moving a series demands a re-read, and the re-read fails | **fixed** | `reseq.rebase_book_order` — a move is a constant shift of the book's seq range and its ceiling, in one transaction, with no file access. `web/app.py:put_book` no longer calls ingest at all. `DECISIONS.md` section 25. |
+| CRUD is missing its D — no way to delete a book | **fixed** | `DELETE /api/books/{book_id}` plus a two-step confirm in `BookEditModal.svelte`. Drops live chat sessions, index rows (cascading), the progress row, and the book's directory — after confirming that directory is inside `data/`. Your own EPUB in `~/Documents/Books/` is never touched. |
+| Loading a book errors with `para_idx 1000 ... exceeds the supported bound` | **fixed** | The layout is now `book_order * 100_000_000_000 + spine_idx * 1_000_000 + para_idx`, defined once in `db.py` and imported by `extract/epub.py` instead of duplicated there. Both databases were rescaled in place — the transform is monotonic, so ceilings and ordering survive exactly. `DECISIONS.md` section 26. |
+| Why are files saved under hashes? | **fixed** | `data/books/<book_id>/`, with the uploaded EPUB kept under its original filename. The hash stays in `index.db` as the identity column — the database is the map. Only the pre-commit upload stash is still content-addressed, because no book exists yet at that point. `DECISIONS.md` section 26. |
+
+Found while fixing these, not reported: `POST /api/upload/commit` deleted the stashed EPUB after ingesting it, so `book.source_path` pointed at a file that no longer existed for every book added through the web UI — the real cause of the re-read failure above. Uploads are retained now. The five books already in the library that were uploaded before this change have no recoverable source file; re-uploading them is the fix, which delete now makes possible.
+
+Also worth knowing: the *Recursion* EPUB's navigation only names its five "BOOK ONE…FIVE" parts, not its chapters, so it ingests as six very large positions. That is this edition's structure, not a parser bug — but it means the reading-position picker for that book is coarse.
+
+## More NOtes Part 2 
+![alt text](image-5.png)
+This should be obvious, why does changing the name of the series require a re-read and it fails. This needs to be fixed 
+Also this should be obvious but why isn't CRUD followed - It is missing Delete - I should be able to delete a book from my library
+
+![alt text](image-6.png)
+I tried loading a book and I get this error - Needs to be fixed

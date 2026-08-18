@@ -135,3 +135,7 @@ export function deleteSession(sessionId: string): Promise<void> {
 export function getCredits(): Promise<CreditsResponse> {
 	return request<CreditsResponse>('/credits');
 }
+
+export function deleteBook(bookId: string): Promise<void> {
+	return request<void>(`/books/${encodeURIComponent(bookId)}`, { method: 'DELETE' });
+}

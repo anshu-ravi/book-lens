@@ -190,7 +190,7 @@ def test_ranges_stay_per_book_when_overlapping(tmp_path):
     progress.set_position(pconn, iconn, "b2", status="reading", chapter_idx=0)
     ranges = progress.readable_ranges(pconn, iconn)
     assert len(ranges) == 2
-    assert ("b1", 1_000_000, db.global_seq(2, 0, 0) + 500) in ranges
+    assert ("b1", db.book_floor_seq(1), db.global_seq(2, 0, 0) + 500) in ranges
 
 
 # -- 4. context() must not tunnel across a gap --------------------------------

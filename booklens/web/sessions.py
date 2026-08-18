@@ -62,6 +62,14 @@ class SessionRegistry:
         with self._lock:
             self._drop_locked(sid)
 
+    def drop_for_book(self, book_id: str) -> int:
+        """Close and remove every session pinned to a book, returning how many were dropped."""
+        with self._lock:
+            sids = [sid for sid, r in self._sessions.items() if r.book_id == book_id]
+            for sid in sids:
+                self._drop_locked(sid)
+            return len(sids)
+
     def _drop_locked(self, sid: str) -> None:
         """Caller must hold `_lock`."""
         record = self._sessions.pop(sid, None)

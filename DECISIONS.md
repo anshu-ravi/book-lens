@@ -538,7 +538,7 @@ Operational detail lives in `CLAUDE.md`, including the scoping note that stops a
 
 **Decision:** the three per-book actions are icons with hover/focus tooltips, not text links, and two of them lead to the same place. One modal owns a book entirely — title, author, standalone, series, position in series, status, and reading position — with the bookmark icon opening it focused on the reading section and the pencil on the details section.
 
-**Why one modal.** Status and reading position were in one dialog while series placement was in another, so "this book is really volume 2 and I've finished it" was two dialogs and two saves. They are all answers to *what is this book, and where am I in it*. The modal writes them in a fixed order — details first, then progress — because a series move re-ingests the book and rebases its ceiling, and a progress write landing before that would be rebased away.
+**Why one modal.** Status and reading position were in one dialog while series placement was in another, so "this book is really volume 2 and I've finished it" was two dialogs and two saves. They are all answers to *what is this book, and where am I in it*. The modal writes them in a fixed order — details first, then progress — because a series move shifts the book's seq range and its ceiling with it, and a progress write landing before that would be shifted away. (When this was written a move re-ingested the book; section 25 replaced that with arithmetic, but the ordering rule stands for the same reason.)
 
 **A quiet hazard closed on the way.** The edit modal's "new series" field passed the typed name through as the series id, so typing *Red Rising* would have created a shelf named `Red Rising` beside the existing `red-rising` — the same failure section 20 records, from the other direction. It now slugifies, as the upload form already did.
 
@@ -547,6 +547,30 @@ Operational detail lives in `CLAUDE.md`, including the scoping note that stops a
 **Decision (2026-08-17):** the chat thread is a centred 820px column, not the full window width; a citation opens a fixed-position panel anchored beside the chip that was clicked, and closes on an outside click, on Escape, or when the thread scrolls.
 
 **Why.** At full window width a right-aligned question and a left-aligned answer sat at opposite ends of a very wide row with nothing between them, and the citation drawer rendered inline at the bottom of the answer — so clicking a footnote in the second paragraph pushed the rest of the answer down and put the passage far from the sentence that cited it. A citation is a marginal note; it belongs beside the claim, and it should not move the prose it annotates.
+
+## 25. Moving a book is arithmetic, and a library that can add must be able to delete
+
+**Decision (2026-08-18):** changing a book's series or its position in that series never re-reads the EPUB. `global_seq` packs `book_order` into its high digits, so a move is a constant shift applied to every seq the book owns — its paragraphs, its chapters, and its ceiling — in one transaction. A change of series id alone touches no seq at all. `booklens/reseq.py` owns the operation; it is the second path allowed to write `global_seq`, and unlike ingest it can only translate values, never invent them.
+
+**Why this had to change.** A move was implemented as a forced re-ingest, on the reasoning that ingest is the only thing allowed to assign seq. That was defensible in principle and wrong in practice: it made a metadata edit depend on the EPUB still being where it was ingested from, and for every book uploaded through the web UI that file had already been deleted (see section 26). The failure surfaced as `source file no longer exists: data/uploads/<hash>.epub` when merging two shelves that should always have been one — a data-entry fix blocked by a storage bug.
+
+**Why the ceiling shifts with the book rather than being recomputed.** Recomputing it from status was the old behaviour, and it quietly destroyed information: a reader half-way through a book that moved got their ceiling re-derived from the chapter their position named, discarding the watermark. Shifting by the same delta is exact — the relation `global_seq <= ceiling` is preserved for every row, so the readable set after a move is the same set of paragraphs it was before, and the spoiler bound never moves relative to the text.
+
+**Decision:** `DELETE /api/books/{book_id}` removes a book: live chat sessions pinned to it first (they hold their own `index.db` connection), then the index rows, then the progress row, then the book's directory. The reader's own EPUB is never touched — only a copy the app made inside `data/`, and only after the path is confirmed to sit under `data_dir()`.
+
+**Why the guard is not paranoia.** The path being removed is derived from a database value and removed recursively. A containment check is the difference between deleting a book and deleting a library.
+
+## 26. Files are named for books, hashes are for identity
+
+**Decision (2026-08-18):** a book's generated state lives in `data/books/<book_id>/` — a readable directory named for the book — and an uploaded EPUB is kept there under the filename it arrived with. The content hash stays in `index.db` as `book.sha256`, which is what makes it an identity rather than a filename. The one place that stays content-addressed is the pre-commit upload stash: at inspect time no book row exists yet, and re-dropping the same file must land on the same entry.
+
+**Why.** Directories named `data/books/820eafa71658745b/` are unreadable by the only person who will ever look at them. Content-addressing was doing two jobs — dedupe and naming — and it is only good at the first. `book.id` is already unique, already slugified, already the namespace citations resolve in, and already stable across a title edit; it is a better name and requires no new mapping, because the database is the mapping.
+
+**The bug this was hiding.** `POST /api/upload/commit` deleted the stashed EPUB after ingesting it, leaving `book.source_path` pointing at a file that no longer existed. Nothing noticed until something tried to read the book again. The upload is now retained inside the book's own directory, and `reindex` and cover re-extraction work for uploaded books for the first time. Books uploaded before this change cannot be recovered — their bytes are gone — which is part of why delete had to ship alongside it.
+
+**Decision:** the `global_seq` layout is `book_order * 100_000_000_000 + spine_idx * 1_000_000 + para_idx`, and the bound is defined once in `db.py`.
+
+**Why.** The old layout allowed 1000 paragraphs per spine document and 1000 documents per book. A perfectly ordinary novel — one whose EPUB puts each of its five parts in a single document — has over a thousand paragraphs in one document, and ingest refused it with `para_idx 1000 ... exceeds the supported bound`. The extractor was enforcing its own copy of that bound, which is how a packing detail became an error message about a book. It now imports the constants it protects. Existing databases were rescaled in place rather than rebuilt: the transform is monotonic, so every ordering and every stored ceiling survives it exactly, and `progress.db` is user state that must never be regenerated from a source file that may not exist.
 
 ---
 

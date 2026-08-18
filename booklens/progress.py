@@ -229,7 +229,7 @@ def reset_ceiling(
 def readable_ranges(
     pconn: sqlite3.Connection, iconn: sqlite3.Connection
 ) -> list[tuple[str, int, int]]:
-    """Per-book readable spans: `(book_id, book_order * 1_000_000, ceiling_seq)`.
+    """Per-book readable spans: `(book_id, db.book_floor_seq(book_order), ceiling_seq)`.
 
     One span per book with progress, never merged across books -- `book_order`
     is only unique within a series, so two series can legitimately share the
@@ -248,7 +248,7 @@ def readable_ranges(
         ).fetchone()
         if book is None:
             continue  # book no longer in the index; nothing to contribute
-        book_start = book["book_order"] * 1_000_000
+        book_start = db.book_floor_seq(book["book_order"])
         if r["ceiling_seq"] < book_start:
             continue
         ranges.append((r["book_id"], book_start, r["ceiling_seq"]))

@@ -8,8 +8,8 @@ from booklens import db
 
 
 def test_global_seq_formula():
-    assert db.global_seq(1, 0, 0) == 1_000_000
-    assert db.global_seq(2, 78, 14) == 2_000_000 + 78_000 + 14
+    assert db.global_seq(1, 0, 0) == db.BOOK_STRIDE
+    assert db.global_seq(2, 78, 14) == 2 * db.BOOK_STRIDE + 78 * db.SPINE_STRIDE + 14
     assert db.global_seq(0, 0, 0) == 0
 
 
@@ -19,9 +19,9 @@ def test_global_seq_formula():
         (-1, 0, 0),
         (0, -1, 0),
         (0, 0, -1),
-        (0, 1000, 0),
-        (0, 0, 1000),
-        (0, 5000, 5000),
+        (0, db.MAX_SPINE_IDX, 0),
+        (0, 0, db.MAX_PARA_IDX),
+        (0, db.MAX_SPINE_IDX * 2, db.MAX_PARA_IDX * 2),
     ],
 )
 def test_global_seq_rejects_out_of_range(book_order, spine_idx, para_idx):
@@ -29,8 +29,23 @@ def test_global_seq_rejects_out_of_range(book_order, spine_idx, para_idx):
         db.global_seq(book_order, spine_idx, para_idx)
 
 
+def test_global_seq_accepts_a_thousand_paragraphs_in_one_spine_document():
+    """A single spine document with 1000+ paragraphs is ordinary; the widened
+    layout must not collide on it the way the old 1000/1000 layout did."""
+    assert db.global_seq(0, 5, 1000) == 5 * db.SPINE_STRIDE + 1000
+    assert db.global_seq(0, 1000, 5) == 1000 * db.SPINE_STRIDE + 5
+
+
 def test_global_seq_accepts_boundary_values():
-    assert db.global_seq(0, 999, 999) == 999_999
+    assert db.global_seq(0, db.MAX_SPINE_IDX - 1, db.MAX_PARA_IDX - 1) == (
+        (db.MAX_SPINE_IDX - 1) * db.SPINE_STRIDE + (db.MAX_PARA_IDX - 1)
+    )
+
+
+def test_book_floor_seq():
+    assert db.book_floor_seq(0) == 0
+    assert db.book_floor_seq(1) == db.BOOK_STRIDE
+    assert db.book_floor_seq(3) == 3 * db.BOOK_STRIDE
 
 
 def _make_index_conn(tmp_path):
@@ -93,10 +108,9 @@ def test_para_fts_insert_sync(tmp_path):
     conn = _make_index_conn(tmp_path)
     _insert_book(conn)
     conn.execute(
-        """
-        INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text)
-        VALUES ('b1', 0, 0, 1000000, 0, 'Chapter 1', 'the quick brown fox')
-        """
+        "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text) "
+        "VALUES ('b1', 0, 0, ?, 0, 'Chapter 1', 'the quick brown fox')",
+        (db.global_seq(1, 0, 0),),
     )
     conn.commit()
     hits = conn.execute("SELECT rowid FROM para_fts WHERE para_fts MATCH 'quick'").fetchall()
@@ -107,10 +121,9 @@ def test_para_fts_delete_sync(tmp_path):
     conn = _make_index_conn(tmp_path)
     _insert_book(conn)
     conn.execute(
-        """
-        INSERT INTO para(id, book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text)
-        VALUES (1, 'b1', 0, 0, 1000000, 0, 'Chapter 1', 'the quick brown fox')
-        """
+        "INSERT INTO para(id, book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text) "
+        "VALUES (1, 'b1', 0, 0, ?, 0, 'Chapter 1', 'the quick brown fox')",
+        (db.global_seq(1, 0, 0),),
     )
     conn.commit()
     assert len(conn.execute("SELECT rowid FROM para_fts WHERE para_fts MATCH 'quick'").fetchall()) == 1
@@ -124,10 +137,9 @@ def test_para_fts_update_sync(tmp_path):
     conn = _make_index_conn(tmp_path)
     _insert_book(conn)
     conn.execute(
-        """
-        INSERT INTO para(id, book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text)
-        VALUES (1, 'b1', 0, 0, 1000000, 0, 'Chapter 1', 'the quick brown fox')
-        """
+        "INSERT INTO para(id, book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text) "
+        "VALUES (1, 'b1', 0, 0, ?, 0, 'Chapter 1', 'the quick brown fox')",
+        (db.global_seq(1, 0, 0),),
     )
     conn.commit()
 
@@ -142,10 +154,9 @@ def test_para_book_id_foreign_key_cascade(tmp_path):
     conn = _make_index_conn(tmp_path)
     _insert_book(conn)
     conn.execute(
-        """
-        INSERT INTO para(id, book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text)
-        VALUES (1, 'b1', 0, 0, 1000000, 0, 'Chapter 1', 'hello world')
-        """
+        "INSERT INTO para(id, book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text) "
+        "VALUES (1, 'b1', 0, 0, ?, 0, 'Chapter 1', 'hello world')",
+        (db.global_seq(1, 0, 0),),
     )
     conn.commit()
     conn.execute("DELETE FROM book WHERE id = 'b1'")
@@ -164,18 +175,16 @@ def test_para_global_seq_unique(tmp_path):
     conn = _make_index_conn(tmp_path)
     _insert_book(conn)
     conn.execute(
-        """
-        INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text)
-        VALUES ('b1', 0, 0, 1000000, 0, 'Chapter 1', 'x')
-        """
+        "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text) "
+        "VALUES ('b1', 0, 0, ?, 0, 'Chapter 1', 'x')",
+        (db.global_seq(1, 0, 0),),
     )
     conn.commit()
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
-            """
-            INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text)
-            VALUES ('b1', 0, 1, 1000000, 0, 'Chapter 1', 'y')
-            """
+            "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, chapter_label, text) "
+            "VALUES ('b1', 0, 1, ?, 0, 'Chapter 1', 'y')",
+            (db.global_seq(1, 0, 0),),
         )
 
 
@@ -271,18 +280,20 @@ def test_para_unique_is_scoped_per_book_not_global(tmp_path):
         VALUES ('b1', 'sha-b', 'B', NULL, '/b.epub', 'sB', 1, 'S1', 'L1', '2026-01-01')
         """
     )
+    shared_seq = db.global_seq(1, 0, 0)
     for book_id in ("a1", "b1"):
         conn.execute(
             "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, "
-            "chapter_label, text) VALUES (?, 0, 0, 1000000, 0, 'Chapter 0', 'text')",
-            (book_id,),
+            "chapter_label, text) VALUES (?, 0, 0, ?, 0, 'Chapter 0', 'text')",
+            (book_id, shared_seq),
         )
-    conn.commit()  # must not raise: both books legitimately share global_seq=1_000_000
+    conn.commit()  # must not raise: both books legitimately share the same global_seq
 
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(
             "INSERT INTO para(book_id, spine_idx, para_idx, global_seq, chapter_idx, "
-            "chapter_label, text) VALUES ('a1', 0, 1, 1000000, 0, 'Chapter 0', 'dup')"
+            "chapter_label, text) VALUES ('a1', 0, 1, ?, 0, 'Chapter 0', 'dup')",
+            (shared_seq,),
         )
 
 
@@ -359,3 +370,151 @@ def test_book_standalone_column_migrates_in_place(tmp_path):
     assert "standalone" in cols
     row = reopened.execute("SELECT standalone FROM book WHERE id = 'b1'").fetchone()
     assert row["standalone"] == 0
+
+
+# -- seq layout migration (SCHEMA_VERSION=7: widened from 1000/1000) ----------
+
+
+def _legacy_seq(book_order: int, spine_idx: int, para_idx: int) -> int:
+    """The old 1000/1000-layout formula, reconstructed for test fixtures only."""
+    return book_order * 1_000_000 + spine_idx * 1000 + para_idx
+
+
+def test_index_seq_layout_migrates_in_place(tmp_path):
+    """A database written under the old 1000/1000 layout (user_version 0) is
+    rescaled to the new layout on the next connect, exactly and idempotently."""
+    db_path = tmp_path / "index.db"
+    raw = sqlite3.connect(str(db_path))
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA foreign_keys = ON")
+    raw.executescript(db._INDEX_DDL)
+    raw.execute(
+        """
+        INSERT INTO book(id, sha256, title, author, source_path, series_id,
+                          book_order, sequence_tier, label_tier, ingested_at)
+        VALUES ('b1', 'sha-b1', 'A Book', NULL, '/a.epub', 's1', 2, 'L1', 'L1', 'now')
+        """
+    )
+    # Two paragraphs, in reading order, with legacy-layout seq values.
+    raw.execute(
+        "INSERT INTO para(id, book_id, spine_idx, para_idx, global_seq, chapter_idx, "
+        "chapter_label, text) VALUES (1, 'b1', 0, 0, ?, 0, 'Chapter 1', 'first paragraph')",
+        (_legacy_seq(2, 0, 0),),
+    )
+    raw.execute(
+        "INSERT INTO para(id, book_id, spine_idx, para_idx, global_seq, chapter_idx, "
+        "chapter_label, text) VALUES (2, 'b1', 0, 1, ?, 0, 'Chapter 1', 'second paragraph')",
+        (_legacy_seq(2, 0, 1),),
+    )
+    raw.execute(
+        "INSERT INTO chapter(book_id, chapter_idx, label, start_seq, end_seq) "
+        "VALUES ('b1', 0, 'Chapter 1', ?, ?)",
+        (_legacy_seq(2, 0, 0), _legacy_seq(2, 0, 1)),
+    )
+    raw.execute(
+        "INSERT INTO digest(book_id, level, chapter_idx, source_start_seq, source_end_seq, "
+        "path, generator, prompt_hash, schema_version, created_at) "
+        "VALUES ('b1', 'chapter', 0, ?, ?, 'p', 'g', 'h', 1, 'now')",
+        (_legacy_seq(2, 0, 0), _legacy_seq(2, 0, 1)),
+    )
+    raw.execute(
+        "INSERT INTO entity_node(id, book_id, designator, node_kind, first_seq, cite_para_id) "
+        "VALUES (1, 'b1', 'Someone', 'named', ?, 1)",
+        (_legacy_seq(2, 0, 0),),
+    )
+    raw.execute(
+        "INSERT INTO entity_edge(id, src_node_id, dst_node_id, edge_type, revealed_at_seq) "
+        "VALUES (1, 1, 1, 'stated', ?)",
+        (_legacy_seq(2, 0, 1),),
+    )
+    raw.execute(
+        "INSERT INTO entity_attr(id, node_id, attr_kind, value, first_seq) "
+        "VALUES (1, 1, 'k', 'v', ?)",
+        (_legacy_seq(2, 0, 0),),
+    )
+    assert raw.execute("PRAGMA user_version").fetchone()[0] == 0
+    raw.commit()
+    raw.close()
+
+    conn = db.connect_index(db_path)
+
+    expected_first = db.global_seq(2, 0, 0)
+    expected_second = db.global_seq(2, 0, 1)
+
+    paras = {
+        r["id"]: r["global_seq"]
+        for r in conn.execute("SELECT id, global_seq FROM para ORDER BY id")
+    }
+    assert paras == {1: expected_first, 2: expected_second}
+    # Ordering is preserved through the rescale.
+    assert paras[1] < paras[2]
+
+    chapter = conn.execute("SELECT start_seq, end_seq FROM chapter WHERE book_id = 'b1'").fetchone()
+    assert (chapter["start_seq"], chapter["end_seq"]) == (expected_first, expected_second)
+
+    digest = conn.execute(
+        "SELECT source_start_seq, source_end_seq FROM digest WHERE book_id = 'b1'"
+    ).fetchone()
+    assert (digest["source_start_seq"], digest["source_end_seq"]) == (expected_first, expected_second)
+
+    node = conn.execute("SELECT first_seq FROM entity_node WHERE id = 1").fetchone()
+    assert node["first_seq"] == expected_first
+
+    edge = conn.execute("SELECT revealed_at_seq FROM entity_edge WHERE id = 1").fetchone()
+    assert edge["revealed_at_seq"] == expected_second
+
+    attr = conn.execute("SELECT first_seq FROM entity_attr WHERE id = 1").fetchone()
+    assert attr["first_seq"] == expected_first
+
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
+
+    # FTS still finds the migrated rows -- the UPDATE trigger fired correctly.
+    hits = conn.execute("SELECT rowid FROM para_fts WHERE para_fts MATCH 'first'").fetchall()
+    assert len(hits) == 1
+
+    conn.close()
+
+    # A second reopen is a no-op: nothing changes, nothing raises.
+    reopened = db.connect_index(db_path)
+    paras_again = {
+        r["id"]: r["global_seq"]
+        for r in reopened.execute("SELECT id, global_seq FROM para ORDER BY id")
+    }
+    assert paras_again == paras
+    assert reopened.execute("PRAGMA user_version").fetchone()[0] == 7
+
+
+def test_progress_seq_layout_migrates_in_place(tmp_path):
+    """book_progress.ceiling_seq is rescaled the same way; a 0 (unread) ceiling
+    is left untouched by the migration."""
+    db_path = tmp_path / "progress.db"
+    raw = sqlite3.connect(str(db_path))
+    raw.row_factory = sqlite3.Row
+    raw.execute("PRAGMA foreign_keys = ON")
+    raw.executescript(db._PROGRESS_DDL)
+    raw.execute(
+        "INSERT INTO book_progress(book_id, status, position_chapter_idx, ceiling_seq, updated_at) "
+        "VALUES ('b1', 'reading', 0, ?, 'now')",
+        (_legacy_seq(2, 0, 1),),
+    )
+    raw.execute(
+        "INSERT INTO book_progress(book_id, status, position_chapter_idx, ceiling_seq, updated_at) "
+        "VALUES ('b2', 'unread', NULL, 0, 'now')"
+    )
+    raw.commit()
+    raw.close()
+
+    conn = db.connect_progress(db_path)
+
+    b1 = conn.execute("SELECT ceiling_seq FROM book_progress WHERE book_id = 'b1'").fetchone()
+    assert b1["ceiling_seq"] == db.global_seq(2, 0, 1)
+
+    b2 = conn.execute("SELECT ceiling_seq FROM book_progress WHERE book_id = 'b2'").fetchone()
+    assert b2["ceiling_seq"] == 0  # unread stays 0, not rescaled
+
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
+
+    conn.close()
+    reopened = db.connect_progress(db_path)
+    b1_again = reopened.execute("SELECT ceiling_seq FROM book_progress WHERE book_id = 'b1'").fetchone()
+    assert b1_again["ceiling_seq"] == db.global_seq(2, 0, 1)
