@@ -8,12 +8,16 @@ A refetchable cache like `index.db`, but kept out of both `index.db` (which
 from __future__ import annotations
 
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable, Sequence
 
 from booklens import paths
-from booklens.goodreads.feed import GoodreadsBook, ShelfFetch, fetch_all_shelves
+from booklens.goodreads.enrich import fetch_genres, fetch_review_rows
+from booklens.goodreads.feed import (GoodreadsBook, GoodreadsError,
+                                      ShelfFetch, fetch_all_shelves)
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS goodreads_book(
@@ -79,6 +83,29 @@ def init(conn: sqlite3.Connection) -> None:
     """Create the schema if it doesn't already exist."""
     conn.executescript(_DDL)
     conn.commit()
+    _apply_additive_migrations(conn)
+
+
+# Enrichment columns added after the initial schema -- guarded ALTERs, one
+# per column, so an existing goodreads.db picks them up without a rebuild.
+_ADDITIVE_COLUMNS = {
+    "read_count": "INTEGER",
+    "genres": "TEXT",
+    "genres_fetched_at": "TEXT",
+    "enriched_at": "TEXT",
+}
+
+
+def _apply_additive_migrations(conn: sqlite3.Connection) -> None:
+    """In-place migration for the cookie-enrichment columns."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(goodreads_book)")}
+    changed = False
+    for name, decl in _ADDITIVE_COLUMNS.items():
+        if name not in cols:
+            conn.execute(f"ALTER TABLE goodreads_book ADD COLUMN {name} {decl}")
+            changed = True
+    if changed:
+        conn.commit()
 
 
 def get_setting(conn: sqlite3.Connection, key: str) -> str | None:
@@ -230,3 +257,115 @@ def all_books(conn: sqlite3.Connection) -> list[GoodreadsBook]:
     """Every cached book, across all shelves."""
     rows = conn.execute("SELECT * FROM goodreads_book ORDER BY shelf, title").fetchall()
     return [_row_to_book(r) for r in rows]
+
+
+# -- cookie-authenticated enrichment ------------------------------------------
+
+
+@dataclass(frozen=True)
+class EnrichReport:
+    rows_updated: int
+    start_dates_found: int
+    genres_fetched: int
+    genres_skipped: int
+
+
+def apply_review_rows(conn: sqlite3.Connection, rows: Iterable[ReviewRow]) -> int:
+    """Fold authenticated review-table data into `goodreads_book`, additive only.
+
+    Sets `date_started`, `read_count`, and `enriched_at` on every matching
+    row; fills `date_read` only where it is currently null. Never deletes --
+    a row with no matching `review_id` is simply left untouched.
+    """
+    now = _now()
+    updated = 0
+    for row in rows:
+        cur = conn.execute(
+            """
+            UPDATE goodreads_book SET
+                date_started = ?,
+                read_count = ?,
+                date_read = COALESCE(date_read, ?),
+                enriched_at = ?
+            WHERE review_id = ?
+            """,
+            (row.date_started, row.read_count, row.date_read, now, row.review_id),
+        )
+        updated += cur.rowcount
+    conn.commit()
+    return updated
+
+
+def books_needing_genres(conn: sqlite3.Connection, *, refresh: bool = False) -> list[tuple[str, str]]:
+    """`(book_id, title)` for every book missing a genre fetch, or all books when `refresh`."""
+    if refresh:
+        rows = conn.execute(
+            "SELECT DISTINCT book_id, title FROM goodreads_book ORDER BY title"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT DISTINCT book_id, title FROM goodreads_book "
+            "WHERE genres_fetched_at IS NULL ORDER BY title"
+        ).fetchall()
+    return [(r["book_id"], r["title"]) for r in rows]
+
+
+def apply_genres(conn: sqlite3.Connection, book_id: str, genres: Sequence[str]) -> None:
+    """Persist one book's genre list, stamping `genres_fetched_at` even on an empty result."""
+    conn.execute(
+        "UPDATE goodreads_book SET genres = ?, genres_fetched_at = ? WHERE book_id = ?",
+        (",".join(genres), _now(), book_id),
+    )
+    conn.commit()
+
+
+def enrich(
+    conn: sqlite3.Connection,
+    user_id: str,
+    *,
+    cookie: str | None = None,
+    genres: bool = True,
+    refresh_genres: bool = False,
+    throttle_seconds: float = 3.0,
+    limit: int | None = None,
+    client=None,
+) -> EnrichReport:
+    """Run the review-table pass, then the genre pass, committing incrementally.
+
+    Raises `GoodreadsAuthError` (propagated from `fetch_review_rows`) if the
+    cookie is missing or expired -- the review-table pass either fully
+    succeeds or the whole call fails, since a partial page set can't be
+    trusted. The genre pass is best-effort per book: throttled at
+    `throttle_seconds` between requests, and it stops cleanly (returning
+    what was gathered so far) on the first non-200 response rather than
+    hammering a failing endpoint.
+    """
+    rows = fetch_review_rows(user_id, cookie=cookie, client=client)
+    rows_updated = apply_review_rows(conn, rows)
+    start_dates_found = sum(1 for r in rows if r.date_started is not None)
+
+    genres_fetched = 0
+    genres_skipped = 0
+    if genres:
+        targets = books_needing_genres(conn, refresh=refresh_genres)
+        if limit is not None:
+            targets = targets[:limit]
+        for i, (book_id, _title) in enumerate(targets):
+            if i > 0:
+                time.sleep(throttle_seconds)
+            try:
+                fetched = fetch_genres(book_id, cookie=cookie, client=client)
+            except GoodreadsError:
+                break
+            apply_genres(conn, book_id, fetched)
+            if fetched:
+                genres_fetched += 1
+            else:
+                genres_skipped += 1
+
+    return EnrichReport(
+        rows_updated=rows_updated,
+        start_dates_found=start_dates_found,
+        genres_fetched=genres_fetched,
+        genres_skipped=genres_skipped,
+    )

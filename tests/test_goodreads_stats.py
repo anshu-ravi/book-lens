@@ -101,11 +101,19 @@ def test_compute_stats_empty_cache_shape(tmp_path, monkeypatch):
             "longest": None,
             "shortest": None,
         },
-        "coverage": {"read_total": 0, "with_date_read": 0},
+        "coverage": {
+            "read_total": 0, "with_date_read": 0, "with_date_started": 0, "with_genres": 0,
+        },
         "by_month": [],
         "top_authors": [],
         "by_decade": [],
         "series": [],
+        "durations": {
+            "count": 0, "median_days": None, "mean_days": None,
+            "fastest": None, "slowest": None, "books": [],
+        },
+        "genres": [],
+        "rating_by_genre": [],
     }
 
 
@@ -220,7 +228,12 @@ def test_coverage_counts_read_books_with_and_without_date_read(tmp_path, monkeyp
     finally:
         conn.close()
 
-    assert stats["coverage"] == {"read_total": 2, "with_date_read": 1}
+    assert stats["coverage"] == {
+        "read_total": 2,
+        "with_date_read": 1,
+        "with_date_started": 0,
+        "with_genres": 0,
+    }
 
 
 # -- by_month gap filling ------------------------------------------------------

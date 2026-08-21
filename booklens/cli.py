@@ -575,6 +575,51 @@ def cmd_goodreads_sync(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_goodreads_enrich(args: argparse.Namespace) -> int:
+    """Cookie-authenticated enrichment pass: start dates, read counts, and genres."""
+    from booklens.goodreads import GoodreadsAuthError, GoodreadsError, connect, enrich
+
+    conn = connect()
+    try:
+        user_id = _goodreads_user_id(args, conn)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        report = enrich(
+            conn,
+            user_id,
+            genres=not args.no_genres,
+            refresh_genres=args.refresh_genres,
+            throttle_seconds=args.throttle,
+            limit=args.limit,
+        )
+    except GoodreadsAuthError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except GoodreadsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(
+            {
+                "rows_updated": report.rows_updated,
+                "start_dates_found": report.start_dates_found,
+                "genres_fetched": report.genres_fetched,
+                "genres_skipped": report.genres_skipped,
+            },
+            indent=2,
+        ))
+        return 0
+
+    print(f"review rows updated: {report.rows_updated} (start dates found: {report.start_dates_found})")
+    if not args.no_genres:
+        print(f"genres fetched: {report.genres_fetched}, skipped (empty result): {report.genres_skipped}")
+    return 0
+
+
 def cmd_goodreads_shelf(args: argparse.Namespace) -> int:
     """List cached books on one shelf, or every shelf when the shelf is `all`."""
     from dataclasses import asdict
@@ -746,6 +791,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_gr_sync.add_argument("--json", action="store_true")
     p_gr_sync.set_defaults(func=cmd_goodreads_sync)
+
+    p_gr_enrich = goodreads_sub.add_parser(
+        "enrich", help="cookie-authenticated enrichment pass: start dates, read counts, genres"
+    )
+    p_gr_enrich.add_argument(
+        "--user-id", default=None,
+        help="Goodreads numeric user id (falls back to GOODREADS_USER_ID)",
+    )
+    p_gr_enrich.add_argument("--no-genres", action="store_true", help="skip the genre-fetch pass")
+    p_gr_enrich.add_argument(
+        "--refresh-genres", action="store_true",
+        help="refetch genres for every cached book, not just those missing them",
+    )
+    p_gr_enrich.add_argument(
+        "--limit", type=int, default=None, help="cap the number of books to fetch genres for"
+    )
+    p_gr_enrich.add_argument(
+        "--throttle", type=float, default=3.0, help="seconds to sleep between genre requests"
+    )
+    p_gr_enrich.add_argument("--json", action="store_true")
+    p_gr_enrich.set_defaults(func=cmd_goodreads_enrich)
 
     p_gr_shelf = goodreads_sub.add_parser("shelf", help="list cached books on one shelf")
     p_gr_shelf.add_argument("shelf", help="'read', 'currently-reading', 'to-read', a configured DNF shelf, or 'all'")

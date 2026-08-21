@@ -10,9 +10,20 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import statistics
 from collections import Counter, defaultdict
+from datetime import date
 
 _SERIES_RE = re.compile(r"^(?P<base>.*)\s\((?P<series>[^,()]+),\s*#(?P<number>\d+(?:\.\d+)?)\)\s*$")
+
+# Goodreads mixes these into a book's genre/shelf list; none of them are a
+# genre, so they'd otherwise dominate every book's top-3 as "the" genre.
+GENRE_DENYLIST = frozenset(
+    s.lower() for s in (
+        "Audiobook", "Audiobooks", "Ebook", "Ebooks", "Book Club",
+        "Owned", "Currently Reading", "To Read", "Favorites",
+    )
+)
 
 
 def parse_series(title: str) -> tuple[str, str] | None:
@@ -80,7 +91,95 @@ def _totals(read_rows: list[sqlite3.Row], conn: sqlite3.Connection) -> dict:
 
 def _coverage(read_rows: list[sqlite3.Row]) -> dict:
     with_date_read = sum(1 for r in read_rows if r["date_read"])
-    return {"read_total": len(read_rows), "with_date_read": with_date_read}
+    with_date_started = sum(1 for r in read_rows if r["date_started"])
+    with_genres = sum(1 for r in read_rows if r["genres"])
+    return {
+        "read_total": len(read_rows),
+        "with_date_read": with_date_read,
+        "with_date_started": with_date_started,
+        "with_genres": with_genres,
+    }
+
+
+def _to_date(iso: str | None) -> date | None:
+    """A full `YYYY-MM-DD` prefix as a `date`, or `None` for anything shorter or unparseable.
+
+    Deliberately excludes month-only/year-only enrichment dates -- a
+    duration needs day precision on both ends.
+    """
+    if not iso or len(iso) < 10:
+        return None
+    try:
+        return date.fromisoformat(iso[:10])
+    except ValueError:
+        return None
+
+
+def _durations(read_rows: list[sqlite3.Row]) -> dict:
+    entries = []
+    for r in read_rows:
+        started = _to_date(r["date_started"])
+        finished = _to_date(r["date_read"])
+        if started is None or finished is None:
+            continue
+        days = (finished - started).days
+        if days < 0:
+            continue
+        entries.append({
+            "title": r["title"], "days": days,
+            "pages": r["num_pages"], "rating": r["user_rating"],
+        })
+
+    if not entries:
+        return {
+            "count": 0, "median_days": None, "mean_days": None,
+            "fastest": None, "slowest": None, "books": [],
+        }
+
+    entries.sort(key=lambda e: e["days"])
+    days_list = [e["days"] for e in entries]
+    return {
+        "count": len(entries),
+        "median_days": round(statistics.median(days_list)),
+        "mean_days": round(sum(days_list) / len(days_list), 1),
+        "fastest": {"title": entries[0]["title"], "days": entries[0]["days"]},
+        "slowest": {"title": entries[-1]["title"], "days": entries[-1]["days"]},
+        "books": entries,
+    }
+
+
+def _top3_genres(genres_field: str | None) -> list[str]:
+    """The book's genres, denylist-filtered, capped at 3, in Goodreads' vote order."""
+    if not genres_field:
+        return []
+    names = [g.strip() for g in genres_field.split(",") if g.strip()]
+    return [g for g in names if g.lower() not in GENRE_DENYLIST][:3]
+
+
+def _genres(read_rows: list[sqlite3.Row]) -> list[dict]:
+    counts: Counter[str] = Counter()
+    for r in read_rows:
+        for g in _top3_genres(r["genres"]):
+            counts[g] += 1
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [{"genre": g, "books": n} for g, n in ranked[:12]]
+
+
+def _rating_by_genre(read_rows: list[sqlite3.Row]) -> list[dict]:
+    ratings: dict[str, list[int]] = defaultdict(list)
+    for r in read_rows:
+        if r["user_rating"] is None:
+            continue
+        for g in _top3_genres(r["genres"]):
+            ratings[g].append(r["user_rating"])
+
+    result = [
+        {"genre": g, "avg_rating": round(sum(vals) / len(vals), 2), "books": len(vals)}
+        for g, vals in ratings.items()
+        if len(vals) >= 3
+    ]
+    result.sort(key=lambda e: -e["avg_rating"])
+    return result
 
 
 def _month_key(iso: str) -> str:
@@ -162,6 +261,10 @@ def _series(conn: sqlite3.Connection) -> list[dict]:
             "shelves": sorted(data["shelves"]),
         }
         for name, data in grouped.items()
+        # A single unread TBR book that happens to be book one of a series
+        # isn't a series the reader is tracking -- drop it. A series with
+        # any read progress, or more than one volume owned, stays.
+        if not (data["total"] == 1 and data["read"] == 0)
     ]
 
     def sort_key(entry: dict) -> tuple[int, str]:
@@ -186,4 +289,7 @@ def compute_stats(conn: sqlite3.Connection) -> dict:
         "top_authors": _top_authors(read_rows),
         "by_decade": _by_decade(read_rows),
         "series": _series(conn),
+        "durations": _durations(read_rows),
+        "genres": _genres(read_rows),
+        "rating_by_genre": _rating_by_genre(read_rows),
     }
