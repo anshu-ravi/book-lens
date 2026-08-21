@@ -231,3 +231,52 @@ export interface GoodreadsSettingsUpdate {
 	user_id: string;
 	dnf_shelf: string | null;
 }
+
+export interface GoodreadsStatsTotals {
+	books_read: number;
+	pages_read: number;
+	avg_pages: number;
+	dnf: number;
+	want_to_read: number;
+	currently_reading: number;
+	backlog_pages: number;
+	longest: { title: string; num_pages: number } | null;
+	shortest: { title: string; num_pages: number } | null;
+}
+
+export interface GoodreadsStatsCoverage {
+	read_total: number;
+	with_date_read: number;
+}
+
+export interface GoodreadsStatsMonth {
+	month: string;
+	books: number;
+	pages: number;
+}
+
+export interface GoodreadsStatsAuthor {
+	author: string;
+	books: number;
+}
+
+export interface GoodreadsStatsDecade {
+	decade: number;
+	books: number;
+}
+
+export interface GoodreadsStatsSeries {
+	name: string;
+	read: number;
+	total: number;
+	shelves: string[];
+}
+
+export interface GoodreadsStatsResponse {
+	totals: GoodreadsStatsTotals;
+	coverage: GoodreadsStatsCoverage;
+	by_month: GoodreadsStatsMonth[];
+	top_authors: GoodreadsStatsAuthor[];
+	by_decade: GoodreadsStatsDecade[];
+	series: GoodreadsStatsSeries[];
+}
