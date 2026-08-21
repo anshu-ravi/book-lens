@@ -131,12 +131,19 @@ def _review_id_from_guid(guid: str | None) -> str:
     return guid.rstrip("/").rsplit("/", 1)[-1]
 
 
-def _custom_shelves(item) -> tuple[str, ...]:
-    """`user_shelves` carries only custom tags for exclusive-shelf feeds."""
+def _custom_shelves(item, shelf: str) -> tuple[str, ...]:
+    """`user_shelves` carries the exclusive shelf name itself plus any custom
+    tags -- Goodreads echoes the fetched shelf back into this field. Drop
+    that echo (case-insensitive, trimmed) so only genuine custom tags remain.
+    """
     raw = _text(item, "user_shelves")
     if not raw:
         return ()
-    return tuple(s.strip() for s in raw.split(",") if s.strip())
+    shelf_slug = shelf.strip().lower()
+    return tuple(
+        s.strip() for s in raw.split(",")
+        if s.strip() and s.strip().lower() != shelf_slug
+    )
 
 
 def parse_feed(xml_bytes: bytes, shelf: str) -> tuple[GoodreadsBook, ...]:
@@ -175,7 +182,7 @@ def parse_feed(xml_bytes: bytes, shelf: str) -> tuple[GoodreadsBook, ...]:
                 user_rating=user_rating if user_rating else None,
                 user_review=_text(item, "user_review"),
                 shelf=shelf,
-                custom_shelves=_custom_shelves(item),
+                custom_shelves=_custom_shelves(item, shelf),
                 date_added=_parse_date(_text(item, "user_date_added")),
                 date_read=_parse_date(_text(item, "user_read_at")),
                 date_created=_parse_date(_text(item, "user_date_created")),

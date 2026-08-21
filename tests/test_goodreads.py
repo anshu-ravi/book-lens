@@ -138,6 +138,18 @@ def test_parse_feed_custom_shelves():
     assert books[0].custom_shelves == ("favorites", "book-club")
 
 
+def test_parse_feed_custom_shelves_drops_echoed_shelf_name():
+    xml = _feed_xml(_item_xml(user_shelves="to-read, favourites"))
+    books = parse_feed(xml, "to-read")
+    assert books[0].custom_shelves == ("favourites",)
+
+
+def test_parse_feed_custom_shelves_all_echo_yields_empty():
+    xml = _feed_xml(_item_xml(user_shelves="to-read"))
+    books = parse_feed(xml, "to-read")
+    assert books[0].custom_shelves == ()
+
+
 def test_truncated_true_at_cap_false_below():
     at_cap = "".join(_item_xml(review_id=str(i)) for i in range(FEED_ITEM_CAP))
     below_cap = "".join(_item_xml(review_id=str(i)) for i in range(FEED_ITEM_CAP - 1))
