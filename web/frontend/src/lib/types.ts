@@ -174,3 +174,49 @@ export interface CreditsResponse {
 	usage_weekly: number;
 	usage_monthly: number;
 }
+
+export interface GoodreadsShelf {
+	shelf: string;
+	count: number;
+	truncated: boolean;
+}
+
+export interface GoodreadsShelvesResponse {
+	shelves: GoodreadsShelf[];
+	total: number;
+	synced_at: string | null;
+}
+
+export interface GoodreadsBook {
+	review_id: string;
+	book_id: string;
+	title: string;
+	author: string;
+	isbn: string | null;
+	num_pages: number | null;
+	published_year: number | null;
+	description: string | null;
+	cover_small: string | null;
+	cover_medium: string | null;
+	cover_large: string | null;
+	average_rating: number | null;
+	user_rating: number | null;
+	user_review: string | null;
+	shelf: string;
+	custom_shelves: string[];
+	date_added: string | null;
+	date_read: string | null;
+	date_created: string | null;
+	date_started: string | null;
+	goodreads_url: string | null;
+}
+
+export interface GoodreadsBooksResponse {
+	books: GoodreadsBook[];
+}
+
+export interface GoodreadsSyncResponse {
+	shelf_counts: Record<string, number>;
+	truncated_shelves: string[];
+	total_books: number;
+}

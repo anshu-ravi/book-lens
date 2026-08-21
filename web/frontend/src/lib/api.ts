@@ -13,6 +13,9 @@ import type {
 	UpdateProgressRequest,
 	UpdateBookRequest,
 	Book,
+	GoodreadsShelvesResponse,
+	GoodreadsBooksResponse,
+	GoodreadsSyncResponse,
 } from './types';
 
 export class ApiError extends Error {
@@ -138,4 +141,19 @@ export function getCredits(): Promise<CreditsResponse> {
 
 export function deleteBook(bookId: string): Promise<void> {
 	return request<void>(`/books/${encodeURIComponent(bookId)}`, { method: 'DELETE' });
+}
+
+export function getGoodreadsShelves(): Promise<GoodreadsShelvesResponse> {
+	return request<GoodreadsShelvesResponse>('/goodreads/shelves');
+}
+
+export function getGoodreadsBooks(shelf: string): Promise<GoodreadsBooksResponse> {
+	return request<GoodreadsBooksResponse>(`/goodreads/books?shelf=${encodeURIComponent(shelf)}`);
+}
+
+export function syncGoodreads(): Promise<GoodreadsSyncResponse> {
+	return request<GoodreadsSyncResponse>('/goodreads/sync', {
+		method: 'POST',
+		body: JSON.stringify({}),
+	});
 }
