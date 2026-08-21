@@ -247,6 +247,8 @@ export interface GoodreadsStatsTotals {
 export interface GoodreadsStatsCoverage {
 	read_total: number;
 	with_date_read: number;
+	with_date_started?: number;
+	with_genres?: number;
 }
 
 export interface GoodreadsStatsMonth {
@@ -272,6 +274,33 @@ export interface GoodreadsStatsSeries {
 	shelves: string[];
 }
 
+export interface GoodreadsStatsDurationBook {
+	title: string;
+	days: number;
+	pages: number;
+	rating: number;
+}
+
+export interface GoodreadsStatsDurations {
+	count: number;
+	median_days: number;
+	mean_days: number;
+	fastest: { title: string; days: number } | null;
+	slowest: { title: string; days: number } | null;
+	books: GoodreadsStatsDurationBook[];
+}
+
+export interface GoodreadsStatsGenre {
+	genre: string;
+	books: number;
+}
+
+export interface GoodreadsStatsGenreRating {
+	genre: string;
+	avg_rating: number;
+	books: number;
+}
+
 export interface GoodreadsStatsResponse {
 	totals: GoodreadsStatsTotals;
 	coverage: GoodreadsStatsCoverage;
@@ -279,4 +308,7 @@ export interface GoodreadsStatsResponse {
 	top_authors: GoodreadsStatsAuthor[];
 	by_decade: GoodreadsStatsDecade[];
 	series: GoodreadsStatsSeries[];
+	durations?: GoodreadsStatsDurations;
+	genres?: GoodreadsStatsGenre[];
+	rating_by_genre?: GoodreadsStatsGenreRating[];
 }

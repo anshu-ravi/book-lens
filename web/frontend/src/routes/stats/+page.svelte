@@ -7,6 +7,10 @@
 	import AuthorsBarChart from '$lib/components/stats/AuthorsBarChart.svelte';
 	import DecadeBarChart from '$lib/components/stats/DecadeBarChart.svelte';
 	import SeriesList from '$lib/components/stats/SeriesList.svelte';
+	import DurationHeadline from '$lib/components/stats/DurationHeadline.svelte';
+	import DurationScatterChart from '$lib/components/stats/DurationScatterChart.svelte';
+	import GenresBarChart from '$lib/components/stats/GenresBarChart.svelte';
+	import GenreRatingBarChart from '$lib/components/stats/GenreRatingBarChart.svelte';
 
 	let stats = $state<GoodreadsStatsResponse | null>(null);
 	let loading = $state(true);
@@ -86,6 +90,41 @@
 			<h2 class="small-caps section-label">Series</h2>
 			<SeriesList data={stats.series} />
 		</section>
+
+		<div class="rule"></div>
+
+		<section>
+			<h2 class="small-caps section-label">How long books take you</h2>
+			<DurationHeadline durations={stats.durations} coverage={stats.coverage} />
+		</section>
+
+		<div class="rule"></div>
+
+		<section>
+			<h2 class="small-caps section-label">Length versus time</h2>
+			{#if (stats.durations?.count ?? 0) === 0}
+				<p class="empty-note">
+					Start dates haven't been imported yet — run enrichment to see whether longer books take
+					proportionally longer.
+				</p>
+			{:else}
+				<DurationScatterChart data={stats.durations?.books ?? []} />
+			{/if}
+		</section>
+
+		<div class="rule"></div>
+
+		<section>
+			<h2 class="small-caps section-label">Genres</h2>
+			<GenresBarChart data={stats.genres ?? []} />
+		</section>
+
+		<div class="rule"></div>
+
+		<section>
+			<h2 class="small-caps section-label">Ratings by genre</h2>
+			<GenreRatingBarChart data={stats.rating_by_genre ?? []} />
+		</section>
 	</div>
 {/if}
 
@@ -149,5 +188,10 @@
 		color: var(--brass);
 		display: block;
 		margin: 0 0 var(--sp-4);
+	}
+	.empty-note {
+		font-style: italic;
+		color: var(--bone-muted);
+		margin: 0;
 	}
 </style>
