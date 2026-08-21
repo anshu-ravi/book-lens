@@ -584,7 +584,9 @@ Operational detail lives in `CLAUDE.md`, including the scoping note that stops a
 
 **Why its own database.** It is a refetchable cache, so it does not belong in `progress.db`. But `reindex` rebuilds `index.db` from EPUBs and would destroy it, and it is not derived from any EPUB. A third file is the honest answer.
 
-**Not yet decided.** How a Goodreads book maps onto an ingested EPUB, and whether `currently-reading` plus `num_pages` plus a progress percentage should seed the reading cutoff. The second is the reason this is interesting at all — it would replace typing a chapter number by hand — but it means Goodreads state writing into the reading position, and that is a decision to make against real synced data rather than in advance.
+**Rejected (2026-08-21): Goodreads progress never seeds the reading cutoff.** A percentage from `currently-reading` plus `num_pages` looks like it could replace typing a chapter number, and it is the first thing anyone proposes. It is not going to happen. The cutoff is the one number the spoiler invariant rests on, and a Goodreads percentage is a coarse, self-reported, page-count-derived figure attached to some edition that is not necessarily the ingested EPUB. Deriving a `global_seq` ceiling from it means guessing, and a ceiling that guesses high leaks. The reader typing a chapter is not friction to be optimised away — it is the reader stating the bound deliberately, which is the only thing that makes the bound trustworthy.
+
+**Still undecided.** How a Goodreads book maps onto an ingested EPUB. Nothing in the app depends on it yet; the Goodreads tab reads its own cache and joins to nothing.
 
 ---
 
