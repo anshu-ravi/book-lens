@@ -510,22 +510,44 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
-def _goodreads_user_id(args: argparse.Namespace) -> str:
-    """Resolve the Goodreads user id from `--user-id`, falling back to `GOODREADS_USER_ID`."""
-    user_id = args.user_id or os.environ.get("GOODREADS_USER_ID")
+def _goodreads_user_id(args: argparse.Namespace, conn) -> str:
+    """Resolve the Goodreads user id: `--user-id`, then the stored setting, then `GOODREADS_USER_ID`."""
+    from booklens.goodreads import get_setting
+
+    user_id = args.user_id or get_setting(conn, "user_id") or os.environ.get("GOODREADS_USER_ID")
     if not user_id:
-        raise ValueError("no Goodreads user id: pass --user-id or set GOODREADS_USER_ID")
+        raise ValueError(
+            "no Goodreads user id: pass --user-id, save one with --save, or set GOODREADS_USER_ID"
+        )
     return user_id
 
 
 def cmd_goodreads_sync(args: argparse.Namespace) -> int:
     """Fetch every configured shelf from Goodreads and cache it in goodreads.db."""
-    from booklens.goodreads import GoodreadsError, connect, sync
+    from booklens.goodreads import (GoodreadsError, connect, get_setting,
+                                     normalize_user_id, set_setting, sync)
 
-    user_id = _goodreads_user_id(args)
     conn = connect()
     try:
-        report = sync(conn, user_id, dnf_shelf=args.dnf_shelf)
+        user_id = _goodreads_user_id(args, conn)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    dnf_shelf = args.dnf_shelf if args.dnf_shelf is not None else get_setting(conn, "dnf_shelf")
+
+    if args.save:
+        if args.user_id is not None:
+            try:
+                set_setting(conn, "user_id", normalize_user_id(args.user_id))
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        if args.dnf_shelf is not None:
+            set_setting(conn, "dnf_shelf", args.dnf_shelf)
+
+    try:
+        report = sync(conn, user_id, dnf_shelf=dnf_shelf)
     except GoodreadsError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -717,6 +739,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_gr_sync.add_argument(
         "--dnf-shelf", default=None,
         help="the user's did-not-finish shelf name, if any (shelf names are user-chosen)",
+    )
+    p_gr_sync.add_argument(
+        "--save", action="store_true",
+        help="persist --user-id and --dnf-shelf as the stored default for future syncs",
     )
     p_gr_sync.add_argument("--json", action="store_true")
     p_gr_sync.set_defaults(func=cmd_goodreads_sync)

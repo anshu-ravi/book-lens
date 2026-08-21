@@ -49,6 +49,11 @@ CREATE TABLE IF NOT EXISTS goodreads_sync(
   truncated   INTEGER NOT NULL,
   synced_at   TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS goodreads_setting(
+  key    TEXT PRIMARY KEY,
+  value  TEXT NOT NULL
+);
 """
 
 
@@ -73,6 +78,25 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 def init(conn: sqlite3.Connection) -> None:
     """Create the schema if it doesn't already exist."""
     conn.executescript(_DDL)
+    conn.commit()
+
+
+def get_setting(conn: sqlite3.Connection, key: str) -> str | None:
+    """A stored setting value (`user_id` or `dnf_shelf`), or `None` if unset."""
+    row = conn.execute("SELECT value FROM goodreads_setting WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row is not None else None
+
+
+def set_setting(conn: sqlite3.Connection, key: str, value: str | None) -> None:
+    """Store a setting value, or clear it when `value` is `None`."""
+    if value is None:
+        conn.execute("DELETE FROM goodreads_setting WHERE key = ?", (key,))
+    else:
+        conn.execute(
+            "INSERT INTO goodreads_setting(key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
     conn.commit()
 
 

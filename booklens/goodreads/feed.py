@@ -8,6 +8,7 @@ callers must treat a full feed as possibly truncated, never as complete data.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -22,9 +23,34 @@ _FEED_URL_TEMPLATE = "https://www.goodreads.com/review/list_rss/{user_id}?shelf=
 _USER_AGENT = "book-lens-v2/goodreads-sync (+https://github.com/; read-only shelf sync)"
 _REQUEST_DELAY_SECONDS = 1.0
 
+_PROFILE_URL_RE = re.compile(
+    r"^https?://(www\.)?goodreads\.com/user/show/(\d+)(-[^/?]*)?/?(\?.*)?$"
+)
+
 
 class GoodreadsError(Exception):
     """A shelf fetch failed -- non-200 response or unparseable XML."""
+
+
+def normalize_user_id(raw: str) -> str:
+    """Extract a bare numeric Goodreads user id from an id or a profile URL.
+
+    Accepts a bare numeric id, or a `.../user/show/<digits>-<slug>` profile
+    URL (with an optional trailing slash or query string, the two forms a
+    browser address bar actually produces). Raises `ValueError` on anything
+    else.
+    """
+    value = raw.strip()
+    if value.isdigit():
+        return value
+    match = _PROFILE_URL_RE.match(value)
+    if match:
+        return match.group(2)
+    raise ValueError(
+        f"not a Goodreads user id or profile URL: {raw!r} -- expected a numeric id "
+        "(e.g. '12345') or a profile URL (e.g. "
+        "'https://www.goodreads.com/user/show/12345-your-name')"
+    )
 
 
 @dataclass(frozen=True)

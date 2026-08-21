@@ -16,7 +16,8 @@ import pytest
 from booklens import cli
 from booklens.goodreads import feed, store
 from booklens.goodreads.feed import (FEED_ITEM_CAP, GoodreadsError,
-                                      ShelfFetch, fetch_shelf, parse_feed)
+                                      ShelfFetch, fetch_shelf,
+                                      normalize_user_id, parse_feed)
 
 
 # -- fixtures -------------------------------------------------------------
@@ -343,5 +344,87 @@ def test_cli_goodreads_sync_uses_env_var(data_dir, capsys, monkeypatch):
         return httpx.Response(200, content=_feed_xml(""))
 
     monkeypatch.setattr(feed.httpx, "get", fake_get)
+    rc = cli.main(["goodreads", "sync", "--json"])
+    assert rc == 0
+
+
+# -- feed.normalize_user_id ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("185528019", "185528019"),
+        ("https://www.goodreads.com/user/show/185528019-anshumaan-ravi", "185528019"),
+        (
+            "https://www.goodreads.com/user/show/185528019-anshumaan-ravi?ref=nav_mybooks",
+            "185528019",
+        ),
+        ("https://www.goodreads.com/user/show/185528019/", "185528019"),
+        ("  185528019  ", "185528019"),
+    ],
+)
+def test_normalize_user_id_accepted_forms(raw, expected):
+    assert normalize_user_id(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "not-a-url",
+        "https://www.goodreads.com/book/show/12345",
+        "",
+        "abc123",
+        "https://example.com/user/show/185528019-anshumaan-ravi",
+    ],
+)
+def test_normalize_user_id_rejects_garbage(raw):
+    with pytest.raises(ValueError):
+        normalize_user_id(raw)
+
+
+# -- store.get_setting / set_setting -------------------------------------------
+
+
+def test_get_setting_absent_is_none(gr_conn):
+    assert store.get_setting(gr_conn, "user_id") is None
+
+
+def test_set_and_get_setting_round_trip(gr_conn):
+    store.set_setting(gr_conn, "user_id", "12345")
+    assert store.get_setting(gr_conn, "user_id") == "12345"
+
+    store.set_setting(gr_conn, "user_id", "67890")
+    assert store.get_setting(gr_conn, "user_id") == "67890"
+
+
+def test_set_setting_none_clears(gr_conn):
+    store.set_setting(gr_conn, "dnf_shelf", "did-not-finish")
+    store.set_setting(gr_conn, "dnf_shelf", None)
+    assert store.get_setting(gr_conn, "dnf_shelf") is None
+
+
+# -- CLI: --save persists the setting ------------------------------------------
+
+
+def test_cli_goodreads_sync_save_persists_user_id(data_dir, capsys, monkeypatch):
+    monkeypatch.setattr(feed.time, "sleep", lambda _s: None)
+
+    def fake_get(url, headers=None, timeout=None):
+        return httpx.Response(200, content=_feed_xml(""))
+
+    monkeypatch.setattr(feed.httpx, "get", fake_get)
+
+    rc = cli.main(["goodreads", "sync", "--user-id", "999", "--dnf-shelf", "dnf", "--save", "--json"])
+    assert rc == 0
+
+    conn = store.connect()
+    try:
+        assert store.get_setting(conn, "user_id") == "999"
+        assert store.get_setting(conn, "dnf_shelf") == "dnf"
+    finally:
+        conn.close()
+
+    # A subsequent sync with no flags falls back to the stored setting.
     rc = cli.main(["goodreads", "sync", "--json"])
     assert rc == 0

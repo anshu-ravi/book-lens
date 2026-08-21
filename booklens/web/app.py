@@ -118,6 +118,13 @@ class GoodreadsSyncRequest(BaseModel):
     dnf_shelf: str | None = None
 
 
+class GoodreadsSettingsUpdate(BaseModel):
+    """Body of `PUT /api/goodreads/settings`."""
+
+    user_id: str
+    dnf_shelf: str | None = None
+
+
 # -- shared helpers -----------------------------------------------------------
 
 
@@ -700,17 +707,58 @@ def get_goodreads_books(conn: GoodreadsDbDep, shelf: str = "all"):
     return {"books": [_goodreads_book_payload(b) for b in books]}
 
 
+def _goodreads_settings_payload(conn: sqlite3.Connection) -> dict:
+    """The effective `user_id`/`dnf_shelf` and where the id came from.
+
+    Resolution order for `user_id`: stored setting, then `GOODREADS_USER_ID`.
+    """
+    stored_user_id = goodreads.get_setting(conn, "user_id")
+    dnf_shelf = goodreads.get_setting(conn, "dnf_shelf")
+    if stored_user_id:
+        return {"user_id": stored_user_id, "dnf_shelf": dnf_shelf, "source": "stored"}
+    env_user_id = os.environ.get("GOODREADS_USER_ID")
+    if env_user_id:
+        return {"user_id": env_user_id, "dnf_shelf": dnf_shelf, "source": "env"}
+    return {"user_id": None, "dnf_shelf": dnf_shelf, "source": "none"}
+
+
+@app.get("/api/goodreads/settings")
+def get_goodreads_settings(conn: GoodreadsDbDep):
+    """The effective Goodreads user id and DNF shelf, and where the id came from."""
+    return _goodreads_settings_payload(conn)
+
+
+@app.put("/api/goodreads/settings")
+def put_goodreads_settings(body: GoodreadsSettingsUpdate, conn: GoodreadsDbDep):
+    """Persist a Goodreads user id (accepting a bare id or a profile URL) and DNF shelf."""
+    try:
+        user_id = goodreads.normalize_user_id(body.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    goodreads.set_setting(conn, "user_id", user_id)
+    goodreads.set_setting(conn, "dnf_shelf", body.dnf_shelf)
+    return _goodreads_settings_payload(conn)
+
+
 @app.post("/api/goodreads/sync")
 def post_goodreads_sync(body: GoodreadsSyncRequest, conn: GoodreadsDbDep):
-    """Fetch the reader's Goodreads shelves live and refresh the cache."""
-    user_id = body.user_id or os.environ.get("GOODREADS_USER_ID")
+    """Fetch the reader's Goodreads shelves live and refresh the cache.
+
+    `user_id` resolution order: the request body, then the stored setting,
+    then `GOODREADS_USER_ID`. `dnf_shelf` falls back to the stored setting
+    only when the body omits it entirely.
+    """
+    stored = _goodreads_settings_payload(conn)
+    user_id = body.user_id or stored["user_id"]
     if not user_id:
         raise HTTPException(
             status_code=400,
-            detail="no Goodreads user id: pass user_id or set GOODREADS_USER_ID",
+            detail="no Goodreads user id: pass user_id, save it in settings, or set GOODREADS_USER_ID",
         )
+    dnf_shelf = body.dnf_shelf if body.dnf_shelf is not None else stored["dnf_shelf"]
     try:
-        report = goodreads.sync(conn, user_id, dnf_shelf=body.dnf_shelf)
+        report = goodreads.sync(conn, user_id, dnf_shelf=dnf_shelf)
     except goodreads.GoodreadsError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

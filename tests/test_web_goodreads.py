@@ -254,3 +254,115 @@ def test_sync_falls_back_to_env_user_id(tmp_path, monkeypatch):
     resp = client.post("/api/goodreads/sync", json={})
     assert resp.status_code == 200
     assert seen["user_id"] == "env-user"
+
+
+# -- settings -------------------------------------------------------------------
+
+
+def test_get_settings_none_configured(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.delenv("GOODREADS_USER_ID", raising=False)
+
+    resp = client.get("/api/goodreads/settings")
+    assert resp.status_code == 200
+    assert resp.json() == {"user_id": None, "dnf_shelf": None, "source": "none"}
+
+
+def test_get_settings_falls_back_to_env(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.setenv("GOODREADS_USER_ID", "env-user")
+
+    resp = client.get("/api/goodreads/settings")
+    assert resp.status_code == 200
+    assert resp.json() == {"user_id": "env-user", "dnf_shelf": None, "source": "env"}
+
+
+def test_put_settings_round_trip_and_stored_wins_over_env(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.setenv("GOODREADS_USER_ID", "env-user")
+
+    resp = client.put(
+        "/api/goodreads/settings", json={"user_id": "185528019", "dnf_shelf": "did-not-finish"}
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"user_id": "185528019", "dnf_shelf": "did-not-finish", "source": "stored"}
+
+    resp = client.get("/api/goodreads/settings")
+    assert resp.json() == {"user_id": "185528019", "dnf_shelf": "did-not-finish", "source": "stored"}
+
+
+def test_put_settings_normalizes_profile_url(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+
+    resp = client.put(
+        "/api/goodreads/settings",
+        json={"user_id": "https://www.goodreads.com/user/show/185528019-anshumaan-ravi"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["user_id"] == "185528019"
+
+
+def test_put_settings_rejects_garbage_user_id(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+
+    resp = client.put("/api/goodreads/settings", json={"user_id": "not-a-url"})
+    assert resp.status_code == 400
+    assert "not-a-url" in resp.json()["detail"]
+
+
+def test_put_settings_dnf_shelf_optional_and_nullable(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+
+    client.put("/api/goodreads/settings", json={"user_id": "12345", "dnf_shelf": "dnf"})
+    resp = client.put("/api/goodreads/settings", json={"user_id": "12345"})
+    assert resp.status_code == 200
+    assert resp.json()["dnf_shelf"] is None
+
+
+# -- sync resolution order ------------------------------------------------------
+
+
+def test_sync_prefers_explicit_body_over_stored_and_env(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.setenv("GOODREADS_USER_ID", "env-user")
+    client.put("/api/goodreads/settings", json={"user_id": "111111"})
+
+    seen = {}
+
+    def _fake_sync(conn, user_id, *, dnf_shelf=None):
+        seen["user_id"] = user_id
+        return goodreads.SyncReport(shelf_counts={}, truncated_shelves=(), total_books=0)
+
+    monkeypatch.setattr(goodreads, "sync", _fake_sync)
+
+    resp = client.post("/api/goodreads/sync", json={"user_id": "222222"})
+    assert resp.status_code == 200
+    assert seen["user_id"] == "222222"
+
+
+def test_sync_uses_stored_user_id_when_body_omits_it(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.delenv("GOODREADS_USER_ID", raising=False)
+    client.put("/api/goodreads/settings", json={"user_id": "333333", "dnf_shelf": "dnf"})
+
+    seen = {}
+
+    def _fake_sync(conn, user_id, *, dnf_shelf=None):
+        seen["user_id"] = user_id
+        seen["dnf_shelf"] = dnf_shelf
+        return goodreads.SyncReport(shelf_counts={}, truncated_shelves=(), total_books=0)
+
+    monkeypatch.setattr(goodreads, "sync", _fake_sync)
+
+    resp = client.post("/api/goodreads/sync", json={})
+    assert resp.status_code == 200
+    assert seen["user_id"] == "333333"
+    assert seen["dnf_shelf"] == "dnf"
+
+
+def test_sync_400_when_nothing_configured(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    monkeypatch.delenv("GOODREADS_USER_ID", raising=False)
+
+    resp = client.post("/api/goodreads/sync", json={})
+    assert resp.status_code == 400
