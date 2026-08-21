@@ -128,7 +128,10 @@ def _review_id_from_guid(guid: str | None) -> str:
     """`guid` is a `/review/show/{review_id}` URL; the id is the stable identity."""
     if not guid:
         return ""
-    return guid.rstrip("/").rsplit("/", 1)[-1]
+    last = guid.rstrip("/").rsplit("/", 1)[-1]
+    # RSS appends `?utm_medium=api&utm_source=rss`. Keeping it made review_id
+    # unjoinable with the authenticated review table, which has no query string.
+    return last.split("?", 1)[0].split("#", 1)[0]
 
 
 def _custom_shelves(item, shelf: str) -> tuple[str, ...]:

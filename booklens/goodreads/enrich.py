@@ -96,7 +96,15 @@ def _parse_review_date(text: str | None) -> str | None:
 
 
 def _cell_text(td) -> str:
-    parts = [t.strip() for t in td.itertext()]
+    """Read a cell's `div.value`, never the whole `<td>`.
+
+    Each cell also carries a `<label>` naming the column, so taking the `<td>`
+    text yields "date started not set" -- which is neither a null marker nor a
+    parseable date, so every value silently became None.
+    """
+    value = td.xpath('.//div[contains(concat(" ", normalize-space(@class), " "), " value ")]')
+    source = value[0] if value else td
+    parts = [t.strip() for t in source.itertext()]
     joined = " ".join(p for p in parts if p)
     return _EDIT_SUFFIX_RE.sub("", joined).strip()
 
@@ -125,6 +133,9 @@ def parse_review_table(html_bytes: bytes) -> tuple[ReviewRow, ...]:
     for tr in tree.xpath('//tr[starts-with(@id, "review_")]'):
         review_id = (tr.get("id") or "").split("_", 1)[-1]
         if not review_id:
+            continue
+        # The table carries a hidden template row with no cell values.
+        if not tr.xpath('.//td[contains(concat(" ", normalize-space(@class), " "), " title ")]'):
             continue
 
         fields: dict[str, str | None] = {}

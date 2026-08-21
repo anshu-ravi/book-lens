@@ -194,3 +194,37 @@ def test_empty_genre_result_is_stamped_so_it_is_not_refetched(gr_conn):
     assert book_id in {b for b, _ in store.books_needing_genres(gr_conn)}
     store.apply_genres(gr_conn, book_id, ())
     assert book_id not in {b for b, _ in store.books_needing_genres(gr_conn)}
+
+
+def test_review_id_drops_the_rss_query_string():
+    """RSS guids carry `?utm_medium=api&utm_source=rss`. Keeping it made
+    review_id unjoinable with the authenticated review table."""
+    from booklens.goodreads.feed import parse_feed
+
+    xml = b"""<rss><channel><item>
+      <guid>https://www.goodreads.com/review/show/8228226382?utm_medium=api&amp;utm_source=rss</guid>
+      <book_id>1</book_id><title>T</title><author_name>A</author_name>
+    </item></channel></rss>"""
+    assert parse_feed(xml, "read")[0].review_id == "8228226382"
+
+
+def test_cell_text_reads_the_value_div_not_the_label():
+    """Each cell carries a <label> naming the column; taking the whole <td>
+    yields "date started not set", which is neither null nor a date."""
+    rows = parse_review_table(
+        b"""<table><tr id="review_9">
+          <td class="field title"><label>title</label><div class="value"><a>Tidewrack</a></div></td>
+          <td class="field date_started"><label>date started</label>
+            <div class="value"><span>Jun 21, 2026</span><a>[edit]</a></div></td>
+        </tr></table>"""
+    )
+    assert rows[0].title == "Tidewrack"
+    assert rows[0].date_started == "2026-06-21"
+
+
+def test_hidden_template_row_without_cells_is_skipped():
+    html = b"""<table>
+      <tr id="review_1"><td class="field title"><div class="value">Real</div></td></tr>
+      <tr id="review_template"></tr>
+    </table>"""
+    assert [r.review_id for r in parse_review_table(html)] == ["1"]
