@@ -554,7 +554,7 @@ def cmd_goodreads_sync(args: argparse.Namespace) -> int:
 
 
 def cmd_goodreads_shelf(args: argparse.Namespace) -> int:
-    """List cached books on one shelf (or all books, when `--all` given)."""
+    """List cached books on one shelf, or every shelf when the shelf is `all`."""
     from dataclasses import asdict
 
     from booklens.goodreads import all_books, books_on_shelf, connect

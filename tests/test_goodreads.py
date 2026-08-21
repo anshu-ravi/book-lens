@@ -245,6 +245,23 @@ def test_complete_fetch_removes_vanished_book(gr_conn):
     assert {r["review_id"] for r in rows} == {"1"}
 
 
+def test_complete_empty_fetch_clears_the_shelf(gr_conn):
+    store.upsert_shelf(gr_conn, _fetch("read", ["1", "2"]))
+    store.upsert_shelf(gr_conn, _fetch("to-read", ["9"]))
+    store.upsert_shelf(gr_conn, _fetch("read", [], truncated=False))
+    read_rows = gr_conn.execute("SELECT review_id FROM goodreads_book WHERE shelf = 'read'").fetchall()
+    assert read_rows == []
+    other_rows = gr_conn.execute("SELECT review_id FROM goodreads_book WHERE shelf = 'to-read'").fetchall()
+    assert {r["review_id"] for r in other_rows} == {"9"}
+
+
+def test_truncated_empty_fetch_deletes_nothing(gr_conn):
+    store.upsert_shelf(gr_conn, _fetch("read", ["1", "2"]))
+    store.upsert_shelf(gr_conn, _fetch("read", [], truncated=True))
+    rows = gr_conn.execute("SELECT review_id FROM goodreads_book WHERE shelf = 'read'").fetchall()
+    assert {r["review_id"] for r in rows} == {"1", "2"}
+
+
 def test_books_on_shelf_and_all_books(gr_conn):
     store.upsert_shelf(gr_conn, _fetch("read", ["1"]))
     store.upsert_shelf(gr_conn, _fetch("to-read", ["2"]))

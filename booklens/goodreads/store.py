@@ -151,11 +151,17 @@ def upsert_shelf(conn: sqlite3.Connection, fetch: ShelfFetch) -> int:
         )
 
     if not fetch.truncated:
-        placeholders = ",".join("?" * len(seen_ids)) if seen_ids else "NULL"
-        conn.execute(
-            f"DELETE FROM goodreads_book WHERE shelf = ? AND review_id NOT IN ({placeholders})",
-            (fetch.shelf, *seen_ids),
-        )
+        if seen_ids:
+            placeholders = ",".join("?" * len(seen_ids))
+            conn.execute(
+                f"DELETE FROM goodreads_book WHERE shelf = ? AND review_id NOT IN ({placeholders})",
+                (fetch.shelf, *seen_ids),
+            )
+        else:
+            # `NOT IN (NULL)` is always unknown, never true, so an empty
+            # `seen_ids` needs its own branch -- otherwise a shelf emptied on
+            # Goodreads (every book moved off it) never gets pruned locally.
+            conn.execute("DELETE FROM goodreads_book WHERE shelf = ?", (fetch.shelf,))
 
     conn.execute(
         "INSERT INTO goodreads_sync(shelf, item_count, truncated, synced_at) VALUES (?, ?, ?, ?)",
