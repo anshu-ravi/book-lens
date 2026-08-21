@@ -220,3 +220,14 @@ export interface GoodreadsSyncResponse {
 	truncated_shelves: string[];
 	total_books: number;
 }
+
+export interface GoodreadsSettingsResponse {
+	user_id: string | null;
+	dnf_shelf: string | null;
+	source: 'stored' | 'env' | 'none';
+}
+
+export interface GoodreadsSettingsUpdate {
+	user_id: string;
+	dnf_shelf: string | null;
+}

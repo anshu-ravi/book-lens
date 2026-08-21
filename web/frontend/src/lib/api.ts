@@ -16,6 +16,8 @@ import type {
 	GoodreadsShelvesResponse,
 	GoodreadsBooksResponse,
 	GoodreadsSyncResponse,
+	GoodreadsSettingsResponse,
+	GoodreadsSettingsUpdate,
 } from './types';
 
 export class ApiError extends Error {
@@ -155,5 +157,18 @@ export function syncGoodreads(): Promise<GoodreadsSyncResponse> {
 	return request<GoodreadsSyncResponse>('/goodreads/sync', {
 		method: 'POST',
 		body: JSON.stringify({}),
+	});
+}
+
+export function getGoodreadsSettings(): Promise<GoodreadsSettingsResponse> {
+	return request<GoodreadsSettingsResponse>('/goodreads/settings');
+}
+
+export function putGoodreadsSettings(
+	body: GoodreadsSettingsUpdate,
+): Promise<GoodreadsSettingsResponse> {
+	return request<GoodreadsSettingsResponse>('/goodreads/settings', {
+		method: 'PUT',
+		body: JSON.stringify(body),
 	});
 }
