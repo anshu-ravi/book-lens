@@ -67,7 +67,9 @@
 				</div>
 
 				<div class="chips">
-					<span class="chip shelf-chip small-caps">{shelfLabel(book.shelf)}</span>
+					<span class="chip shelf-chip small-caps" class:shelf-chip-read={book.shelf === 'read'}>
+						{shelfLabel(book.shelf)}
+					</span>
 					{#each book.custom_shelves as custom (custom)}
 						<span class="chip custom-chip small-caps">{custom}</span>
 					{/each}
@@ -258,6 +260,10 @@
 	.shelf-chip {
 		background: color-mix(in srgb, var(--brass) 15%, transparent);
 		color: var(--brass);
+	}
+	.shelf-chip-read {
+		background: color-mix(in srgb, var(--sage) 15%, transparent);
+		color: var(--sage);
 	}
 	.custom-chip {
 		background: color-mix(in srgb, var(--bone-muted) 15%, transparent);
