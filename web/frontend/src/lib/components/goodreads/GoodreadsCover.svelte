@@ -1,20 +1,29 @@
 <script lang="ts">
 	import type { GoodreadsBook } from '$lib/types';
 
-	let { book, onopen }: { book: GoodreadsBook; onopen: () => void } = $props();
+	let {
+		book,
+		onopen,
+		showReadTag = false,
+	}: { book: GoodreadsBook; onopen: () => void; showReadTag?: boolean } = $props();
 
 	let failed = $state(false);
 </script>
 
 <button type="button" class="cover-btn" onclick={onopen} aria-label="{book.title} by {book.author}">
-	{#if book.cover_large && !failed}
-		<img class="cover-img" src={book.cover_large} alt="" loading="lazy" onerror={() => (failed = true)} />
-	{:else}
-		<div class="cover-fallback">
-			<div class="fallback-title">{book.title}</div>
-			<div class="fallback-author small-caps">{book.author}</div>
-		</div>
-	{/if}
+	<div class="cover-card">
+		{#if book.cover_large && !failed}
+			<img class="cover-img" src={book.cover_large} alt="" loading="lazy" onerror={() => (failed = true)} />
+		{:else}
+			<div class="cover-fallback">
+				<div class="fallback-title">{book.title}</div>
+				<div class="fallback-author small-caps">{book.author}</div>
+			</div>
+		{/if}
+		{#if showReadTag}
+			<span class="read-tag small-caps">Read</span>
+		{/if}
+	</div>
 </button>
 
 <style>
@@ -25,7 +34,6 @@
 		border: none;
 		padding: 0;
 		cursor: pointer;
-		border-radius: var(--r-cover);
 		transition: filter 0.15s, transform 0.15s;
 	}
 	.cover-btn:hover,
@@ -37,18 +45,29 @@
 		outline: 2px solid var(--brass);
 		outline-offset: 2px;
 	}
-	.cover-img {
-		display: block;
-		width: 100%;
-		height: auto;
-		border-radius: var(--r-cover);
-	}
-	.cover-fallback {
+	.cover-card {
+		position: relative;
 		width: 100%;
 		aspect-ratio: 2 / 3;
 		border-radius: var(--r-cover);
 		background: var(--ink-surface);
 		border: var(--hairline);
+		overflow: hidden;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.cover-img {
+		display: block;
+		max-width: 100%;
+		max-height: 100%;
+		width: auto;
+		height: auto;
+		object-fit: contain;
+	}
+	.cover-fallback {
+		width: 100%;
+		height: 100%;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -66,5 +85,14 @@
 	}
 	.fallback-author {
 		color: var(--bone-muted);
+	}
+	.read-tag {
+		position: absolute;
+		top: var(--sp-2);
+		right: var(--sp-2);
+		padding: 2px 6px;
+		border-radius: var(--r-chip);
+		background: var(--sage);
+		color: var(--ink-surface);
 	}
 </style>

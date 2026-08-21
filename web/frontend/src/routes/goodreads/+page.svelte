@@ -232,7 +232,11 @@
 			{:else}
 				<div class="cover-grid">
 					{#each books as book (book.review_id)}
-						<GoodreadsCover {book} onopen={() => (activeBook = book)} />
+						<GoodreadsCover
+							{book}
+							onopen={() => (activeBook = book)}
+							showReadTag={selectedShelf === 'all' && book.shelf === 'read'}
+						/>
 					{/each}
 				</div>
 			{/if}
@@ -428,7 +432,6 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
 		gap: var(--sp-6) var(--sp-4);
-		align-items: end;
 	}
 	@media (max-width: 900px) {
 		.layout {
