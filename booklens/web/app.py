@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import os
 import shutil
 import sqlite3
 from dataclasses import asdict
@@ -20,7 +21,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from booklens import chat, classify, context, db, ingest, paths, progress, reseq, tools
+from booklens import chat, classify, context, db, goodreads, ingest, paths, progress, reseq, tools
 from booklens.extract import extract_book, extract_cover, read_series_hint
 from booklens.ingest import _slugify as _slugify_name
 from booklens.llm.base import FatalLLMError, TransientLLMError
@@ -53,6 +54,18 @@ def _get_dbs():
 
 
 DbDep = Annotated[tuple[sqlite3.Connection, sqlite3.Connection], Depends(_get_dbs)]
+
+
+def _get_goodreads_db():
+    """Per-request connection to the Goodreads cache -- its own database, never `index.db`."""
+    conn = goodreads.connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+GoodreadsDbDep = Annotated[sqlite3.Connection, Depends(_get_goodreads_db)]
 
 
 # -- request/response models -------------------------------------------------
@@ -96,6 +109,13 @@ class AskRequest(BaseModel):
     """Body of `POST /api/chat/sessions/{sid}/messages`."""
 
     question: str
+
+
+class GoodreadsSyncRequest(BaseModel):
+    """Body of `POST /api/goodreads/sync`."""
+
+    user_id: str | None = None
+    dnf_shelf: str | None = None
 
 
 # -- shared helpers -----------------------------------------------------------
@@ -624,6 +644,81 @@ def delete_chat_session(sid: str):
     """Close and drop a session."""
     sessions.registry.drop(sid)
     return Response(status_code=204)
+
+
+# -- goodreads ------------------------------------------------------------------
+
+# Fixed lead-in order for `/api/goodreads/shelves`; anything else present in
+# the cache follows, alphabetically. Never hardcode a DNF shelf name here --
+# it's a user-chosen custom shelf, not one of Goodreads' exclusive three.
+_SHELF_ORDER_PREFIX = ("currently-reading", "read", "to-read")
+
+
+def _goodreads_book_payload(book: goodreads.GoodreadsBook) -> dict:
+    """The `GoodreadsBook` dataclass in snake_case, plus a derived `goodreads_url`."""
+    payload = asdict(book)
+    payload["custom_shelves"] = list(book.custom_shelves)
+    payload["goodreads_url"] = f"https://www.goodreads.com/book/show/{book.book_id}"
+    return payload
+
+
+@app.get("/api/goodreads/shelves")
+def get_goodreads_shelves(conn: GoodreadsDbDep):
+    """Per-shelf counts from the cache, plus each shelf's most recent truncation flag."""
+    count_rows = conn.execute(
+        "SELECT shelf, COUNT(*) AS count FROM goodreads_book GROUP BY shelf"
+    ).fetchall()
+    counts = {r["shelf"]: r["count"] for r in count_rows}
+
+    latest_sync_rows = conn.execute(
+        """
+        SELECT s.shelf, s.truncated
+        FROM goodreads_sync s
+        JOIN (SELECT shelf, MAX(id) AS max_id FROM goodreads_sync GROUP BY shelf) latest
+          ON s.id = latest.max_id
+        """
+    ).fetchall()
+    truncated_by_shelf = {r["shelf"]: bool(r["truncated"]) for r in latest_sync_rows}
+
+    synced_at = conn.execute("SELECT MAX(synced_at) AS m FROM goodreads_sync").fetchone()["m"]
+
+    others = sorted(s for s in counts if s not in _SHELF_ORDER_PREFIX)
+    order = [s for s in _SHELF_ORDER_PREFIX if s in counts] + others
+
+    shelves = [
+        {"shelf": s, "count": counts[s], "truncated": truncated_by_shelf.get(s, False)}
+        for s in order
+    ]
+    return {"shelves": shelves, "total": sum(counts.values()), "synced_at": synced_at}
+
+
+@app.get("/api/goodreads/books")
+def get_goodreads_books(conn: GoodreadsDbDep, shelf: str = "all"):
+    """Cached books on one shelf, or every cached book when `shelf` is `all` or omitted."""
+    books = goodreads.all_books(conn) if shelf == "all" else goodreads.books_on_shelf(conn, shelf)
+    books = sorted(books, key=lambda b: b.title)
+    return {"books": [_goodreads_book_payload(b) for b in books]}
+
+
+@app.post("/api/goodreads/sync")
+def post_goodreads_sync(body: GoodreadsSyncRequest, conn: GoodreadsDbDep):
+    """Fetch the reader's Goodreads shelves live and refresh the cache."""
+    user_id = body.user_id or os.environ.get("GOODREADS_USER_ID")
+    if not user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="no Goodreads user id: pass user_id or set GOODREADS_USER_ID",
+        )
+    try:
+        report = goodreads.sync(conn, user_id, dnf_shelf=body.dnf_shelf)
+    except goodreads.GoodreadsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "shelf_counts": report.shelf_counts,
+        "truncated_shelves": list(report.truncated_shelves),
+        "total_books": report.total_books,
+    }
 
 
 # -- misc -------------------------------------------------------------------
