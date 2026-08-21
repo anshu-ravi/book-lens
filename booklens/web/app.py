@@ -769,6 +769,12 @@ def post_goodreads_sync(body: GoodreadsSyncRequest, conn: GoodreadsDbDep):
     }
 
 
+@app.get("/api/goodreads/stats")
+def get_goodreads_stats(conn: GoodreadsDbDep):
+    """Reading statistics computed from the cache -- zeroed shape when empty."""
+    return goodreads.compute_stats(conn)
+
+
 # -- misc -------------------------------------------------------------------
 
 

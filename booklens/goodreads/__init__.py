@@ -5,11 +5,14 @@ from booklens.goodreads.feed import (EXCLUSIVE_SHELVES, FEED_ITEM_CAP,
                                       ShelfFetch, fetch_all_shelves,
                                       fetch_shelf, normalize_user_id,
                                       parse_feed)
+from booklens.goodreads.stats import compute_stats, parse_series
 from booklens.goodreads.store import (SyncReport, all_books, books_on_shelf,
                                        connect, get_setting, init, set_setting,
                                        sync, upsert_shelf)
 
 __all__ = [
+    "compute_stats",
+    "parse_series",
     "EXCLUSIVE_SHELVES",
     "FEED_ITEM_CAP",
     "GoodreadsBook",
