@@ -40,6 +40,13 @@ def index_db_path() -> Path:
     return data_dir() / "index.db"
 
 
+def goodreads_db_path() -> Path:
+    """Cached Goodreads shelf data -- refetchable like `index.db`, but kept in
+    its own file so `booklens reindex` (which rebuilds `index.db` from EPUBs)
+    can never destroy it, and so it never touches `progress.db`."""
+    return data_dir() / "goodreads.db"
+
+
 def book_dir(book_id: str) -> Path:
     """Per-book generated state, keyed by book id so the directory is readable.
 
