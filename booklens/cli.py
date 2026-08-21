@@ -510,6 +510,68 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _goodreads_user_id(args: argparse.Namespace) -> str:
+    """Resolve the Goodreads user id from `--user-id`, falling back to `GOODREADS_USER_ID`."""
+    user_id = args.user_id or os.environ.get("GOODREADS_USER_ID")
+    if not user_id:
+        raise ValueError("no Goodreads user id: pass --user-id or set GOODREADS_USER_ID")
+    return user_id
+
+
+def cmd_goodreads_sync(args: argparse.Namespace) -> int:
+    """Fetch every configured shelf from Goodreads and cache it in goodreads.db."""
+    from booklens.goodreads import GoodreadsError, connect, sync
+
+    user_id = _goodreads_user_id(args)
+    conn = connect()
+    try:
+        report = sync(conn, user_id, dnf_shelf=args.dnf_shelf)
+    except GoodreadsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(
+            {
+                "shelf_counts": report.shelf_counts,
+                "truncated_shelves": list(report.truncated_shelves),
+                "total_books": report.total_books,
+            },
+            indent=2,
+        ))
+        return 0
+
+    for shelf, count in report.shelf_counts.items():
+        print(f"{shelf}: {count} book(s)")
+    print(f"total: {report.total_books} book(s)")
+    for shelf in report.truncated_shelves:
+        print(
+            f"WARNING: shelf {shelf!r} returned {report.shelf_counts[shelf]} items -- "
+            "Goodreads' RSS feed caps at 100, so this shelf is almost certainly "
+            "incomplete, and the local cache was NOT pruned of vanished books for it"
+        )
+    return 0
+
+
+def cmd_goodreads_shelf(args: argparse.Namespace) -> int:
+    """List cached books on one shelf (or all books, when `--all` given)."""
+    from dataclasses import asdict
+
+    from booklens.goodreads import all_books, books_on_shelf, connect
+
+    conn = connect()
+    books = all_books(conn) if args.shelf == "all" else books_on_shelf(conn, args.shelf)
+
+    if args.json:
+        print(json.dumps([asdict(b) for b in books], indent=2, default=str))
+        return 0
+
+    for b in books:
+        rating = f" ({b.user_rating}*)" if b.user_rating else ""
+        print(f"[{b.shelf}] {b.title} -- {b.author}{rating}")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
@@ -643,6 +705,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_credits = sub.add_parser("credits", help="show remaining OpenRouter credit balance")
     p_credits.add_argument("--json", action="store_true")
     p_credits.set_defaults(func=cmd_credits)
+
+    p_goodreads = sub.add_parser("goodreads", help="read-only Goodreads shelf sync")
+    goodreads_sub = p_goodreads.add_subparsers(dest="goodreads_command", required=True)
+
+    p_gr_sync = goodreads_sub.add_parser("sync", help="fetch and cache every configured shelf")
+    p_gr_sync.add_argument(
+        "--user-id", default=None,
+        help="Goodreads numeric user id (falls back to GOODREADS_USER_ID)",
+    )
+    p_gr_sync.add_argument(
+        "--dnf-shelf", default=None,
+        help="the user's did-not-finish shelf name, if any (shelf names are user-chosen)",
+    )
+    p_gr_sync.add_argument("--json", action="store_true")
+    p_gr_sync.set_defaults(func=cmd_goodreads_sync)
+
+    p_gr_shelf = goodreads_sub.add_parser("shelf", help="list cached books on one shelf")
+    p_gr_shelf.add_argument("shelf", help="'read', 'currently-reading', 'to-read', a configured DNF shelf, or 'all'")
+    p_gr_shelf.add_argument("--json", action="store_true")
+    p_gr_shelf.set_defaults(func=cmd_goodreads_shelf)
 
     return parser
 
