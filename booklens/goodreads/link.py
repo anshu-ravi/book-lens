@@ -22,15 +22,30 @@ _COLON_TAIL_RE = re.compile(r":.*$")
 _COLON_HEAD_RE = re.compile(r"^[^:]+:\s*")
 _STOPWORD_RE = re.compile(r"^(the|a|an)\s+")
 _NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+# A dash surrounded by whitespace: hyphen-minus, en dash, em dash. Requires
+# whitespace on both sides so "Spider-Man" and an unspaced em dash don't split.
+_SPACED_DASH_RE = re.compile(r"\s[-–—]\s")
+
+
+def _normalise(v: str) -> str:
+    """Strip a leading stopword and squeeze to alphanumeric-only, lowercase."""
+    v = _STOPWORD_RE.sub("", v.strip())
+    return _NON_ALNUM_RE.sub("", v)
 
 
 def match_keys(title: str) -> set[str]:
     """Several normalised forms of a title; a match on any one is a match."""
     s = _PAREN_RE.sub("", (title or "").lower()).strip()
+    variants = [s, _COLON_TAIL_RE.sub("", s), _COLON_HEAD_RE.sub("", s)]
+
+    dash_spans = list(_SPACED_DASH_RE.finditer(s))
+    if dash_spans:
+        variants.append(s[: dash_spans[0].start()])
+        variants.append(s[dash_spans[-1].end() :])
+
     out = set()
-    for v in (s, _COLON_TAIL_RE.sub("", s), _COLON_HEAD_RE.sub("", s)):
-        v = _STOPWORD_RE.sub("", v.strip())
-        v = _NON_ALNUM_RE.sub("", v)
+    for v in variants:
+        v = _normalise(v)
         if v:
             out.add(v)
     return out

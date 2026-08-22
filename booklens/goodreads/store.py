@@ -75,10 +75,14 @@ class SyncReport:
     total_books: int
 
 
-def connect(path: Path | None = None) -> sqlite3.Connection:
-    """Open the Goodreads cache database, creating it if needed."""
+def connect(path: Path | None = None, *, check_same_thread: bool = True) -> sqlite3.Connection:
+    """Open the Goodreads cache database, creating it if needed.
+
+    `check_same_thread=False` is for a connection handed off to live longer
+    than the thread that opened it (e.g. a FastAPI request dependency).
+    """
     p = path if path is not None else paths.goodreads_db_path()
-    conn = sqlite3.connect(str(p))
+    conn = sqlite3.connect(str(p), check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")

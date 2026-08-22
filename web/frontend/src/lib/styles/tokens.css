@@ -29,12 +29,23 @@
   --sp-16: 64px; --sp-24: 96px;
 
   /* Radii / hairline / layout */
-  --r-chip:       2px;
-  --r-cover:      4px;
+  --r-chip:       4px;
+  --r-cover:      6px;
+  --r-card:       12px;
   --tracking-caps: 0.18em;
   --hairline:     1px solid var(--ink-hairline);
   --frame-inset:  var(--sp-8);
   --header-h:     80px;
+
+  /* Shelf chrome: the alcove/ledge a book row sits in, and the rail's brass text */
+  --alcove:       #0d141c;
+  --ledge:        #26313e;
+  --ledge-hi:     #3a4756;
+  --ledge-lip:    #060a0f;
+  --brass-text:   #c79a52;
+  --tie-line:     rgba(184, 146, 74, .45);
+  --r-box:        14px;
+  --r-shelf:      11px;
 }
 
 /* Light parchment palette. Token names stay dark-flavoured (--ink-bg is "the
@@ -43,17 +54,22 @@
 :root[data-theme='light'] {
   --ink-bg:        #faf6ec;
   --ink-surface:   #f2ecdc;
-  --ink-hairline:  rgba(31, 36, 32, 0.13);
+  --ink-hairline:  rgba(31, 36, 32, 0.24);
   --bone:          #1f2420;
-  --bone-muted:    #6e7268;
-  --bone-faint:    #9a9b90;
+  --bone-muted:    #4a4f43;
+  --bone-faint:    #5f6255;
   --brass:         #a8864a;
   --brass-dim:     rgba(168, 134, 74, 0.20);
   --oxblood:       #9a4a3a;
   --sage:          #2a4a35;
   --quote:         #8a6020;
 
-  --serif-display: 'Cormorant Garamond', Georgia, serif;
+  --alcove:        #eae1cb;
+  --ledge:         #d6c6a2;
+  --ledge-hi:      #fffdf3;
+  --ledge-lip:     #ab9a76;
+  --brass-text:    #7a5715;
+  --tie-line:      rgba(122, 87, 21, .55);
 }
 
 .small-caps {
@@ -61,4 +77,8 @@
   text-transform: uppercase;
   letter-spacing: var(--tracking-caps);
   font-size: var(--fs-12);
+}
+
+:root[data-theme='light'] .small-caps {
+  font-weight: 500;
 }

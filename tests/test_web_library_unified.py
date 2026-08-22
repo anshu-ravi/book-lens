@@ -7,9 +7,11 @@ synthetic, per CLAUDE.md.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi.testclient import TestClient
 
-from booklens import cli, goodreads
+from booklens import cli, goodreads, paths
 from booklens.goodreads import store
 from booklens.goodreads.feed import GoodreadsBook, ShelfFetch
 from booklens.web.app import app
@@ -81,8 +83,7 @@ def test_empty_cache_shape(tmp_path, monkeypatch):
     assert [s["label"] for s in body["shelves"]] == ["Reading", "To Read", "Completed", "Did Not Finish"]
     for s in body["shelves"]:
         assert s["count"] == 0
-        assert s["series"] == []
-        assert s["standalone"] == []
+        assert s["groups"] == []
     assert body["totals"] == {"books": 0, "with_epub": 0, "askable": 0}
 
 
@@ -97,10 +98,10 @@ def test_shelf_mapping_including_configured_dnf_shelf(tmp_path, monkeypatch):
 
     body = client.get("/api/library/unified").json()
     by_shelf = {s["shelf"]: s for s in body["shelves"]}
-    assert by_shelf["tbr"]["standalone"][0]["title"] == "Alpha"
-    assert by_shelf["reading"]["standalone"][0]["title"] == "Beta"
-    assert by_shelf["completed"]["standalone"][0]["title"] == "Gamma"
-    assert by_shelf["dnf"]["standalone"][0]["title"] == "Delta"
+    assert by_shelf["tbr"]["groups"][0]["books"][0]["title"] == "Alpha"
+    assert by_shelf["reading"]["groups"][0]["books"][0]["title"] == "Beta"
+    assert by_shelf["completed"]["groups"][0]["books"][0]["title"] == "Gamma"
+    assert by_shelf["dnf"]["groups"][0]["books"][0]["title"] == "Delta"
     assert body["totals"]["books"] == 4
 
 
@@ -113,29 +114,38 @@ def test_ingested_book_with_no_match_filed_by_progress(tmp_path, monkeypatch):
     # Unread by default -> tbr.
     body = client.get("/api/library/unified").json()
     by_shelf = {s["shelf"]: s for s in body["shelves"]}
-    assert by_shelf["tbr"]["standalone"][0]["book_id"] == "sample-book"
-    assert by_shelf["tbr"]["standalone"][0]["askable"] is True
-    assert by_shelf["tbr"]["standalone"][0]["goodreads_book_id"] is None
+    assert by_shelf["tbr"]["groups"][0]["books"][0]["book_id"] == "sample-book"
+    assert by_shelf["tbr"]["groups"][0]["books"][0]["askable"] is True
+    assert by_shelf["tbr"]["groups"][0]["books"][0]["goodreads_book_id"] is None
     assert body["totals"] == {"books": 1, "with_epub": 1, "askable": 1}
 
     rc = cli.main(["progress", "sample-book", "--status", "reading", "--chapter", "1"])
     assert rc == 0
     body = client.get("/api/library/unified").json()
     by_shelf = {s["shelf"]: s for s in body["shelves"]}
-    assert by_shelf["reading"]["standalone"][0]["book_id"] == "sample-book"
+    assert by_shelf["reading"]["groups"][0]["books"][0]["book_id"] == "sample-book"
 
     rc = cli.main(["progress", "sample-book", "--status", "finished"])
     assert rc == 0
     body = client.get("/api/library/unified").json()
     by_shelf = {s["shelf"]: s for s in body["shelves"]}
-    assert by_shelf["completed"]["standalone"][0]["book_id"] == "sample-book"
+    assert by_shelf["completed"]["groups"][0]["books"][0]["book_id"] == "sample-book"
 
 
-def test_ingested_book_progress_null_when_no_progress_row(tmp_path, monkeypatch):
+def test_ingested_book_progress_defaults_to_unread_when_no_progress_row(tmp_path, monkeypatch):
     _ingest(tmp_path, monkeypatch, "book.epub", "Sample Book")
 
     body = client.get("/api/library/unified").json()
-    entry = body["shelves"][1]["standalone"][0]  # tbr
+    entry = body["shelves"][1]["groups"][0]["books"][0]  # tbr
+    assert entry["progress"] == {"status": "unread", "chapter_idx": None, "ceiling_seq": 0}
+
+
+def test_goodreads_only_book_has_null_progress(tmp_path, monkeypatch):
+    _seed_gr(tmp_path, monkeypatch, "to-read", _gr_book("r1", "Alpha", "to-read"))
+
+    body = client.get("/api/library/unified").json()
+    entry = body["shelves"][1]["groups"][0]["books"][0]  # tbr
+    assert entry["book_id"] is None
     assert entry["progress"] is None
 
 
@@ -163,15 +173,15 @@ def test_series_spans_two_shelves_with_only_that_shelfs_volumes(tmp_path, monkey
     body = client.get("/api/library/unified").json()
     by_shelf = {s["shelf"]: s for s in body["shelves"]}
 
-    completed_series = by_shelf["completed"]["series"]
-    assert len(completed_series) == 1
-    assert completed_series[0]["name"] == "Ironbound"
-    assert [b["title"] for b in completed_series[0]["books"]] == ["Cold Wind (Ironbound, #2)"]
+    completed_groups = by_shelf["completed"]["groups"]
+    assert len(completed_groups) == 1
+    assert completed_groups[0]["series"] == "Ironbound"
+    assert [b["title"] for b in completed_groups[0]["books"]] == ["Cold Wind (Ironbound, #2)"]
 
-    tbr_series = by_shelf["tbr"]["series"]
-    assert len(tbr_series) == 1
-    assert tbr_series[0]["name"] == "Ironbound"
-    assert [b["title"] for b in tbr_series[0]["books"]] == ["Iron Heart (Ironbound, #1)"]
+    tbr_groups = by_shelf["tbr"]["groups"]
+    assert len(tbr_groups) == 1
+    assert tbr_groups[0]["series"] == "Ironbound"
+    assert [b["title"] for b in tbr_groups[0]["books"]] == ["Iron Heart (Ironbound, #1)"]
 
 
 def test_series_books_sorted_by_number(tmp_path, monkeypatch):
@@ -184,21 +194,24 @@ def test_series_books_sorted_by_number(tmp_path, monkeypatch):
 
     body = client.get("/api/library/unified").json()
     completed = next(s for s in body["shelves"] if s["shelf"] == "completed")
-    titles = [b["display_title"] for b in completed["series"][0]["books"]]
+    titles = [b["display_title"] for b in completed["groups"][0]["books"]]
     assert titles == ["Iron Heart", "Cold Wind", "Steel Dawn"]
 
 
-def test_standalone_sorted_by_title(tmp_path, monkeypatch):
+def test_standalone_entries_each_form_their_own_group(tmp_path, monkeypatch):
     _seed_gr(
         tmp_path, monkeypatch, "read",
-        _gr_book("r1", "Zebra Tale", "read"),
-        _gr_book("r2", "Apple Story", "read"),
+        _gr_book("r1", "Zebra Tale", "read", date_added="2024-01-02T00:00:00+00:00"),
+        _gr_book("r2", "Apple Story", "read", date_added="2024-01-01T00:00:00+00:00"),
     )
 
     body = client.get("/api/library/unified").json()
     completed = next(s for s in body["shelves"] if s["shelf"] == "completed")
-    titles = [b["title"] for b in completed["standalone"]]
-    assert titles == ["Apple Story", "Zebra Tale"]
+    assert len(completed["groups"]) == 2
+    assert all(len(g["books"]) == 1 for g in completed["groups"])
+    # Groups ordered by anchor (date_read/date_added) descending.
+    titles = [g["books"][0]["title"] for g in completed["groups"]]
+    assert titles == ["Zebra Tale", "Apple Story"]
 
 
 def test_display_title_strips_series_suffix(tmp_path, monkeypatch):
@@ -206,11 +219,112 @@ def test_display_title_strips_series_suffix(tmp_path, monkeypatch):
 
     body = client.get("/api/library/unified").json()
     completed = next(s for s in body["shelves"] if s["shelf"] == "completed")
-    book = completed["series"][0]["books"][0]
+    book = completed["groups"][0]["books"][0]
     assert book["title"] == "Cold Wind (Ironbound, #2)"
     assert book["display_title"] == "Cold Wind"
     assert book["series"] == "Ironbound"
     assert book["series_number"] == 2
+
+
+def test_series_group_ordered_by_most_recently_touched_volume(tmp_path, monkeypatch):
+    """Finishing volume 3 should slot the whole series in beside volumes 1-2, not jump to the front."""
+    _seed_gr(
+        tmp_path, monkeypatch, "read",
+        _gr_book(
+            "r1", "Iron Heart (Ironbound, #1)", "read", book_id="1",
+            date_added="2020-01-01T00:00:00+00:00", date_read="2020-02-01T00:00:00+00:00",
+        ),
+        _gr_book(
+            "r2", "Cold Wind (Ironbound, #2)", "read", book_id="2",
+            date_added="2020-03-01T00:00:00+00:00", date_read="2020-04-01T00:00:00+00:00",
+        ),
+        _gr_book(
+            "r3", "Steel Dawn (Ironbound, #3)", "read", book_id="3",
+            date_added="2024-01-01T00:00:00+00:00", date_read="2026-08-01T00:00:00+00:00",
+        ),
+        _gr_book(
+            "r4", "Unrelated Newer Book", "read", book_id="9",
+            date_added="2025-01-01T00:00:00+00:00", date_read="2025-06-01T00:00:00+00:00",
+        ),
+    )
+
+    body = client.get("/api/library/unified").json()
+    completed = next(s for s in body["shelves"] if s["shelf"] == "completed")
+    groups = completed["groups"]
+
+    ironbound = next(g for g in groups if g["series"] == "Ironbound")
+    assert [b["series_number"] for b in ironbound["books"]] == [1, 2, 3]
+
+    # Ironbound (anchored by volume 3's 2026 date_read) sorts ahead of the unrelated 2025 book.
+    assert groups[0]["series"] == "Ironbound"
+
+
+# -- cover precedence: Goodreads first, EPUB fallback --------------------------
+
+
+def test_cover_falls_back_to_epub_cover_when_goodreads_has_none(tmp_path, monkeypatch):
+    _ingest(tmp_path, monkeypatch, "book.epub", "Cold Wind")
+    (paths.book_dir("cold-wind")).mkdir(parents=True, exist_ok=True)
+    (paths.book_dir("cold-wind") / "cover.jpg").write_bytes(b"fake-cover-bytes")
+
+    _seed_gr(
+        tmp_path, monkeypatch, "read",
+        _gr_book(
+            "r1", "Cold Wind", "read", book_id="7235533",
+            cover_small=None, cover_medium=None, cover_large=None,
+        ),
+    )
+    conn = goodreads.connect()
+    try:
+        goodreads.set_link(conn, "cold-wind", "7235533", source="manual")
+    finally:
+        conn.close()
+
+    body = client.get("/api/library/unified").json()
+
+    completed = next(s for s in body["shelves"] if s["shelf"] == "completed")
+    entry = completed["groups"][0]["books"][0]
+    assert entry["cover"] == "/api/books/cold-wind/cover"
+
+
+def test_cover_prefers_goodreads_url_when_present(tmp_path, monkeypatch):
+    _ingest(tmp_path, monkeypatch, "book.epub", "Cold Wind")
+    (paths.book_dir("cold-wind")).mkdir(parents=True, exist_ok=True)
+    (paths.book_dir("cold-wind") / "cover.jpg").write_bytes(b"fake-cover-bytes")
+
+    _seed_gr(
+        tmp_path, monkeypatch, "read",
+        _gr_book(
+            "r1", "Cold Wind", "read", book_id="7235533",
+            cover_large="http://example.com/large.jpg",
+        ),
+    )
+    conn = goodreads.connect()
+    try:
+        goodreads.set_link(conn, "cold-wind", "7235533", source="manual")
+    finally:
+        conn.close()
+
+    body = client.get("/api/library/unified").json()
+
+    completed = next(s for s in body["shelves"] if s["shelf"] == "completed")
+    entry = completed["groups"][0]["books"][0]
+    assert entry["cover"] == "http://example.com/large.jpg"
+
+
+def test_cover_none_when_no_goodreads_cover_and_no_link(tmp_path, monkeypatch):
+    _seed_gr(
+        tmp_path, monkeypatch, "to-read",
+        _gr_book(
+            "r1", "Untouched Title", "to-read",
+            cover_small=None, cover_medium=None, cover_large=None,
+        ),
+    )
+
+    body = client.get("/api/library/unified").json()
+    tbr = next(s for s in body["shelves"] if s["shelf"] == "tbr")
+    entry = tbr["groups"][0]["books"][0]
+    assert entry["cover"] is None
 
 
 # -- no book appears twice ---------------------------------------------------
@@ -229,10 +343,8 @@ def test_linked_book_appears_only_once(tmp_path, monkeypatch):
     body = client.get("/api/library/unified").json()
     all_book_ids = []
     for s in body["shelves"]:
-        for entry in s["standalone"]:
-            all_book_ids.append(entry["book_id"])
-        for series in s["series"]:
-            for entry in series["books"]:
+        for group in s["groups"]:
+            for entry in group["books"]:
                 all_book_ids.append(entry["book_id"])
     assert all_book_ids.count("cold-wind") == 1
     assert body["totals"]["books"] == 1
@@ -261,3 +373,31 @@ def test_delete_library_link_removes_it(tmp_path, monkeypatch):
     resp = client.delete("/api/library/link/cold-wind")
     assert resp.status_code == 200
     assert resp.json() == {"book_id": "cold-wind", "goodreads_book_id": None}
+
+
+# -- cross-thread connection safety -------------------------------------------
+#
+# FastAPI can run a request's dependency and its route body on different
+# threadpool threads. `_get_goodreads_db` must open its connection with
+# `check_same_thread=False` (goodreads.connect's default is True, for CLI/test
+# callers) or this 500s under real concurrency -- a single sequential `curl`
+# won't reliably reproduce it, which is why this test fires many requests
+# from a thread pool instead.
+
+
+def test_unified_endpoint_survives_concurrent_requests(tmp_path, monkeypatch):
+    _seed_gr(tmp_path, monkeypatch, "read", _gr_book("r1", "Alpha", "read"))
+
+    # One sequential warm-up request creates index.db's schema first --
+    # racing *first-time* schema creation across threads is a separate,
+    # pre-existing concern from the one this test targets (the goodreads
+    # connection's check_same_thread flag).
+    assert client.get("/api/library/unified").status_code == 200
+
+    def fetch(_: int) -> int:
+        return client.get("/api/library/unified").status_code
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        statuses = list(pool.map(fetch, range(40)))
+
+    assert statuses == [200] * len(statuses)

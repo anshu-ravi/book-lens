@@ -84,6 +84,47 @@ def test_match_keys_unrelated_titles_do_not_intersect():
     assert not (match_keys("The Sword of Kaigen") & match_keys("Cold Wind"))
 
 
+def test_match_keys_spaced_dash_trailing_title_real_world_case():
+    """'Mistborn #03 - The Hero of Ages' must match the Goodreads form."""
+    a = match_keys("Mistborn #03 - The Hero of Ages")
+    b = match_keys("The Hero of Ages (Mistborn, #3)")
+    assert a & b
+
+
+def test_match_keys_spaced_dash_leading_title():
+    """The reversed shape -- title first, series tag after the dash -- also matches."""
+    a = match_keys("The Hero of Ages - Mistborn Book 3")
+    b = match_keys("The Hero of Ages (Mistborn, #3)")
+    assert a & b
+
+
+def test_match_keys_en_and_em_dash_spaced_behave_like_hyphen():
+    hyphen = match_keys("Mistborn #03 - The Hero of Ages")
+    en_dash = match_keys("Mistborn #03 – The Hero of Ages")
+    em_dash = match_keys("Mistborn #03 — The Hero of Ages")
+    assert "heroofages" in hyphen
+    assert "heroofages" in en_dash
+    assert "heroofages" in em_dash
+
+
+def test_match_keys_unspaced_dash_does_not_split():
+    keys = match_keys("Spider-Man")
+    assert keys == {"spiderman"}
+
+
+def test_match_keys_unspaced_em_dash_does_not_split():
+    keys = match_keys("Anne of Green Gables—Illustrated")
+    assert "gables" not in keys
+    assert "illustrated" not in keys
+
+
+def test_match_keys_three_part_title_only_outer_segments():
+    keys = match_keys("Alpha - Beta - Gamma")
+    assert "alpha" in keys
+    assert "gamma" in keys
+    assert "beta" not in keys
+
+
 # -- propose_links ----------------------------------------------------------------
 
 
@@ -97,6 +138,26 @@ def test_propose_links_unique_match(tmp_path, monkeypatch):
 
         links, unmatched = propose_links(iconn, gconn)
         assert links == [Link(book_id="cold-wind", goodreads_book_id="7235533")]
+        assert unmatched == []
+    finally:
+        iconn.close()
+        gconn.close()
+
+
+def test_propose_links_spaced_dash_title_now_matches(tmp_path, monkeypatch):
+    """Regression: the spaced-dash EPUB shape used to miss its Goodreads row entirely."""
+    _isolate(tmp_path, monkeypatch)
+    iconn = db.connect_index()
+    gconn = goodreads.connect()
+    try:
+        _insert_book(iconn, "hero-of-ages", "Mistborn #03 - The Hero of Ages")
+        _seed_gr(
+            gconn, "read",
+            _gr_book("r1", "The Hero of Ages (Mistborn, #3)", "read", book_id="68429"),
+        )
+
+        links, unmatched = propose_links(iconn, gconn)
+        assert links == [Link(book_id="hero-of-ages", goodreads_book_id="68429")]
         assert unmatched == []
     finally:
         iconn.close()
