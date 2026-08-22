@@ -296,7 +296,7 @@ def _to_series_number(raw: str) -> int | float:
 
 
 def _unified_progress_payload(pconn: sqlite3.Connection, book_id: str | None) -> dict | None:
-    """A unified-entry `progress` block, or `None` when there's no progress row (or no book)."""
+    """A unified-entry `progress` block; `None` only when there's no linked book at all."""
     if book_id is None:
         return None
     row = pconn.execute(
@@ -304,7 +304,7 @@ def _unified_progress_payload(pconn: sqlite3.Connection, book_id: str | None) ->
         (book_id,),
     ).fetchone()
     if row is None:
-        return None
+        return {"status": "unread", "chapter_idx": None, "ceiling_seq": 0}
     return {
         "status": row["status"],
         "chapter_idx": row["position_chapter_idx"],
@@ -368,6 +368,36 @@ def _ingested_unified_entry(book_row: sqlite3.Row, pconn: sqlite3.Connection) ->
     }
 
 
+def _group_anchor(books: list[dict]) -> str:
+    """The most recent `date_read`/`date_added` across a group's books, for shelf ordering."""
+    return max((b["date_read"] or b["date_added"] or "") for b in books)
+
+
+def _group_shelf_entries(shelf_entries: list[dict]) -> list[dict]:
+    """Entries grouped by series (volume-ordered), groups ordered by most-recently-touched."""
+    groups: list[dict] = []
+    series_index: dict[str, dict] = {}
+    for entry in shelf_entries:
+        series = entry["series"]
+        if series is None:
+            groups.append({"series": None, "books": [entry]})
+            continue
+        group = series_index.get(series)
+        if group is None:
+            group = {"series": series, "books": []}
+            series_index[series] = group
+            groups.append(group)
+        group["books"].append(entry)
+
+    for group in groups:
+        group["books"].sort(
+            key=lambda b: (b["series_number"] is None, b["series_number"])
+        )
+
+    groups.sort(key=lambda g: _group_anchor(g["books"]), reverse=True)
+    return groups
+
+
 @app.get("/api/library/unified")
 def get_unified_library(dbs: DbDep, gconn: GoodreadsDbDep):
     """One list of books sourced from the Goodreads shelf cache, grouped by shelf then series.
@@ -409,26 +439,13 @@ def get_unified_library(dbs: DbDep, gconn: GoodreadsDbDep):
         total_books += len(shelf_entries)
         with_epub += sum(1 for e in shelf_entries if e["book_id"] is not None)
 
-        series_map: dict[str, list[dict]] = {}
-        standalone: list[dict] = []
-        for entry in shelf_entries:
-            if entry["series"]:
-                series_map.setdefault(entry["series"], []).append(entry)
-            else:
-                standalone.append(entry)
-
-        series_list = [
-            {"name": name, "books": sorted(books, key=lambda b: b["series_number"])}
-            for name, books in sorted(series_map.items())
-        ]
-        standalone.sort(key=lambda e: e["title"])
+        groups = _group_shelf_entries(shelf_entries)
 
         shelves.append({
             "shelf": key,
             "label": label,
             "count": len(shelf_entries),
-            "series": series_list,
-            "standalone": standalone,
+            "groups": groups,
         })
 
     return {
