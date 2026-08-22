@@ -184,8 +184,8 @@ def upsert_shelf(conn: sqlite3.Connection, fetch: ShelfFetch) -> int:
                 published_year, description, cover_small, cover_medium,
                 cover_large, average_rating, user_rating, user_review,
                 shelf, custom_shelves, date_added, date_read, date_created,
-                date_started, synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                synced_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(review_id) DO UPDATE SET
                 book_id=excluded.book_id, title=excluded.title, author=excluded.author,
                 isbn=excluded.isbn, num_pages=excluded.num_pages,
@@ -194,8 +194,12 @@ def upsert_shelf(conn: sqlite3.Connection, fetch: ShelfFetch) -> int:
                 cover_large=excluded.cover_large, average_rating=excluded.average_rating,
                 user_rating=excluded.user_rating, user_review=excluded.user_review,
                 shelf=excluded.shelf, custom_shelves=excluded.custom_shelves,
-                date_added=excluded.date_added, date_read=excluded.date_read,
-                date_created=excluded.date_created, date_started=excluded.date_started,
+                -- date_added is deliberately absent: RSS reports the last
+                -- shelf change, so re-syncing a finished book would overwrite
+                -- the true added date with its finish date. First insert wins,
+                -- and enrichment corrects it from the authenticated table.
+                date_read=excluded.date_read,
+                date_created=excluded.date_created,
                 synced_at=excluded.synced_at
             """,
             (
@@ -204,7 +208,7 @@ def upsert_shelf(conn: sqlite3.Connection, fetch: ShelfFetch) -> int:
                 book.cover_small, book.cover_medium, book.cover_large,
                 book.average_rating, book.user_rating, book.user_review,
                 book.shelf, ",".join(book.custom_shelves), book.date_added,
-                book.date_read, book.date_created, book.date_started, now,
+                book.date_read, book.date_created, now,
             ),
         )
 
@@ -294,6 +298,10 @@ def apply_review_rows(conn: sqlite3.Connection, rows: Iterable[ReviewRow]) -> in
     Sets `date_started`, `read_count`, and `enriched_at` on every matching
     row; fills `date_read` only where it is currently null. Never deletes --
     a row with no matching `review_id` is simply left untouched.
+
+    `date_added` is overwritten rather than filled, because RSS's version of
+    it is the last shelf-entry change (the finish date, for a finished book)
+    and only this table reports when the book was actually added.
     """
     now = _now()
     updated = 0
@@ -304,10 +312,18 @@ def apply_review_rows(conn: sqlite3.Connection, rows: Iterable[ReviewRow]) -> in
                 date_started = ?,
                 read_count = ?,
                 date_read = COALESCE(date_read, ?),
+                date_added = COALESCE(?, date_added),
                 enriched_at = ?
             WHERE review_id = ?
             """,
-            (row.date_started, row.read_count, row.date_read, now, row.review_id),
+            (
+                row.date_started,
+                row.read_count,
+                row.date_read,
+                row.date_added,
+                now,
+                row.review_id,
+            ),
         )
         updated += cur.rowcount
     conn.commit()

@@ -52,6 +52,10 @@ class ReviewRow:
     title: str
     date_started: str | None  # ISO-8601, precision matches what the reader recorded
     date_read: str | None
+    # The RSS feed's `user_date_added` is really the last time the shelf entry
+    # changed, so for a finished book it equals the finish date. Only the
+    # authenticated table carries the date the book was actually added.
+    date_added: str | None
     read_count: int | None
     num_pages: int | None
 
@@ -154,6 +158,7 @@ def parse_review_table(html_bytes: bytes) -> tuple[ReviewRow, ...]:
                 title=fields.get("title") or "",
                 date_started=_parse_review_date(fields.get("date_started")),
                 date_read=_parse_review_date(fields.get("date_read")),
+                date_added=_parse_review_date(fields.get("date_added")),
                 read_count=_to_int(fields.get("read_count")),
                 num_pages=_to_int(fields.get("num_pages")),
             )

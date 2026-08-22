@@ -228,3 +228,80 @@ def test_hidden_template_row_without_cells_is_skipped():
       <tr id="review_template"></tr>
     </table>"""
     assert [r.review_id for r in parse_review_table(html)] == ["1"]
+
+
+# -- sync must not undo enrichment ---------------------------------------------
+
+
+def test_sync_does_not_wipe_enriched_columns(gr_conn):
+    """`upsert_shelf` once wrote date_started from RSS, where it is always
+    null, so every sync silently erased the enriched start dates."""
+    _seed(gr_conn, "1")
+    rows = parse_review_table(_table_html(_row_html("1", "Seeded 1", "Jun 21, 2026", "not set", count="2")))
+    store.apply_review_rows(gr_conn, rows)
+    store.apply_genres(gr_conn, gr_conn.execute(
+        "SELECT book_id FROM goodreads_book WHERE review_id='1'").fetchone()[0], ("Fantasy",))
+
+    _seed(gr_conn, "1")  # a second sync of the same shelf
+
+    got = gr_conn.execute(
+        "SELECT date_started, read_count, genres FROM goodreads_book WHERE review_id='1'"
+    ).fetchone()
+    assert got["date_started"] == "2026-06-21"
+    assert got["read_count"] == 2
+    assert got["genres"] == "Fantasy"
+
+
+# -- date_added comes from the authenticated table -----------------------------
+
+
+def test_date_added_is_replaced_by_the_authenticated_value(gr_conn):
+    """RSS reports the last shelf change as date_added, which for a finished
+    book is the finish date. The review table has the real one."""
+    _seed(gr_conn, "1", date_read="Tue, 4 Aug 2026 00:00:00 +0000")
+    gr_conn.execute("UPDATE goodreads_book SET date_added='2026-08-04T00:00:00+00:00'")
+    rows = parse_review_table(
+        _table_html(
+            """
+    <tr id="review_1">
+      <td class="field title"><label>title</label><div class="value"><a>Seeded 1</a></div></td>
+      <td class="field date_added"><label>date added</label><div class="value">May 18, 2026<a>[edit]</a></div></td>
+      <td class="field date_started"><label>date started</label><div class="value">Jul 17, 2026<a>[edit]</a></div></td>
+    </tr>"""
+        )
+    )
+    assert rows[0].date_added == "2026-05-18"
+    store.apply_review_rows(gr_conn, rows)
+    assert gr_conn.execute(
+        "SELECT date_added FROM goodreads_book WHERE review_id='1'"
+    ).fetchone()[0] == "2026-05-18"
+
+
+def test_missing_authenticated_date_added_keeps_the_existing_value(gr_conn):
+    _seed(gr_conn, "1")
+    gr_conn.execute("UPDATE goodreads_book SET date_added='2026-01-01T00:00:00+00:00'")
+    rows = parse_review_table(_table_html(_row_html("1", "Seeded 1", "not set", "not set")))
+    store.apply_review_rows(gr_conn, rows)
+    assert gr_conn.execute(
+        "SELECT date_added FROM goodreads_book WHERE review_id='1'"
+    ).fetchone()[0] == "2026-01-01T00:00:00+00:00"
+
+
+def test_sync_does_not_overwrite_an_enriched_date_added(gr_conn):
+    """RSS's date_added is the last shelf change, so a re-sync must not undo
+    the true value enrichment wrote."""
+    _seed(gr_conn, "1", date_read="Tue, 4 Aug 2026 00:00:00 +0000")
+    rows = parse_review_table(
+        _table_html(
+            """
+    <tr id="review_1">
+      <td class="field title"><div class="value">Seeded 1</div></td>
+      <td class="field date_added"><div class="value">May 18, 2026<a>[edit]</a></div></td>
+    </tr>"""
+        )
+    )
+    store.apply_review_rows(gr_conn, rows)
+    _seed(gr_conn, "1", date_read="Tue, 4 Aug 2026 00:00:00 +0000")  # re-sync
+    assert gr_conn.execute(
+        "SELECT date_added FROM goodreads_book WHERE review_id='1'"
+    ).fetchone()[0] == "2026-05-18"
