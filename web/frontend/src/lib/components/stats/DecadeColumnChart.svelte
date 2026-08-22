@@ -1,31 +1,38 @@
 <script lang="ts">
-	import type { GoodreadsStatsGenre } from '$lib/types';
+	import type { GoodreadsStatsDecade } from '$lib/types';
 	import ChartTooltip from './ChartTooltip.svelte';
-	import { hBarPath, ellipsize } from './chartUtils';
+	import { vBarPath } from './chartUtils';
 
-	let { data }: { data: GoodreadsStatsGenre[] } = $props();
+	let { data }: { data: GoodreadsStatsDecade[] } = $props();
 
-	const ROW_H = 30;
-	const ML = 130;
-	const MR = 24;
-	const MT = 4;
-	const MB = 4;
+	const H = 220;
+	const ML = 34;
+	const MR = 12;
+	const MT = 10;
+	const MB = 26;
 
 	let w = $state(0);
 	let hovered = $state<number | null>(null);
 	let pointer = $state({ x: 0, y: 0 });
 
 	let n = $derived(data.length);
-	let H = $derived(MT + MB + n * ROW_H);
-	let barMaxWidth = $derived(Math.max(0, w - ML - MR));
+	let innerW = $derived(Math.max(0, w - ML - MR));
+	let innerH = H - MT - MB;
 	let maxBooks = $derived(Math.max(1, ...data.map((d) => d.books)));
+	let slot = $derived(n > 0 ? innerW / n : innerW);
+	let barWidth = $derived(Math.min(24, Math.max(2, slot - 6)));
+	let ticks = $derived([0, Math.round(maxBooks / 2), maxBooks]);
 
 	let bars = $derived(
 		data.map((d, i) => {
-			const width = (d.books / maxBooks) * barMaxWidth;
-			const y = MT + i * ROW_H;
-			const thickness = Math.min(24, ROW_H - 10);
-			return { x: ML, y: y + (ROW_H - thickness) / 2, width, thickness, rowY: y };
+			const height = (d.books / maxBooks) * innerH;
+			return {
+				x: ML + i * slot + (slot - barWidth) / 2,
+				y: MT + innerH - height,
+				width: barWidth,
+				height,
+				hitX: ML + i * slot,
+			};
 		}),
 	);
 
@@ -36,16 +43,16 @@
 			if (rect) pointer = { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
 		} else {
 			const b = bars[i];
-			if (b) pointer = { x: b.x + b.width, y: b.rowY + ROW_H / 2 };
+			if (b) pointer = { x: b.x + b.width / 2, y: b.y };
 		}
 	}
 
 	function onKeydown(evt: KeyboardEvent) {
 		if (n === 0) return;
-		if (evt.key === 'ArrowRight' || evt.key === 'ArrowDown') {
+		if (evt.key === 'ArrowRight') {
 			evt.preventDefault();
 			setHovered(Math.min(n - 1, (hovered ?? -1) + 1));
-		} else if (evt.key === 'ArrowLeft' || evt.key === 'ArrowUp') {
+		} else if (evt.key === 'ArrowLeft') {
 			evt.preventDefault();
 			setHovered(Math.max(0, (hovered ?? n) - 1));
 		} else if (evt.key === 'Escape') {
@@ -54,8 +61,14 @@
 	}
 
 	function optionId(i: number): string {
-		return `genres-opt-${i}`;
+		return `decade-opt-${i}`;
 	}
+
+	let plotLabel = $derived(
+		n === 0
+			? 'Books read by decade of original publication'
+			: `Books read by decade of original publication, ${data[0].decade}s through ${data[n - 1].decade}s`,
+	);
 </script>
 
 <div
@@ -63,38 +76,37 @@
 	bind:clientWidth={w}
 	tabindex="0"
 	role="listbox"
-	aria-label="Books read by genre, by number of books"
+	aria-label={plotLabel}
 	aria-activedescendant={hovered !== null ? optionId(hovered) : undefined}
 	onkeydown={onKeydown}
 >
 	{#if w > 0}
 		{#if n === 0}
-			<p class="empty-note">Genres haven't been imported yet — run enrichment to see them here.</p>
+			<p class="empty-note">No publication years recorded yet.</p>
 		{:else}
 			<svg width={w} height={H} viewBox="0 0 {w} {H}" role="presentation">
-				{#each data as g, i (g.genre)}
-					{@const bar = bars[i]}
-					{@const isHovered = hovered === i}
-					{@const isDimmed = hovered !== null && !isHovered}
-					<text x={ML - 10} y={bar.rowY + ROW_H / 2 + 4} class="row-label">
-						{ellipsize(g.genre, 20)}<title>{g.genre}</title>
+				{#each ticks as tick (tick)}
+					{@const y = MT + innerH - (tick / maxBooks) * innerH}
+					<line x1={ML} y1={y} x2={w - MR} y2={y} class="gridline" />
+					<text x={ML - 6} y={y + 4} class="axis-label left">{tick}</text>
+				{/each}
+
+				{#each bars as bar, i (data[i].decade)}
+					{@const isDimmed = hovered !== null && hovered !== i}
+					<path d={vBarPath(bar.x, bar.y, bar.width, bar.height)} class="bar" opacity={isDimmed ? 0.45 : 1} />
+					<text x={ML + i * slot + slot / 2} y={H - MB + 16} class="axis-label decade">
+						{data[i].decade}s
 					</text>
-					<path d={hBarPath(bar.x, bar.y, bar.width, bar.thickness)} class="bar" opacity={isDimmed ? 0.45 : 1} />
-					{#if i === 0}
-						<text x={bar.x + bar.width + 8} y={bar.rowY + ROW_H / 2 + 4} class="value-label">
-							{g.books}
-						</text>
-					{/if}
 					<rect
-						x="0"
-						y={bar.rowY}
-						width={w}
-						height={ROW_H}
+						x={bar.hitX}
+						y={MT}
+						width={slot}
+						height={innerH}
 						class="hit"
 						role="option"
 						id={optionId(i)}
 						aria-selected={hovered === i}
-						aria-label="{g.genre}: {g.books} books"
+						aria-label="{data[i].decade}s: {data[i].books} books"
 						onpointerenter={(e) => setHovered(i, e)}
 						onpointermove={(e) => setHovered(i, e)}
 						onpointerleave={() => (hovered = null)}
@@ -104,7 +116,7 @@
 
 			{#if hovered !== null && data[hovered]}
 				<ChartTooltip x={pointer.x} y={pointer.y} containerWidth={w}>
-					<strong>{data[hovered].genre}</strong><br />
+					<strong>{data[hovered].decade}s</strong><br />
 					{data[hovered].books} book{data[hovered].books === 1 ? '' : 's'}
 				</ChartTooltip>
 			{/if}
@@ -124,21 +136,25 @@
 	svg {
 		display: block;
 	}
-	.row-label {
-		font-family: var(--serif-body);
-		font-size: 12px;
-		fill: var(--bone-muted);
-		text-anchor: end;
+	.gridline {
+		stroke: var(--ink-hairline);
+		stroke-width: 1;
 	}
-	.bar {
-		fill: var(--brass);
-		transition: opacity 0.1s ease;
-	}
-	.value-label {
+	.axis-label {
 		font-family: var(--mono);
 		font-variant-numeric: tabular-nums;
 		font-size: 11px;
 		fill: var(--bone-faint);
+	}
+	.axis-label.left {
+		text-anchor: end;
+	}
+	.axis-label.decade {
+		text-anchor: middle;
+	}
+	.bar {
+		fill: var(--brass);
+		transition: opacity 0.1s ease;
 	}
 	.hit {
 		fill: transparent;
