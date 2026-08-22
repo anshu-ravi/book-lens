@@ -162,6 +162,10 @@
 		}
 	}
 
+	function onKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') onclose();
+	}
+
 	async function confirmDelete() {
 		error = '';
 		deleting = true;
@@ -176,6 +180,8 @@
 		}
 	}
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="overlay">
 	<button type="button" class="overlay-dismiss" aria-label="Close" onclick={onclose} disabled={saving}
