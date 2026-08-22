@@ -639,6 +639,49 @@ def cmd_goodreads_shelf(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_goodreads_link(args: argparse.Namespace) -> int:
+    """Autolink ingested books to cached Goodreads entries by normalised title."""
+    from dataclasses import asdict
+
+    from booklens.goodreads import autolink, connect
+
+    iconn = db.connect_index()
+    gconn = connect()
+    try:
+        report = autolink(iconn, gconn)
+    finally:
+        iconn.close()
+        gconn.close()
+
+    if args.json:
+        print(json.dumps(
+            {
+                "linked": report.linked,
+                "already_linked": report.already_linked,
+                "ambiguous": report.ambiguous,
+                "unmatched": report.unmatched,
+                "ambiguous_books": [asdict(u) for u in report.ambiguous_books],
+                "unmatched_books": [asdict(u) for u in report.unmatched_books],
+            },
+            indent=2,
+        ))
+        return 0
+
+    print(f"linked: {report.linked}")
+    print(f"already linked: {report.already_linked}")
+    print(f"ambiguous: {report.ambiguous}")
+    print(f"unmatched: {report.unmatched}")
+    if report.ambiguous_books:
+        print("\nambiguous (left unlinked):")
+        for u in report.ambiguous_books:
+            print(f"  {u.title!r} ({u.book_id}) -- candidates: {', '.join(u.candidates)}")
+    if report.unmatched_books:
+        print("\nunmatched:")
+        for u in report.unmatched_books:
+            print(f"  {u.title!r} ({u.book_id})")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
@@ -817,6 +860,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_gr_shelf.add_argument("shelf", help="'read', 'currently-reading', 'to-read', a configured DNF shelf, or 'all'")
     p_gr_shelf.add_argument("--json", action="store_true")
     p_gr_shelf.set_defaults(func=cmd_goodreads_shelf)
+
+    p_gr_link = goodreads_sub.add_parser(
+        "link", help="autolink ingested books to cached Goodreads entries by title"
+    )
+    p_gr_link.add_argument("--json", action="store_true")
+    p_gr_link.set_defaults(func=cmd_goodreads_link)
 
     return parser
 
