@@ -175,6 +175,51 @@ export interface CreditsResponse {
 	usage_monthly: number;
 }
 
+export interface UnifiedProgress {
+	status: BookStatus;
+	chapter_idx: number | null;
+	ceiling_seq: number;
+}
+
+export interface UnifiedEntry {
+	goodreads_book_id: string | null;
+	title: string;
+	display_title: string;
+	author: string;
+	cover: string | null;
+	series: string | null;
+	series_number: number | null;
+	user_rating: number | null;
+	average_rating: number | null;
+	num_pages: number | null;
+	description: string | null;
+	genres: string[];
+	date_added: string | null;
+	date_started: string | null;
+	date_read: string | null;
+	goodreads_url: string | null;
+	book_id: string | null;
+	askable: boolean;
+	progress: UnifiedProgress | null;
+}
+
+export interface UnifiedGroup {
+	series: string | null;
+	books: UnifiedEntry[];
+}
+
+export interface UnifiedShelf {
+	shelf: string;
+	label: string;
+	count: number;
+	groups: UnifiedGroup[];
+}
+
+export interface UnifiedLibraryResponse {
+	shelves: UnifiedShelf[];
+	totals: { books: number; with_epub: number; askable: number };
+}
+
 export interface GoodreadsShelf {
 	shelf: string;
 	count: number;

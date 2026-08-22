@@ -19,6 +19,7 @@ import type {
 	GoodreadsSettingsResponse,
 	GoodreadsSettingsUpdate,
 	GoodreadsStatsResponse,
+	UnifiedLibraryResponse,
 } from './types';
 
 export class ApiError extends Error {
@@ -176,4 +177,19 @@ export function putGoodreadsSettings(
 
 export function getGoodreadsStats(): Promise<GoodreadsStatsResponse> {
 	return request<GoodreadsStatsResponse>('/goodreads/stats');
+}
+
+export function getUnifiedLibrary(): Promise<UnifiedLibraryResponse> {
+	return request<UnifiedLibraryResponse>('/library/unified');
+}
+
+export function linkBook(bookId: string, goodreadsBookId: string): Promise<{ book_id: string; goodreads_book_id: string | null }> {
+	return request(`/library/link`, {
+		method: 'POST',
+		body: JSON.stringify({ book_id: bookId, goodreads_book_id: goodreadsBookId }),
+	});
+}
+
+export function unlinkBook(bookId: string): Promise<{ book_id: string; goodreads_book_id: string | null }> {
+	return request(`/library/link/${encodeURIComponent(bookId)}`, { method: 'DELETE' });
 }
