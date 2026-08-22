@@ -614,6 +614,48 @@ It did **not** recover the 9 missing finish dates. Authenticated `date_read` is 
 
 ---
 
+## 29. The library already knows what the book is, so the upload flow should ask it
+
+**Decision (2026-08-22):** `POST /api/upload/inspect` matches the dropped EPUB against the cached Goodreads shelf and returns a `goodreads_match` alongside the EPUB's own metadata. When the match carries a series, it overrides the series-suggestion ladder outright. The upload form fills its title and author from the match, not from the file. `POST /api/upload/commit` accepts the matched `goodreads_book_id` and writes the link itself, so a book arrives on the shelf already joined to its catalogue entry.
+
+**Why.** EPUB metadata is whatever the person who packaged the file typed. Measured against this library's nineteen books, the raw titles include `The Kingdom of Copper (The Daevabad Trilogy, Book 2)` and `Mistborn #03 - The Hero of Ages` — both of which had to be hand-corrected at upload time, in a form that was already displaying the correct title one screen away in the Library tab. The clean record existed; the upload flow just wasn't reading it. It now resolves 19 of 19 from raw EPUB titles.
+
+**The match never guesses.** Candidates come from `link.match_keys`, the same normalised-title matcher the autolink pass uses, deduped by `book_id`. Exactly one candidate is a match; two or more are narrowed by shared author tokens of two characters or more, and anything still ambiguous returns nothing. Zero and ambiguous are the same answer — no match — because a wrong prefill is worse than no prefill: it is a plausible-looking value the reader has no reason to re-check.
+
+**Why widening `match_keys` is safe.** It gained a spaced-dash variant to catch the `Series #03 - Title` shape. Both callers require exactly one candidate and treat two-or-more as ambiguous, so an extra key can only turn a miss into a hit or a hit into an ambiguous no-link. It cannot turn a correct match into a wrong one. That asymmetry is what makes the matcher safe to keep loosening.
+
+**Decision:** a book's card carries its identity into the upload screen. `Upload EPUB` on a card with no EPUB links to `/upload?goodreads=<id>`, and the drop zone then shows the cover, title, author, and volume of the book being filled in. A pinned match from the URL always beats whatever the inspect call matched.
+
+**Why the deep link and not just the matcher.** From a card, the answer is not inferred at all — the reader has already said which book this is by clicking on it. Re-deriving it from the file and hoping the matcher agrees would be throwing away a certainty and replacing it with a guess.
+
+**Decision:** cover precedence is Goodreads first, the EPUB's own cover as fallback. A unified-library entry with no Goodreads cover and a linked book falls back to `/api/books/<id>/cover`.
+
+**Why.** Goodreads carries the edition art most readers picture; an EPUB's embedded cover is often a scan, a placeholder, or absent. But a book with no Goodreads cover and a perfectly good embedded one was rendering a generated plate, which is worse than either.
+
+## 30. The Stats tab is a grid of small charts, one hue, and never two y-axes
+
+**Decision (2026-08-22):** the Stats tab is a row of stat tiles, one full-width timeline, and a `repeat(auto-fit, minmax(320px, 1fr))` grid of chart cards. Every chart renders at its container's measured pixel width with an explicit pixel height — one SVG unit is one CSS pixel.
+
+**Why the sizing rule is a rule and not a preference.** Every chart declared a small viewBox and then `svg { width: 100%; height: auto }`. In a 1140px column a 480-unit viewBox upscales 2.4×, so a `font-size: 10px` label painted at 24px and a 26px row at 62px. Nothing in the source said "huge"; the numbers all looked reasonable. That is what makes it worth writing down — a viewBox that scales to its container silently multiplies every type size in the chart, and the only defence is to never let it scale. The page went from roughly ten screens to two.
+
+**Decision: no dual-axis charts, anywhere.** The books-per-month chart plotted book counts as bars and page counts as a line on two independent y-scales. It is now a single-measure column chart with a Books/Pages toggle and year filters.
+
+**Why.** Two y-scales let the author manufacture any apparent relationship they like by choosing the two ranges; the crossings mean nothing. A toggle shows the same two measures honestly, one scale at a time, and the filter is more useful than the second series ever was.
+
+**Decision: charts are single-hue brass. `--brass` and `--sage` are never two series in one chart.** A meter uses one hue in two steps — `--brass` fill on a `--brass-dim` track.
+
+**Why, measured.** Against the dark surface the two brand colours separate by ΔE 11.8 for normal vision and 7.2 under protanopia — below the threshold where a reader can reliably tell two series apart, and well below it for the colourblind case. Almost every chart here is single-series, so the constraint costs nothing; where a second series seemed necessary it was really two charts or a filter. `--sage` keeps its non-data roles elsewhere in the app.
+
+**A track belongs to a meter, not to a bar chart.** The first pass drew a full-width `--brass-dim` rect behind every bar. Because `--brass-dim` is a saturated brass rather than a neutral, each bar read as two-tone — `5 of 10` — implying a denominator that does not exist. Books-per-author has no whole to be a fraction of. Part-of-whole chrome asserts a part-of-whole relationship whether or not one is meant.
+
+**Section 28's counting rule reappeared here, in a new disguise.** The series list rendered `2 of 3 in your library`, where the 3 is the number of volumes the reader owns, not the length of the series. Both numbers are known, so this is not literally the invented denominator section 28 forbids — but a reader seeing `2 of 3` concludes one volume is left in the trilogy, which is exactly the claim the Goodreads feed cannot support. It now reads `2 read · 3 in your library`. The rule generalises: it is not the invented *number* that does the damage, it is the invented *relationship* a fraction implies.
+
+**Every chart is interactive by default.** Hover dims the other marks and opens a tooltip; arrow keys move the same selection from the keyboard. A chart rendered in HTML that does not respond to a pointer is leaving its detail layer unbuilt — the alternative is labelling every mark, which is how the first version became unreadable.
+
+**Five `svelte-check` warnings in the chart components are expected and must not be "fixed".** A chart with discrete marks is a `listbox` on the wrapper, `option` on each hit target, and a roving `aria-activedescendant` — the WAI-ARIA pattern where the wrapper holds focus and the options are never individually tabbable. `a11y_interactive_supports_focus` does not model that pattern and demands a `tabindex` on every element with an interactive role. Adding `tabindex="-1"` back would silence it and reintroduce exactly the imprecision the roles were changed to remove. The scatter is the one chart that is not a listbox: it has no discrete marks, so it is a `role="img"` with the summary in its label, unfocusable, with the tooltip as a pointer-only affordance.
+
+---
+
 # Appendix: superseded and rejected decisions
 
 Kept in full. Nothing here is current design. Each entry says what replaced it and why it is worth keeping.
