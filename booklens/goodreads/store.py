@@ -58,6 +58,13 @@ CREATE TABLE IF NOT EXISTS goodreads_setting(
   key    TEXT PRIMARY KEY,
   value  TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS goodreads_link(
+  book_id            TEXT PRIMARY KEY,
+  goodreads_book_id  TEXT NOT NULL,
+  linked_at          TEXT NOT NULL,
+  source             TEXT NOT NULL
+);
 """
 
 
@@ -226,7 +233,9 @@ def sync(conn: sqlite3.Connection, user_id: str, *, dnf_shelf: str | None = None
     """Fetch every configured shelf and persist it, returning a per-shelf report.
 
     Raises `GoodreadsError` (propagated from `fetch_all_shelves`) if any
-    shelf fetch fails -- a partial sync is not silently accepted.
+    shelf fetch fails -- a partial sync is not silently accepted. Re-links
+    against `index.db` at the end -- pure local computation, no network --
+    so newly-synced shelf entries pick up an EPUB match immediately.
     """
     fetches = fetch_all_shelves(user_id, dnf_shelf=dnf_shelf, client=client)
 
@@ -237,6 +246,15 @@ def sync(conn: sqlite3.Connection, user_id: str, *, dnf_shelf: str | None = None
         shelf_counts[shelf] = len(fetch.books)
         if fetch.truncated:
             truncated_shelves.append(shelf)
+
+    from booklens import db as _db
+    from booklens.goodreads.link import autolink
+
+    iconn = _db.connect_index()
+    try:
+        autolink(iconn, conn)
+    finally:
+        iconn.close()
 
     return SyncReport(
         shelf_counts=shelf_counts,

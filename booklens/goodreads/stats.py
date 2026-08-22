@@ -39,6 +39,15 @@ def parse_series(title: str) -> tuple[str, str] | None:
     return match.group("series").strip(), match.group("number")
 
 
+def strip_series_suffix(title: str) -> str:
+    """A title with its trailing `(Series, #N)` suffix removed, for display.
+
+    Returns `title` unchanged when it carries no parseable series marker.
+    """
+    match = _SERIES_RE.match(title.strip())
+    return match.group("base").strip() if match is not None else title
+
+
 def _read_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM goodreads_book WHERE shelf = 'read'").fetchall()
 
