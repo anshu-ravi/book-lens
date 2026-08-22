@@ -93,7 +93,7 @@
 </script>
 
 <svelte:head>
-	<title>BookLens · Library</title>
+	<title>BookLens · Home</title>
 </svelte:head>
 
 {#if loading}
@@ -103,7 +103,6 @@
 {:else}
 	<div class="bar">
 		<div class="greet">
-			<span class="small-caps meta">{totals.books} books · {totals.with_epub} you can ask about</span>
 			<h1 class="display-line">Where were we?</h1>
 		</div>
 		<label class="find">
@@ -120,6 +119,7 @@
 			<div class="row-hd">
 				<h2>Currently reading</h2>
 				<span class="ct">{filteredReadingShelf.count}</span>
+				<a href="/library?shelf=reading" class="full small-caps">See all &rarr;</a>
 			</div>
 			<div class="rc-row">
 				{#each filteredReadingShelf.groups as group (group.series ?? group.books[0].book_id ?? group.books[0].goodreads_book_id)}
@@ -158,6 +158,7 @@
 		entry={openEntry}
 		onclose={closeBook}
 		onedit={(focus) => openEdit(openEntry!, focus)}
+		escapeEnabled={editing === null}
 	/>
 {/if}
 
@@ -203,11 +204,6 @@
 		gap: var(--sp-4);
 		margin-bottom: var(--sp-12);
 		flex-wrap: wrap;
-	}
-	.meta {
-		color: var(--brass-text);
-		display: block;
-		margin-bottom: var(--sp-2);
 	}
 	.display-line {
 		font-family: var(--serif-display);
@@ -272,6 +268,18 @@
 	}
 	:root[data-theme='light'] .ct {
 		color: var(--bone-muted);
+	}
+	.full {
+		margin-left: auto;
+		font-family: var(--sans-caps);
+		text-transform: uppercase;
+		letter-spacing: var(--tracking-caps);
+		font-size: var(--fs-12);
+		color: var(--brass-text);
+		text-decoration: none;
+	}
+	.full:hover {
+		text-decoration: underline;
 	}
 	.rc-row {
 		display: flex;

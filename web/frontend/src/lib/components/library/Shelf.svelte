@@ -10,7 +10,6 @@
 
 	let { shelf, onopen }: { shelf: UnifiedShelf; onopen: (entry: UnifiedEntry) => void } = $props();
 
-	let expanded = $state(false);
 	let failedCovers = $state(new Set<string>());
 
 	function coverKey(entry: UnifiedEntry, gi: number, bi: number): string {
@@ -29,8 +28,7 @@
 		return out;
 	}
 
-	const visibleGroups = $derived(expanded ? shelf.groups : limitGroups(shelf.groups, INITIAL_LIMIT));
-	const isTruncated = $derived(!expanded && visibleGroups.length < shelf.groups.length);
+	const visibleGroups = $derived(limitGroups(shelf.groups, INITIAL_LIMIT));
 
 	function bookHeight(numPages: number | null): number {
 		const pages = Math.min(MAX_PAGES, Math.max(MIN_PAGES, numPages ?? DEFAULT_PAGES));
@@ -43,11 +41,7 @@
 	<div class="row-hd">
 		<h2>{shelf.label}</h2>
 		<span class="ct">{shelf.count}</span>
-		{#if isTruncated}
-			<button type="button" class="full small-caps" onclick={() => (expanded = true)}>
-				All {shelf.count} &rarr;
-			</button>
-		{/if}
+		<a href="/library?shelf={shelf.shelf}" class="full small-caps">See all &rarr;</a>
 	</div>
 	<div class="alcove">
 		<div class="bks">
@@ -132,6 +126,7 @@
 		border: none;
 		cursor: pointer;
 		padding: 0;
+		text-decoration: none;
 	}
 	.full:hover {
 		text-decoration: underline;

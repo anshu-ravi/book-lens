@@ -55,7 +55,7 @@
 {:else if isEmptyCache}
 	<div class="empty-state">
 		<p>Nothing synced yet.</p>
-		<a href="/goodreads" class="small-caps sync-link">Go to Goodreads →</a>
+		<a href="/library" class="small-caps sync-link">Go to library →</a>
 	</div>
 {:else if stats}
 	<div class="sections">
