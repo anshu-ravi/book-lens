@@ -652,6 +652,16 @@ It did **not** recover the 9 missing finish dates. Authenticated `date_read` is 
 
 **Every chart is interactive by default.** Hover dims the other marks and opens a tooltip; arrow keys move the same selection from the keyboard. A chart rendered in HTML that does not respond to a pointer is leaving its detail layer unbuilt — the alternative is labelling every mark, which is how the first version became unreadable.
 
+**Amendment (2026-08-23): the page leads with covers, not a bar.** The first chart is a strip where each month's finished books stack upward from a baseline as cover tiles — the column height is the count, and the column is also the answer to *which* books. It is built in HTML rather than SVG, unlike every other chart here, because covers are images: real `<img>` elements give the generated-plate fallback, the runtime-404 swap, and the hover state for free, where an SVG would need all three rebuilt. A chart is not obliged to be an SVG; it is obliged to be made of the right primitive.
+
+**Amendment: label every bar, in exactly two charts.** Most-read authors and Genres carry a value at the tip of every bar, against the selective-labelling rule above. The rule exists to stop numbers being sprayed across a dense series; ten short horizontal bars of small integers are not that, and the reader asked for it directly. The exception is scoped to those two charts rather than the rule being dropped.
+
+**Amendment: series progress and length-versus-time are removed from the tab.** Both were judged useless by the only reader. The `series` and `durations` keys stay in the payload — a key costs nothing, `durations.median_days` still feeds a stat tile, and series progress is worth rebuilding somewhere it can say something the Library does not.
+
+**An author read once is not a most-read author.** Thirteen of this reader's authors appear exactly once, so the chart's tail was a run of identical single-book bars conveying no ranking. The filter is server-side and applies before the cap, and an all-singletons shelf returns an empty list rather than falling back to the unfiltered set.
+
+**The `by_month` rename is worth remembering as a shape of bug.** The key `books` held an integer count and had to become the list of books. Adding a third key would have left every existing reader working — and wrong, because a non-empty array is truthy and `books > 0` quietly becomes a comparison against a list. The count moved to `count` so that every stale reader breaks loudly instead.
+
 **Five `svelte-check` warnings in the chart components are expected and must not be "fixed".** A chart with discrete marks is a `listbox` on the wrapper, `option` on each hit target, and a roving `aria-activedescendant` — the WAI-ARIA pattern where the wrapper holds focus and the options are never individually tabbable. `a11y_interactive_supports_focus` does not model that pattern and demands a `tabindex` on every element with an interactive role. Adding `tabindex="-1"` back would silence it and reintroduce exactly the imprecision the roles were changed to remove. The scatter is the one chart that is not a listbox: it has no discrete marks, so it is a `role="img"` with the summary in its label, unfocusable, with the tooltip as a pointer-only affordance.
 
 ---

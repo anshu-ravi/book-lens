@@ -7,7 +7,8 @@
 
 	const ROW_H = 30;
 	const ML = 130;
-	const MR = 24;
+	// Wide enough for a 3-digit tabular-nums label at the tip of the longest bar.
+	const MR = 40;
 	const MT = 4;
 	const MB = 4;
 
@@ -80,11 +81,9 @@
 						{ellipsize(a.author, 20)}<title>{a.author}</title>
 					</text>
 					<path d={hBarPath(bar.x, bar.y, bar.width, bar.thickness)} class="bar" opacity={isDimmed ? 0.45 : 1} />
-					{#if i === 0}
-						<text x={bar.x + bar.width + 8} y={bar.rowY + ROW_H / 2 + 4} class="value-label">
-							{a.books}
-						</text>
-					{/if}
+					<text x={bar.x + bar.width + 8} y={bar.rowY + ROW_H / 2 + 4} class="value-label">
+						{a.books}
+					</text>
 					<rect
 						x="0"
 						y={bar.rowY}

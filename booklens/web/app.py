@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from booklens import chat, classify, context, db, goodreads, ingest, paths, progress, reseq, tools
 from booklens.extract import extract_book, extract_cover, read_series_hint
+from booklens.goodreads.stats import _to_series_number
 from booklens.ingest import _slugify as _slugify_name
 from booklens.llm.base import FatalLLMError, TransientLLMError
 from booklens.web import sessions
@@ -366,12 +367,6 @@ _UNIFIED_SHELF_ORDER = (
     ("dnf", "Did Not Finish"),
 )
 _INGESTED_SHELF_BY_STATUS = {"finished": "completed", "reading": "reading"}
-
-
-def _to_series_number(raw: str) -> int | float:
-    """A `parse_series` number string as JSON-friendly int or float."""
-    value = float(raw)
-    return int(value) if value.is_integer() else value
 
 
 def _unified_progress_payload(pconn: sqlite3.Connection, book_id: str | None) -> dict | None:
@@ -1098,10 +1093,29 @@ def post_goodreads_sync(body: GoodreadsSyncRequest, conn: GoodreadsDbDep):
     }
 
 
+def _apply_month_cover_fallback(by_month: list[dict], gconn: sqlite3.Connection) -> None:
+    """Fill in `books[*]["cover"]` from a linked EPUB's cover, in place.
+
+    `stats.py` stays pure (no filesystem, no `index.db`); this is the same
+    Goodreads-first / EPUB-fallback precedence used elsewhere (DECISIONS.md
+    section 29), applied to the month-strip book records.
+    """
+    linked = goodreads.linked_book_ids(gconn)
+    for month in by_month:
+        for book in month["books"]:
+            if book["cover"] is not None:
+                continue
+            book_id = linked.get(book["goodreads_book_id"])
+            if book_id is not None and paths.cover_path(book_id) is not None:
+                book["cover"] = f"/api/books/{book_id}/cover"
+
+
 @app.get("/api/goodreads/stats")
 def get_goodreads_stats(conn: GoodreadsDbDep):
     """Reading statistics computed from the cache -- zeroed shape when empty."""
-    return goodreads.compute_stats(conn)
+    stats = goodreads.compute_stats(conn)
+    _apply_month_cover_fallback(stats["by_month"], conn)
+    return stats
 
 
 # -- misc -------------------------------------------------------------------

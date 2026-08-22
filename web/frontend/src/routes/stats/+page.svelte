@@ -4,13 +4,13 @@
 	import type { GoodreadsStatsResponse } from '$lib/types';
 	import ChartCard from '$lib/components/stats/ChartCard.svelte';
 	import StatTile from '$lib/components/stats/StatTile.svelte';
+	import CoverStrip from '$lib/components/stats/CoverStrip.svelte';
+	import YearChips from '$lib/components/stats/YearChips.svelte';
 	import ReadingTimelineChart from '$lib/components/stats/ReadingTimelineChart.svelte';
 	import AuthorsBarChart from '$lib/components/stats/AuthorsBarChart.svelte';
 	import GenresBarChart from '$lib/components/stats/GenresBarChart.svelte';
 	import GenreRatingDotPlot from '$lib/components/stats/GenreRatingDotPlot.svelte';
 	import DecadeColumnChart from '$lib/components/stats/DecadeColumnChart.svelte';
-	import SeriesList from '$lib/components/stats/SeriesList.svelte';
-	import LengthTimeScatter from '$lib/components/stats/LengthTimeScatter.svelte';
 	import { monthYear } from '$lib/components/stats/chartUtils';
 
 	let stats = $state<GoodreadsStatsResponse | null>(null);
@@ -19,6 +19,7 @@
 
 	let timelineMeasure = $state<'books' | 'pages'>('books');
 	let timelineYear = $state<'all' | number>('all');
+	let stripYear = $state<'all' | number>('all');
 
 	async function load() {
 		loading = true;
@@ -54,6 +55,22 @@
 		return stats.by_month.filter((d) => monthYear(d.month) === timelineYear);
 	});
 
+	let stripData = $derived.by(() => {
+		if (!stats) return [];
+		if (stripYear === 'all') return stats.by_month;
+		return stats.by_month.filter((d) => monthYear(d.month) === stripYear);
+	});
+
+	// A fact about the coverage of the strip, not an apology for it: some read
+	// books have no recorded finish date and so cannot be placed on a month.
+	let stripSubtitle = $derived.by(() => {
+		if (!stats) return undefined;
+		const { with_date_read, read_total } = stats.coverage;
+		const missing = read_total - with_date_read;
+		if (missing <= 0) return `${with_date_read} read books, placed by month.`;
+		return `${with_date_read} of ${read_total} read books have a recorded finish date and appear here; ${missing} do not.`;
+	});
+
 	// Pace: pages read per month spanned by the recorded reading history.
 	// `by_month` is already gap-filled, so its length is the month span.
 	let paceSentence = $derived.by(() => {
@@ -81,11 +98,6 @@
 		return `At your current pace, about ${yrs.toFixed(1)} years of reading is waiting on the shelf.`;
 	});
 
-	let scatterSubtitle = $derived.by(() => {
-		if (!stats) return undefined;
-		const covered = (stats.durations?.books ?? []).filter((d) => d.pages > 0).length;
-		return `Covers ${covered} of ${stats.coverage.read_total} read books with both a page count and a finish time.`;
-	});
 </script>
 
 <svelte:head>
@@ -126,41 +138,39 @@
 		</div>
 		<p class="pace">{paceSentence}</p>
 
-		<ChartCard title="Reading over time">
+		<ChartCard title="Books read, by month" subtitle={stripSubtitle}>
 			{#snippet controls()}
-				<div class="segmented small-caps">
-					<button
-						type="button"
-						class:active={timelineMeasure === 'books'}
-						onclick={() => (timelineMeasure = 'books')}
-					>
-						Books
-					</button>
-					<button
-						type="button"
-						class:active={timelineMeasure === 'pages'}
-						onclick={() => (timelineMeasure = 'pages')}
-					>
-						Pages
-					</button>
-				</div>
+				<YearChips {years} value={stripYear} onchange={(v) => (stripYear = v)} />
 			{/snippet}
-			<div class="year-chips small-caps">
-				<button type="button" class:active={timelineYear === 'all'} onclick={() => (timelineYear = 'all')}>
-					All
-				</button>
-				{#each years as y (y)}
-					<button type="button" class:active={timelineYear === y} onclick={() => (timelineYear = y)}>
-						{y}
-					</button>
-				{/each}
-			</div>
-			<ReadingTimelineChart data={timelineData} measure={timelineMeasure} />
+			<CoverStrip data={stripData} />
 		</ChartCard>
 
 		<div class="card-grid">
+			<ChartCard title="Reading over time">
+				{#snippet controls()}
+					<div class="segmented small-caps">
+						<button
+							type="button"
+							class:active={timelineMeasure === 'books'}
+							onclick={() => (timelineMeasure = 'books')}
+						>
+							Books
+						</button>
+						<button
+							type="button"
+							class:active={timelineMeasure === 'pages'}
+							onclick={() => (timelineMeasure = 'pages')}
+						>
+							Pages
+						</button>
+					</div>
+				{/snippet}
+				<YearChips {years} value={timelineYear} onchange={(v) => (timelineYear = v)} />
+				<ReadingTimelineChart data={timelineData} measure={timelineMeasure} />
+			</ChartCard>
+
 			<ChartCard title="Most-read authors">
-				<AuthorsBarChart data={stats.top_authors.slice(0, 8)} />
+				<AuthorsBarChart data={stats.top_authors} />
 			</ChartCard>
 
 			<ChartCard title="Genres" subtitle="Each book contributes up to three genres, so counts sum past the book total.">
@@ -173,23 +183,6 @@
 
 			<ChartCard title="Publication decade">
 				<DecadeColumnChart data={stats.by_decade} />
-			</ChartCard>
-
-			<ChartCard title="Series" span2>
-				<SeriesList data={stats.series} />
-			</ChartCard>
-
-			<ChartCard title="Length versus time" subtitle={scatterSubtitle} span2>
-				{#if (stats.durations?.count ?? 0) === 0}
-					<p class="empty-note">
-						Start dates haven't been imported yet — run enrichment to see whether longer books
-						take proportionally longer.
-					</p>
-				{:else}
-					<LengthTimeScatter
-						durations={stats.durations ?? { count: 0, median_days: 0, mean_days: 0, fastest: null, slowest: null, books: [] }}
-					/>
-				{/if}
 			</ChartCard>
 		</div>
 	</div>
@@ -247,6 +240,7 @@
 		grid-template-columns: minmax(0, 1fr);
 		gap: var(--sp-8);
 		min-width: 0;
+		container-type: inline-size;
 	}
 	.tile-row {
 		display: grid;
@@ -260,10 +254,25 @@
 		color: var(--bone-muted);
 		margin: calc(-1 * var(--sp-4)) 0 0;
 	}
+	/* Capped at 3 columns -- auto-fit can't express a maximum, so the
+	   breakpoints are explicit. Each threshold is the container width at
+	   which one more 320px track (the existing minimum) plus its gap
+	   still fits: 2*320+24 = 664px, 3*320+2*24 = 1008px. Below 664px a
+	   single column keeps every card at or above the 320px minimum. */
 	.card-grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--sp-6);
+	}
+	@container (min-width: 664px) {
+		.card-grid {
+			grid-template-columns: repeat(2, minmax(320px, 1fr));
+		}
+	}
+	@container (min-width: 1008px) {
+		.card-grid {
+			grid-template-columns: repeat(3, minmax(320px, 1fr));
+		}
 	}
 	.segmented {
 		display: inline-flex;
@@ -287,31 +296,5 @@
 	.segmented button.active {
 		background: var(--brass-dim);
 		color: var(--brass-text);
-	}
-	.year-chips {
-		display: flex;
-		flex-wrap: wrap;
-		gap: var(--sp-2);
-	}
-	.year-chips button {
-		background: none;
-		border: var(--hairline);
-		border-radius: var(--r-chip);
-		padding: var(--sp-1) var(--sp-2);
-		color: var(--bone-muted);
-		cursor: pointer;
-		font: inherit;
-		letter-spacing: inherit;
-		text-transform: inherit;
-	}
-	.year-chips button.active {
-		background: var(--brass-dim);
-		color: var(--brass-text);
-		border-color: var(--brass);
-	}
-	.empty-note {
-		font-style: italic;
-		color: var(--bone-muted);
-		margin: 0;
 	}
 </style>
