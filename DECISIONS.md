@@ -465,7 +465,7 @@ book-lens-v2/
 
 **Why two books, not one:** two volumes is the minimum that exercises the cross-book logic that most of this design exists to serve — `global_seq` spanning volumes, per-book progress state, the union-of-ranges readable set. A single-book corpus would let all of that pass untested. V1 ships on book 1 alone to get something usable in hand; V1.1 extends to Golden Son and Morning Star immediately after.
 
-**Why not the Stormlight Archive:** the user is mid-way through *Words of Radiance*. It is explicitly excluded from fixtures, docstrings, eval cases, and design examples. Mistborn also gives the ingest parser a second structural shape to handle, since it carries chapter epigraphs.
+**Why not the Stormlight Archive:** the user has read through *Words of Radiance* and no further (corrected 2026-08-22 — when this was written they were mid-way through it, and the volumes after it are still unread, so the exclusion stands unchanged). It is explicitly excluded from fixtures, docstrings, eval cases, and design examples. Mistborn also gives the ingest parser a second structural shape to handle, since it carries chapter epigraphs.
 
 Eval golden sets may quote the dev corpus freely, including post-cutoff material — asserting that the app does *not* surface it is the entire point of a golden set.
 
@@ -591,6 +591,26 @@ It did **not** recover the 9 missing finish dates. Authenticated `date_read` is 
 **Rejected (2026-08-21): Goodreads progress never seeds the reading cutoff.** A percentage from `currently-reading` plus `num_pages` looks like it could replace typing a chapter number, and it is the first thing anyone proposes. It is not going to happen. The cutoff is the one number the spoiler invariant rests on, and a Goodreads percentage is a coarse, self-reported, page-count-derived figure attached to some edition that is not necessarily the ingested EPUB. Deriving a `global_seq` ceiling from it means guessing, and a ceiling that guesses high leaks. The reader typing a chapter is not friction to be optimised away — it is the reader stating the bound deliberately, which is the only thing that makes the bound trustworthy.
 
 **Still undecided.** How a Goodreads book maps onto an ingested EPUB. Nothing in the app depends on it yet; the Goodreads tab reads its own cache and joins to nothing.
+
+---
+
+## 28. The Library is shelves, and a series is never broken up
+
+**Decision (2026-08-22):** the Library tab is a shelf-based view over `GET /api/library/unified`. Navigation moves from a top header into a persistent left rail carried by every route. The four shelves are Currently reading, To read, Completed, and Did not finish; the first is rendered as wide cards and the other three as rows of books standing in a recessed alcove on a ledge.
+
+**Series contiguity replaces the series/standalone split.** Each shelf returns an ordered `groups` list rather than separate `series` and `standalone` arrays. Books group by series, sort by volume within a group, and a group sits at the position of its most recently touched volume. The reader's own library is what forced this: 65 of the 102 books are on To read, and **not one of them shares a shelf with another volume of its series**, because books get added as the previous one is finished. The old shape rendered 28 series headers over exactly one book each — 100% chrome for 0% grouping. Grouping only earns its space when it groups something, so the header is gone and the run itself carries the meaning: a brass tie-line and the series name beneath a run of two or more, and volume numbers shown only inside such a run. On a shelf where everything is volume 1, a volume badge is noise.
+
+**Why the anchor is the most recent volume and not the oldest.** Finishing volume 3 must land it beside volumes 1 and 2, not at the front of the shelf ahead of them. Sorting groups by their newest member gives that for free, and it is the behaviour the reader asked for by name. There is a regression test for exactly that scenario.
+
+**Counts describe the library, never the series.** A card says `3 in your library`, never `3 of 3` or `complete`. The Goodreads shelf feed carries no series length, so any denominator would be invented — and this is the same rule the spoiler invariant already states as *never display counts of unknown things*, arriving from a different direction. Getting a real denominator would mean scraping Goodreads' series pages, which is a separate piece of work and not currently done.
+
+**This supersedes section 21's "design tokens kept verbatim."** That decision inherited the predecessor project's token file untouched, and it held for four screens. A shelf needs surfaces the set had no equivalent for, so eight tokens are added: `--alcove`, `--ledge`, `--ledge-hi`, `--ledge-lip` for the shelf chrome, `--tie-line` for the series rule, `--brass-text`, and `--r-box` / `--r-shelf` for the frame and shelf radii. It also supersedes section 23's carousel of series cards opening into a pop-up, since a series is no longer a container to open — it is a run of books already on the shelf.
+
+**Brass had to be split in two.** `--brass` is a fill: progress bars, borders, the active nav marker. At 10px uppercase on the light theme's parchment it was unreadable, which is what `--brass-text` exists for — `#c79a52` in dark, `#7a5715` in light. The light theme's grey ramp moved with it, `--bone-muted` to `#575c50` and `--bone-faint` to `#77796b`, because the dark values were pale enough on parchment that counts and chapter positions disappeared. The general rule the two themes now follow: a value that reads as *quiet* on ink reads as *absent* on paper, so the light theme gets its own ramp rather than inheriting one.
+
+**A trap worth recording, because it cost two attempts.** The frame that surrounds rail and content cannot use `overflow: hidden` to clip its rounded corners. Doing so makes the frame the containing block for `position: sticky`, and the rail silently scrolls away with the page instead of staying put — no error, just wrong behaviour. The rail's own left corners carry the radius instead.
+
+**Left undone deliberately.** The Goodreads tab still exists as its own screen rather than folding into the Library, and no light/dark default was changed even though light is now the better-realised of the two.
 
 ---
 

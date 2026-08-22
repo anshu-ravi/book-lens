@@ -18,8 +18,8 @@ This was learned the hard way: during the design session that produced this proj
 
 There is no meta mode. When working on this repo:
 
-- Do not illustrate designs with real reveals from books the user is mid-way through.
-- **The Stormlight Archive is off-limits as an example source.** The user is mid-way through *Words of Radiance* and it is not the dev corpus. Do not use it in fixtures, docstrings, eval cases, or design examples.
+- Do not illustrate designs with real reveals from books the user has not finished.
+- **The Stormlight Archive is off-limits as an example source.** The user has read through *Words of Radiance*; every volume after it is unread, and the series is not the dev corpus. Do not use it in fixtures, docstrings, eval cases, or design examples.
 - Do not rely on parametric knowledge of any book for test data. Pull from the text via bounded tools, or invent.
 - The audit pass must run on all assistant output, not just answers to book questions.
 
