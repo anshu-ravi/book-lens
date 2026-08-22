@@ -109,7 +109,12 @@
 								Update your status
 							</button>
 						{:else}
-							<a class="btn-primary small-caps" href="/upload">Upload EPUB</a>
+							<a
+							class="btn-primary small-caps"
+							href={entry.goodreads_book_id
+								? `/upload?goodreads=${encodeURIComponent(entry.goodreads_book_id)}`
+								: '/upload'}>Upload EPUB</a
+						>
 						{/if}
 						<button type="button" class="btn-secondary small-caps" onclick={() => onedit('details')}>
 							Edit details

@@ -59,7 +59,12 @@
 			</div>
 		{:else}
 			<p class="rc-no-epub">No EPUB yet — upload one to track your position and ask questions about it.</p>
-			<a class="rc-btn small-caps rc-upload" href="/upload">Upload EPUB</a>
+			<a
+				class="rc-btn small-caps rc-upload"
+				href={entry.goodreads_book_id
+					? `/upload?goodreads=${encodeURIComponent(entry.goodreads_book_id)}`
+					: '/upload'}>Upload EPUB</a
+			>
 		{/if}
 	</div>
 </article>

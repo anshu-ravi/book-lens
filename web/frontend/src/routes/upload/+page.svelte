@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getSeries, inspectUpload, inspectCoverUrl, commitUpload, ApiError } from '$lib/api';
-	import type { SeriesSummary, InspectResponse, CommitResponse } from '$lib/types';
+	import { page } from '$app/state';
+	import {
+		getSeries,
+		inspectUpload,
+		inspectCoverUrl,
+		commitUpload,
+		getGoodreadsBook,
+		ApiError,
+	} from '$lib/api';
+	import type { SeriesSummary, InspectResponse, CommitResponse, GoodreadsMatch } from '$lib/types';
 	import { slugify, seriesName } from '$lib/utils/series-name';
 	import { toRoman } from '$lib/utils/roman';
 	import DropZone from '$lib/components/upload/DropZone.svelte';
@@ -16,6 +24,19 @@
 	let inspectResult = $state<InspectResponse | null>(null);
 
 	let allSeries = $state<SeriesSummary[]>([]);
+
+	// A match pinned via ?goodreads=<id> -- the user arrived from a known
+	// library card, so its identity is already settled before any file lands.
+	let pinnedMatch = $state<GoodreadsMatch | null>(null);
+	let pinnedMatchNote = $state('');
+	let pinnedMatchPromise: Promise<void> | null = null;
+	let matchDismissed = $state(false);
+
+	// The match actually in effect: a pinned card match wins over whatever the
+	// inspect response matched, unless the user explicitly dismissed it.
+	const activeMatch = $derived<GoodreadsMatch | null>(
+		matchDismissed ? null : (pinnedMatch ?? inspectResult?.goodreads_match ?? null),
+	);
 
 	let editing = $state(false);
 	let title = $state('');
@@ -62,7 +83,23 @@
 		}
 	}
 
-	onMount(loadSeries);
+	async function loadPinnedMatch() {
+		const id = page.url.searchParams.get('goodreads');
+		if (!id) return;
+		try {
+			pinnedMatch = await getGoodreadsBook(id);
+			pinnedMatchNote = '';
+		} catch {
+			// non-fatal: fall back to a cold upload
+			pinnedMatch = null;
+			pinnedMatchNote = "Couldn't load that catalog match — continuing as a fresh upload.";
+		}
+	}
+
+	onMount(() => {
+		loadSeries();
+		pinnedMatchPromise = loadPinnedMatch();
+	});
 
 	function fileSizeLabel(bytes: number): string {
 		const mb = bytes / (1024 * 1024);
@@ -78,14 +115,25 @@
 		inspectError = '';
 		inspectResult = null;
 		editing = false;
+		matchDismissed = false;
 		commitResult = null;
 		commitError = '';
 		inspecting = true;
 		try {
 			const res = await inspectUpload(f);
 			inspectResult = res;
-			title = res.title;
-			author = res.author ?? '';
+			// A pinned match (from the URL) must always win over whatever the
+			// inspect call matched -- await it so a still-loading fetch can't
+			// lose the race and let a weaker match slip into the form.
+			if (pinnedMatchPromise) await pinnedMatchPromise;
+			const match = pinnedMatch ?? res.goodreads_match ?? null;
+			if (match) {
+				title = match.title;
+				author = match.author ?? res.author ?? '';
+			} else {
+				title = res.title;
+				author = res.author ?? '';
+			}
 			// A suggested series is only offered when it's already on the shelf;
 			// otherwise it seeds the "new series" name and the user confirms it.
 			const onShelf =
@@ -121,6 +169,7 @@
 				series_id: standalone ? standaloneSeriesId : effectiveSeriesId,
 				book_order: standalone ? 1 : bookOrder,
 				standalone,
+				goodreads_book_id: activeMatch?.goodreads_book_id ?? null,
 			});
 			await loadSeries();
 		} catch (e) {
@@ -135,10 +184,24 @@
 		inspectResult = null;
 		inspectError = '';
 		editing = false;
+		matchDismissed = false;
 		commitResult = null;
 		commitError = '';
 		committing = false;
 		loadSeries();
+	}
+
+	// Goodreads numbers novellas #1.5, which has no roman numeral.
+	function volumeLabel(n: number): string {
+		return Number.isInteger(n) ? toRoman(n) : String(n);
+	}
+
+	function useOwnDetails() {
+		matchDismissed = true;
+		if (inspectResult) {
+			title = inspectResult.title;
+			author = inspectResult.author ?? '';
+		}
 	}
 </script>
 
@@ -151,6 +214,32 @@
 
 	<div class="main-panel">
 		{#if step === 1}
+			{#if pinnedMatch}
+				<div class="pinned-match">
+					<BookCover
+						title={pinnedMatch.title}
+						author={pinnedMatch.author ?? ''}
+						seriesId={slugify(pinnedMatch.series || pinnedMatch.title)}
+						size="small"
+						coverUrl={pinnedMatch.cover}
+					/>
+					<div class="pinned-match-body">
+						<p class="pinned-match-title">{pinnedMatch.title}</p>
+						{#if pinnedMatch.author}
+							<p class="pinned-match-author">{pinnedMatch.author}</p>
+						{/if}
+						{#if pinnedMatch.series}
+							<p class="pinned-match-series small-caps">
+								{pinnedMatch.series}{#if pinnedMatch.series_number}
+									{' '}· Volume {volumeLabel(pinnedMatch.series_number)}{/if}
+							</p>
+						{/if}
+						<p class="pinned-match-note italic">Drop the EPUB for this volume.</p>
+					</div>
+				</div>
+			{:else if pinnedMatchNote}
+				<p class="pinned-match-error italic">{pinnedMatchNote}</p>
+			{/if}
 			<DropZone onfile={onFile} />
 		{:else if step === 2 || step === 3}
 			<h1 class="page-title">Catalog entry.</h1>
@@ -178,12 +267,43 @@
 							{author}
 							seriesId={effectiveSeriesId || 'unshelved'}
 							size="plate"
-							coverUrl={inspectResult.has_cover ? inspectCoverUrl(inspectResult.sha256) : null}
+							coverUrl={activeMatch?.cover ??
+								(inspectResult.has_cover ? inspectCoverUrl(inspectResult.sha256) : null)}
 						/>
 					</div>
 
 					<table class="catalog-table">
 						<tbody>
+							{#if activeMatch}
+								<tr>
+									<td class="label small-caps">Matched</td>
+									<td class="value">
+										<div class="matched-row">
+											<span>
+												{activeMatch.title}{#if activeMatch.author}
+													{' '}<span class="matched-author">— {activeMatch.author}</span>{/if}
+											</span>
+											<a
+												class="link-external small-caps"
+												href={activeMatch.goodreads_url}
+												target="_blank"
+												rel="noopener noreferrer"
+											>
+												Goodreads <span aria-hidden="true">↗</span>
+											</a>
+											<button type="button" class="btn-ghost small-caps" onclick={useOwnDetails}>
+												Use the EPUB's own details
+											</button>
+										</div>
+										{#if activeMatch.linked_book_id && activeMatch.linked_book_id !== inspectResult.existing_book_id}
+											<p class="already-note">
+												This Goodreads entry already has a different EPUB attached — shelving
+												will re-point it to this one.
+											</p>
+										{/if}
+									</td>
+								</tr>
+							{/if}
 							<tr>
 								<td class="label small-caps">Title</td>
 								<td class="value">
@@ -344,6 +464,67 @@
 		font-size: var(--fs-13);
 		margin-bottom: var(--sp-8);
 		text-align: right;
+	}
+	.pinned-match {
+		display: flex;
+		gap: var(--sp-6);
+		align-items: flex-start;
+		margin-bottom: var(--sp-8);
+		padding-bottom: var(--sp-6);
+		border-bottom: var(--hairline);
+	}
+	.pinned-match-body {
+		display: flex;
+		flex-direction: column;
+		gap: var(--sp-1);
+		padding-top: var(--sp-1);
+	}
+	.pinned-match-title {
+		font-family: var(--serif-display);
+		font-style: italic;
+		font-size: var(--fs-22);
+		color: var(--bone);
+		margin: 0;
+	}
+	.pinned-match-author {
+		color: var(--bone-muted);
+		font-size: var(--fs-14);
+		margin: 0;
+	}
+	.pinned-match-series {
+		color: var(--brass-text);
+		font-size: var(--fs-13);
+		margin: 0;
+	}
+	.pinned-match-note {
+		color: var(--bone-muted);
+		font-size: var(--fs-14);
+		margin: var(--sp-2) 0 0;
+	}
+	.pinned-match-error {
+		color: var(--bone-muted);
+		font-size: var(--fs-14);
+		margin: 0 0 var(--sp-6);
+	}
+	.matched-row {
+		display: flex;
+		align-items: center;
+		gap: var(--sp-4);
+		flex-wrap: wrap;
+	}
+	.matched-author {
+		color: var(--bone-muted);
+	}
+	.link-external {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--brass-text);
+		text-decoration: none;
+	}
+	.link-external:hover,
+	.link-external:focus-visible {
+		opacity: 0.75;
 	}
 	.entry-body {
 		display: flex;

@@ -19,6 +19,7 @@ import type {
 	GoodreadsSettingsResponse,
 	GoodreadsSettingsUpdate,
 	GoodreadsStatsResponse,
+	GoodreadsMatch,
 	UnifiedLibraryResponse,
 } from './types';
 
@@ -177,6 +178,10 @@ export function putGoodreadsSettings(
 
 export function getGoodreadsStats(): Promise<GoodreadsStatsResponse> {
 	return request<GoodreadsStatsResponse>('/goodreads/stats');
+}
+
+export function getGoodreadsBook(goodreadsBookId: string): Promise<GoodreadsMatch> {
+	return request<GoodreadsMatch>(`/goodreads/books/${encodeURIComponent(goodreadsBookId)}`);
 }
 
 export function getUnifiedLibrary(): Promise<UnifiedLibraryResponse> {

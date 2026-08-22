@@ -78,6 +78,19 @@ export interface ExcerptChapter {
 	paragraphs: number;
 }
 
+export interface GoodreadsMatch {
+	goodreads_book_id: string;
+	title: string;
+	author: string | null;
+	series: string | null;
+	series_number: number | null;
+	cover: string | null;
+	num_pages: number | null;
+	description: string | null;
+	goodreads_url: string;
+	linked_book_id: string | null;
+}
+
 export interface InspectResponse {
 	sha256: string;
 	filename: string;
@@ -93,6 +106,7 @@ export interface InspectResponse {
 	suggested_book_order: number;
 	already_ingested: boolean;
 	existing_book_id: string | null;
+	goodreads_match: GoodreadsMatch | null;
 }
 
 export interface CommitRequest {
@@ -102,6 +116,7 @@ export interface CommitRequest {
 	series_id: string;
 	book_order: number;
 	standalone: boolean;
+	goodreads_book_id?: string | null;
 }
 
 export interface CommitResponse {
@@ -115,6 +130,7 @@ export interface CommitResponse {
 	skipped: boolean;
 	excerpt_chapters: ExcerptChapter[];
 	standalone: boolean;
+	goodreads_book_id?: string | null;
 }
 
 export interface CreateSessionRequest {
