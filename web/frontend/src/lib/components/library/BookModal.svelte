@@ -507,7 +507,6 @@
 		flex-direction: column;
 		gap: var(--sp-2);
 		padding-top: var(--sp-4);
-		border-top: var(--hairline);
 	}
 	.section-heading {
 		flex: 0 0 auto;
@@ -518,8 +517,6 @@
 		min-height: 0;
 		overflow-y: auto;
 		padding-right: var(--sp-3);
-		border-top: 1px solid var(--ink-hairline);
-		border-bottom: 1px solid var(--ink-hairline);
 		scrollbar-width: thin;
 		scrollbar-color: var(--ink-hairline) transparent;
 	}
@@ -541,7 +538,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--sp-3);
-		max-width: 68ch;
 		padding: var(--sp-3) 0;
 	}
 	.description-clamp.collapsed {
@@ -652,8 +648,6 @@
 			flex: 0 0 auto;
 			overflow-y: visible;
 			padding-right: 0;
-			border-top: none;
-			border-bottom: none;
 		}
 		.cover-col {
 			width: 100%;
@@ -672,6 +666,33 @@
 			width: 100%;
 			max-width: 260px;
 			margin: 0 auto;
+		}
+	}
+
+	/* Short viewports (wide window, little vertical room): the two-column
+	   layout above no longer scrolls as a whole, so the fixed-width cover
+	   at its full size can outgrow the modal's fixed height and get clipped
+	   by .modal's overflow: hidden. Shrink the band and cover so the left
+	   column's natural height fits, leaving the description pane a few
+	   visible lines. */
+	@media (max-height: 760px) and (min-width: 701px) {
+		.modal {
+			height: 88vh;
+		}
+		.header-band {
+			padding: var(--sp-6) var(--sp-6) var(--sp-8);
+			min-height: 120px;
+		}
+		.cover-col {
+			width: 180px;
+			gap: var(--sp-2);
+			margin-top: calc(-1 * var(--sp-8));
+		}
+		.action-stack {
+			gap: var(--sp-1);
+		}
+		.modal-content-pad {
+			padding-bottom: var(--sp-6);
 		}
 	}
 </style>
