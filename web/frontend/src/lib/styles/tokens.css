@@ -29,8 +29,9 @@
   --sp-16: 64px; --sp-24: 96px;
 
   /* Radii / hairline / layout */
-  --r-chip:       2px;
-  --r-cover:      4px;
+  --r-chip:       4px;
+  --r-cover:      6px;
+  --r-card:       12px;
   --tracking-caps: 0.18em;
   --hairline:     1px solid var(--ink-hairline);
   --frame-inset:  var(--sp-8);
@@ -53,17 +54,15 @@
 :root[data-theme='light'] {
   --ink-bg:        #faf6ec;
   --ink-surface:   #f2ecdc;
-  --ink-hairline:  rgba(31, 36, 32, 0.13);
+  --ink-hairline:  rgba(31, 36, 32, 0.24);
   --bone:          #1f2420;
-  --bone-muted:    #575c50;
-  --bone-faint:    #77796b;
+  --bone-muted:    #4a4f43;
+  --bone-faint:    #5f6255;
   --brass:         #a8864a;
   --brass-dim:     rgba(168, 134, 74, 0.20);
   --oxblood:       #9a4a3a;
   --sage:          #2a4a35;
   --quote:         #8a6020;
-
-  --serif-display: 'Cormorant Garamond', Georgia, serif;
 
   --alcove:        #eae1cb;
   --ledge:         #d6c6a2;
@@ -78,4 +77,8 @@
   text-transform: uppercase;
   letter-spacing: var(--tracking-caps);
   font-size: var(--fs-12);
+}
+
+:root[data-theme='light'] .small-caps {
+  font-weight: 500;
 }

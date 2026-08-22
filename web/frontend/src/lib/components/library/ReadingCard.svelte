@@ -70,7 +70,7 @@
 		gap: var(--sp-6);
 		background: var(--ink-bg);
 		border: var(--hairline);
-		border-radius: var(--r-shelf);
+		border-radius: var(--r-card);
 		padding: var(--sp-6);
 		flex: 1 1 420px;
 		max-width: 540px;
