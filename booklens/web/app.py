@@ -57,8 +57,12 @@ DbDep = Annotated[tuple[sqlite3.Connection, sqlite3.Connection], Depends(_get_db
 
 
 def _get_goodreads_db():
-    """Per-request connection to the Goodreads cache -- its own database, never `index.db`."""
-    conn = goodreads.connect()
+    """Per-request connection to the Goodreads cache -- its own database, never `index.db`.
+
+    `check_same_thread=False`: FastAPI may run this dependency and the route
+    handler on different threadpool threads for the same request.
+    """
+    conn = goodreads.connect(check_same_thread=False)
     try:
         yield conn
     finally:

@@ -7,6 +7,8 @@ synthetic, per CLAUDE.md.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi.testclient import TestClient
 
 from booklens import cli, goodreads
@@ -303,3 +305,31 @@ def test_delete_library_link_removes_it(tmp_path, monkeypatch):
     resp = client.delete("/api/library/link/cold-wind")
     assert resp.status_code == 200
     assert resp.json() == {"book_id": "cold-wind", "goodreads_book_id": None}
+
+
+# -- cross-thread connection safety -------------------------------------------
+#
+# FastAPI can run a request's dependency and its route body on different
+# threadpool threads. `_get_goodreads_db` must open its connection with
+# `check_same_thread=False` (goodreads.connect's default is True, for CLI/test
+# callers) or this 500s under real concurrency -- a single sequential `curl`
+# won't reliably reproduce it, which is why this test fires many requests
+# from a thread pool instead.
+
+
+def test_unified_endpoint_survives_concurrent_requests(tmp_path, monkeypatch):
+    _seed_gr(tmp_path, monkeypatch, "read", _gr_book("r1", "Alpha", "read"))
+
+    # One sequential warm-up request creates index.db's schema first --
+    # racing *first-time* schema creation across threads is a separate,
+    # pre-existing concern from the one this test targets (the goodreads
+    # connection's check_same_thread flag).
+    assert client.get("/api/library/unified").status_code == 200
+
+    def fetch(_: int) -> int:
+        return client.get("/api/library/unified").status_code
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        statuses = list(pool.map(fetch, range(40)))
+
+    assert statuses == [200] * len(statuses)
