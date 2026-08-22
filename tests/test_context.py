@@ -25,7 +25,8 @@ EXCERPT_TOKEN = "EXCERPTTOKEN_QP7"
 
 BOOK_ORDER = {"rr1": 1, "rr2": 2}
 
-_CITATION_RE = re.compile(r"\[([a-zA-Z0-9_-]+):(\d+):p(\d+)\]")
+_CHAPTER_HEADER_RE = re.compile(r"^## ([a-zA-Z0-9_-]+):(\d+) \| ")
+_PARA_LINE_RE = re.compile(r"^(\d+)\|")
 
 
 def build_fixture(tmp_path):
@@ -122,8 +123,23 @@ def _set_ceiling(pconn, book_id, ceiling_seq):
 
 
 def _citations_in_order(text):
-    """(book, spine, para) tuples in the order they appear in assembled text."""
-    return [(m.group(1), int(m.group(2)), int(m.group(3))) for m in _CITATION_RE.finditer(text)]
+    """(book, spine, para) tuples in the order they appear in assembled text.
+
+    Mimics what the model does: composes each citation from the nearest
+    chapter header above a paragraph line plus that line's own number.
+    """
+    citations = []
+    book_id = spine_idx = None
+    for line in text.split("\n"):
+        m = _CHAPTER_HEADER_RE.match(line)
+        if m:
+            book_id, spine_idx = m.group(1), int(m.group(2))
+            continue
+        m = _PARA_LINE_RE.match(line)
+        if m:
+            assert book_id is not None, "paragraph line appeared before any chapter header"
+            citations.append((book_id, spine_idx, int(m.group(1))))
+    return citations
 
 
 # -- the invariant -------------------------------------------------------------
@@ -247,6 +263,45 @@ def test_citations_round_trip_and_resolve_in_readable_set(tmp_path):
             # click -- raises if it were ever outside the readable set.
             resolved = t.context(cid, window=0)
             assert resolved["paragraphs"][0]["citation_id"] == cid
+
+
+def test_paragraph_lines_are_compact_anchors_not_full_citations(tmp_path):
+    """The token-efficiency change: a paragraph line is `{idx}|{text}`, not a
+    full `[book:spine:pN]` anchor. Every non-header, non-blank line must
+    match `^\\d+\\|`, and a citation composed from the nearest chapter header
+    above it plus that leading number must round-trip through
+    `parse_citation_id` back to that exact paragraph."""
+    iconn, pconn, meta = build_fixture(tmp_path)
+    _set_ceiling(pconn, "rr1", meta["books"]["rr1"]["chapters"][-1]["end_seq"])
+    _set_ceiling(pconn, "rr2", meta["books"]["rr2"]["chapters"][0]["end_seq"])
+    with tools.Tools(iconn, pconn) as t:
+        result = context.assemble(t)
+
+        assert result.para_count > 0
+        book_id = spine_idx = None
+        checked = 0
+        for line in result.text.split("\n"):
+            if line.startswith("# "):
+                continue
+            header_m = _CHAPTER_HEADER_RE.match(line)
+            if header_m:
+                book_id, spine_idx = header_m.group(1), int(header_m.group(2))
+                # No stray `[book:spine:pN]` full anchor sitting in a line.
+                assert "[" not in line and "]" not in line
+                continue
+
+            para_m = _PARA_LINE_RE.match(line)
+            assert para_m, f"paragraph line does not match ^\\d+\\|: {line!r}"
+            assert "[" not in line, f"paragraph line still carries a bracketed anchor: {line!r}"
+            para_idx = int(para_m.group(1))
+
+            cid = tools.format_citation_id(book_id, spine_idx, para_idx)
+            assert tools.parse_citation_id(cid) == (book_id, spine_idx, para_idx)
+            resolved = t.context(cid, window=0)
+            assert resolved["paragraphs"][0]["citation_id"] == cid
+            checked += 1
+
+        assert checked == result.para_count
 
 
 # -- byte stability --------------------------------------------------------
