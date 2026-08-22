@@ -510,6 +510,178 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _goodreads_user_id(args: argparse.Namespace, conn) -> str:
+    """Resolve the Goodreads user id: `--user-id`, then the stored setting, then `GOODREADS_USER_ID`."""
+    from booklens.goodreads import get_setting
+
+    user_id = args.user_id or get_setting(conn, "user_id") or os.environ.get("GOODREADS_USER_ID")
+    if not user_id:
+        raise ValueError(
+            "no Goodreads user id: pass --user-id, save one with --save, or set GOODREADS_USER_ID"
+        )
+    return user_id
+
+
+def cmd_goodreads_sync(args: argparse.Namespace) -> int:
+    """Fetch every configured shelf from Goodreads and cache it in goodreads.db."""
+    from booklens.goodreads import (GoodreadsError, connect, get_setting,
+                                     normalize_user_id, set_setting, sync)
+
+    conn = connect()
+    try:
+        user_id = _goodreads_user_id(args, conn)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    dnf_shelf = args.dnf_shelf if args.dnf_shelf is not None else get_setting(conn, "dnf_shelf")
+
+    if args.save:
+        if args.user_id is not None:
+            try:
+                set_setting(conn, "user_id", normalize_user_id(args.user_id))
+            except ValueError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+        if args.dnf_shelf is not None:
+            set_setting(conn, "dnf_shelf", args.dnf_shelf)
+
+    try:
+        report = sync(conn, user_id, dnf_shelf=dnf_shelf)
+    except GoodreadsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(
+            {
+                "shelf_counts": report.shelf_counts,
+                "truncated_shelves": list(report.truncated_shelves),
+                "total_books": report.total_books,
+            },
+            indent=2,
+        ))
+        return 0
+
+    for shelf, count in report.shelf_counts.items():
+        print(f"{shelf}: {count} book(s)")
+    print(f"total: {report.total_books} book(s)")
+    for shelf in report.truncated_shelves:
+        print(
+            f"WARNING: shelf {shelf!r} returned {report.shelf_counts[shelf]} items -- "
+            "Goodreads' RSS feed caps at 100, so this shelf is almost certainly "
+            "incomplete, and the local cache was NOT pruned of vanished books for it"
+        )
+    return 0
+
+
+def cmd_goodreads_enrich(args: argparse.Namespace) -> int:
+    """Cookie-authenticated enrichment pass: start dates, read counts, and genres."""
+    from booklens.goodreads import GoodreadsAuthError, GoodreadsError, connect, enrich
+
+    conn = connect()
+    try:
+        user_id = _goodreads_user_id(args, conn)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        report = enrich(
+            conn,
+            user_id,
+            genres=not args.no_genres,
+            refresh_genres=args.refresh_genres,
+            throttle_seconds=args.throttle,
+            limit=args.limit,
+        )
+    except GoodreadsAuthError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except GoodreadsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(json.dumps(
+            {
+                "rows_updated": report.rows_updated,
+                "start_dates_found": report.start_dates_found,
+                "genres_fetched": report.genres_fetched,
+                "genres_skipped": report.genres_skipped,
+            },
+            indent=2,
+        ))
+        return 0
+
+    print(f"review rows updated: {report.rows_updated} (start dates found: {report.start_dates_found})")
+    if not args.no_genres:
+        print(f"genres fetched: {report.genres_fetched}, skipped (empty result): {report.genres_skipped}")
+    return 0
+
+
+def cmd_goodreads_shelf(args: argparse.Namespace) -> int:
+    """List cached books on one shelf, or every shelf when the shelf is `all`."""
+    from dataclasses import asdict
+
+    from booklens.goodreads import all_books, books_on_shelf, connect
+
+    conn = connect()
+    books = all_books(conn) if args.shelf == "all" else books_on_shelf(conn, args.shelf)
+
+    if args.json:
+        print(json.dumps([asdict(b) for b in books], indent=2, default=str))
+        return 0
+
+    for b in books:
+        rating = f" ({b.user_rating}*)" if b.user_rating else ""
+        print(f"[{b.shelf}] {b.title} -- {b.author}{rating}")
+    return 0
+
+
+def cmd_goodreads_link(args: argparse.Namespace) -> int:
+    """Autolink ingested books to cached Goodreads entries by normalised title."""
+    from dataclasses import asdict
+
+    from booklens.goodreads import autolink, connect
+
+    iconn = db.connect_index()
+    gconn = connect()
+    try:
+        report = autolink(iconn, gconn)
+    finally:
+        iconn.close()
+        gconn.close()
+
+    if args.json:
+        print(json.dumps(
+            {
+                "linked": report.linked,
+                "already_linked": report.already_linked,
+                "ambiguous": report.ambiguous,
+                "unmatched": report.unmatched,
+                "ambiguous_books": [asdict(u) for u in report.ambiguous_books],
+                "unmatched_books": [asdict(u) for u in report.unmatched_books],
+            },
+            indent=2,
+        ))
+        return 0
+
+    print(f"linked: {report.linked}")
+    print(f"already linked: {report.already_linked}")
+    print(f"ambiguous: {report.ambiguous}")
+    print(f"unmatched: {report.unmatched}")
+    if report.ambiguous_books:
+        print("\nambiguous (left unlinked):")
+        for u in report.ambiguous_books:
+            print(f"  {u.title!r} ({u.book_id}) -- candidates: {', '.join(u.candidates)}")
+    if report.unmatched_books:
+        print("\nunmatched:")
+        for u in report.unmatched_books:
+            print(f"  {u.title!r} ({u.book_id})")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Summarise where data lives and how far the reader has got."""
     iconn, pconn = _open_dbs()
@@ -643,6 +815,57 @@ def build_parser() -> argparse.ArgumentParser:
     p_credits = sub.add_parser("credits", help="show remaining OpenRouter credit balance")
     p_credits.add_argument("--json", action="store_true")
     p_credits.set_defaults(func=cmd_credits)
+
+    p_goodreads = sub.add_parser("goodreads", help="read-only Goodreads shelf sync")
+    goodreads_sub = p_goodreads.add_subparsers(dest="goodreads_command", required=True)
+
+    p_gr_sync = goodreads_sub.add_parser("sync", help="fetch and cache every configured shelf")
+    p_gr_sync.add_argument(
+        "--user-id", default=None,
+        help="Goodreads numeric user id (falls back to GOODREADS_USER_ID)",
+    )
+    p_gr_sync.add_argument(
+        "--dnf-shelf", default=None,
+        help="the user's did-not-finish shelf name, if any (shelf names are user-chosen)",
+    )
+    p_gr_sync.add_argument(
+        "--save", action="store_true",
+        help="persist --user-id and --dnf-shelf as the stored default for future syncs",
+    )
+    p_gr_sync.add_argument("--json", action="store_true")
+    p_gr_sync.set_defaults(func=cmd_goodreads_sync)
+
+    p_gr_enrich = goodreads_sub.add_parser(
+        "enrich", help="cookie-authenticated enrichment pass: start dates, read counts, genres"
+    )
+    p_gr_enrich.add_argument(
+        "--user-id", default=None,
+        help="Goodreads numeric user id (falls back to GOODREADS_USER_ID)",
+    )
+    p_gr_enrich.add_argument("--no-genres", action="store_true", help="skip the genre-fetch pass")
+    p_gr_enrich.add_argument(
+        "--refresh-genres", action="store_true",
+        help="refetch genres for every cached book, not just those missing them",
+    )
+    p_gr_enrich.add_argument(
+        "--limit", type=int, default=None, help="cap the number of books to fetch genres for"
+    )
+    p_gr_enrich.add_argument(
+        "--throttle", type=float, default=3.0, help="seconds to sleep between genre requests"
+    )
+    p_gr_enrich.add_argument("--json", action="store_true")
+    p_gr_enrich.set_defaults(func=cmd_goodreads_enrich)
+
+    p_gr_shelf = goodreads_sub.add_parser("shelf", help="list cached books on one shelf")
+    p_gr_shelf.add_argument("shelf", help="'read', 'currently-reading', 'to-read', a configured DNF shelf, or 'all'")
+    p_gr_shelf.add_argument("--json", action="store_true")
+    p_gr_shelf.set_defaults(func=cmd_goodreads_shelf)
+
+    p_gr_link = goodreads_sub.add_parser(
+        "link", help="autolink ingested books to cached Goodreads entries by title"
+    )
+    p_gr_link.add_argument("--json", action="store_true")
+    p_gr_link.set_defaults(func=cmd_goodreads_link)
 
     return parser
 

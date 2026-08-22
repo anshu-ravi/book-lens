@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import os
 import shutil
 import sqlite3
 from dataclasses import asdict
@@ -20,7 +21,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from booklens import chat, classify, context, db, ingest, paths, progress, reseq, tools
+from booklens import chat, classify, context, db, goodreads, ingest, paths, progress, reseq, tools
 from booklens.extract import extract_book, extract_cover, read_series_hint
 from booklens.ingest import _slugify as _slugify_name
 from booklens.llm.base import FatalLLMError, TransientLLMError
@@ -53,6 +54,18 @@ def _get_dbs():
 
 
 DbDep = Annotated[tuple[sqlite3.Connection, sqlite3.Connection], Depends(_get_dbs)]
+
+
+def _get_goodreads_db():
+    """Per-request connection to the Goodreads cache -- its own database, never `index.db`."""
+    conn = goodreads.connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+GoodreadsDbDep = Annotated[sqlite3.Connection, Depends(_get_goodreads_db)]
 
 
 # -- request/response models -------------------------------------------------
@@ -96,6 +109,27 @@ class AskRequest(BaseModel):
     """Body of `POST /api/chat/sessions/{sid}/messages`."""
 
     question: str
+
+
+class GoodreadsSyncRequest(BaseModel):
+    """Body of `POST /api/goodreads/sync`."""
+
+    user_id: str | None = None
+    dnf_shelf: str | None = None
+
+
+class GoodreadsSettingsUpdate(BaseModel):
+    """Body of `PUT /api/goodreads/settings`."""
+
+    user_id: str
+    dnf_shelf: str | None = None
+
+
+class LibraryLinkRequest(BaseModel):
+    """Body of `POST /api/library/link`."""
+
+    book_id: str
+    goodreads_book_id: str
 
 
 # -- shared helpers -----------------------------------------------------------
@@ -241,6 +275,180 @@ def get_library(dbs: DbDep):
         for sid, books in sorted(series_map.items())
     ]
     return {"series": series}
+
+
+# -- unified library (Goodreads shelf cache + ingested-EPUB attachments) ------
+
+_UNIFIED_SHELF_MAP = {"to-read": "tbr", "currently-reading": "reading", "read": "completed"}
+_UNIFIED_SHELF_ORDER = (
+    ("reading", "Reading"),
+    ("tbr", "To Read"),
+    ("completed", "Completed"),
+    ("dnf", "Did Not Finish"),
+)
+_INGESTED_SHELF_BY_STATUS = {"finished": "completed", "reading": "reading"}
+
+
+def _to_series_number(raw: str) -> int | float:
+    """A `parse_series` number string as JSON-friendly int or float."""
+    value = float(raw)
+    return int(value) if value.is_integer() else value
+
+
+def _unified_progress_payload(pconn: sqlite3.Connection, book_id: str | None) -> dict | None:
+    """A unified-entry `progress` block, or `None` when there's no progress row (or no book)."""
+    if book_id is None:
+        return None
+    row = pconn.execute(
+        "SELECT status, position_chapter_idx, ceiling_seq FROM book_progress WHERE book_id = ?",
+        (book_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "status": row["status"],
+        "chapter_idx": row["position_chapter_idx"],
+        "ceiling_seq": row["ceiling_seq"],
+    }
+
+
+def _goodreads_unified_entry(row: sqlite3.Row, book_id: str | None, pconn: sqlite3.Connection) -> dict:
+    """A unified-library entry for a cached Goodreads shelf row, linked or not."""
+    title = row["title"]
+    parsed = goodreads.parse_series(title)
+    genres = [g for g in (row["genres"] or "").split(",") if g]
+    return {
+        "goodreads_book_id": row["book_id"],
+        "title": title,
+        "display_title": goodreads.strip_series_suffix(title),
+        "author": row["author"],
+        "cover": row["cover_large"] or row["cover_medium"] or row["cover_small"],
+        "series": parsed[0] if parsed else None,
+        "series_number": _to_series_number(parsed[1]) if parsed else None,
+        "user_rating": row["user_rating"],
+        "average_rating": row["average_rating"],
+        "num_pages": row["num_pages"],
+        "description": row["description"],
+        "genres": genres,
+        "date_added": row["date_added"],
+        "date_started": row["date_started"],
+        "date_read": row["date_read"],
+        "goodreads_url": f"https://www.goodreads.com/book/show/{row['book_id']}",
+        "book_id": book_id,
+        "askable": book_id is not None,
+        "progress": _unified_progress_payload(pconn, book_id),
+    }
+
+
+def _ingested_unified_entry(book_row: sqlite3.Row, pconn: sqlite3.Connection) -> dict:
+    """A unified-library entry for an ingested book with no Goodreads match."""
+    title = book_row["title"]
+    parsed = goodreads.parse_series(title)
+    book_id = book_row["id"]
+    return {
+        "goodreads_book_id": None,
+        "title": title,
+        "display_title": goodreads.strip_series_suffix(title),
+        "author": book_row["author"],
+        "cover": f"/api/books/{book_id}/cover" if paths.cover_path(book_id) is not None else None,
+        "series": parsed[0] if parsed else None,
+        "series_number": _to_series_number(parsed[1]) if parsed else None,
+        "user_rating": None,
+        "average_rating": None,
+        "num_pages": None,
+        "description": None,
+        "genres": [],
+        "date_added": None,
+        "date_started": None,
+        "date_read": None,
+        "goodreads_url": None,
+        "book_id": book_id,
+        "askable": True,
+        "progress": _unified_progress_payload(pconn, book_id),
+    }
+
+
+@app.get("/api/library/unified")
+def get_unified_library(dbs: DbDep, gconn: GoodreadsDbDep):
+    """One list of books sourced from the Goodreads shelf cache, grouped by shelf then series.
+
+    An ingested EPUB with no Goodreads match is filed by its own reading
+    progress instead of vanishing; nothing in the library goes invisible.
+    """
+    iconn, pconn = dbs
+
+    dnf_shelf = goodreads.get_setting(gconn, "dnf_shelf")
+    shelf_map = dict(_UNIFIED_SHELF_MAP)
+    if dnf_shelf:
+        shelf_map[dnf_shelf] = "dnf"
+
+    linked_gr_to_book = goodreads.linked_book_ids(gconn)
+    linked_book_ids = set(linked_gr_to_book.values())
+
+    entries_by_shelf: dict[str, list[dict]] = {key: [] for key, _label in _UNIFIED_SHELF_ORDER}
+
+    for row in gconn.execute("SELECT * FROM goodreads_book").fetchall():
+        shelf_key = shelf_map.get(row["shelf"])
+        if shelf_key is None:
+            continue  # a shelf outside the four we organise by
+        book_id = linked_gr_to_book.get(row["book_id"])
+        entries_by_shelf[shelf_key].append(_goodreads_unified_entry(row, book_id, pconn))
+
+    for book_row in iconn.execute("SELECT id, title, author FROM book").fetchall():
+        if book_row["id"] in linked_book_ids:
+            continue
+        prog = progress.get_progress(pconn, book_row["id"])
+        shelf_key = _INGESTED_SHELF_BY_STATUS.get(prog.status, "tbr")
+        entries_by_shelf[shelf_key].append(_ingested_unified_entry(book_row, pconn))
+
+    shelves = []
+    total_books = 0
+    with_epub = 0
+    for key, label in _UNIFIED_SHELF_ORDER:
+        shelf_entries = entries_by_shelf[key]
+        total_books += len(shelf_entries)
+        with_epub += sum(1 for e in shelf_entries if e["book_id"] is not None)
+
+        series_map: dict[str, list[dict]] = {}
+        standalone: list[dict] = []
+        for entry in shelf_entries:
+            if entry["series"]:
+                series_map.setdefault(entry["series"], []).append(entry)
+            else:
+                standalone.append(entry)
+
+        series_list = [
+            {"name": name, "books": sorted(books, key=lambda b: b["series_number"])}
+            for name, books in sorted(series_map.items())
+        ]
+        standalone.sort(key=lambda e: e["title"])
+
+        shelves.append({
+            "shelf": key,
+            "label": label,
+            "count": len(shelf_entries),
+            "series": series_list,
+            "standalone": standalone,
+        })
+
+    return {
+        "shelves": shelves,
+        "totals": {"books": total_books, "with_epub": with_epub, "askable": with_epub},
+    }
+
+
+@app.post("/api/library/link")
+def post_library_link(body: LibraryLinkRequest, gconn: GoodreadsDbDep):
+    """Manually link a library book to a Goodreads entry, always winning over autolink."""
+    goodreads.set_link(gconn, body.book_id, body.goodreads_book_id, source="manual")
+    return {"book_id": body.book_id, "goodreads_book_id": goodreads.link_for_book(gconn, body.book_id)}
+
+
+@app.delete("/api/library/link/{book_id}")
+def delete_library_link(book_id: str, gconn: GoodreadsDbDep):
+    """Remove a book's link, manual or auto."""
+    goodreads.remove_link(gconn, book_id)
+    return {"book_id": book_id, "goodreads_book_id": goodreads.link_for_book(gconn, book_id)}
 
 
 @app.get("/api/books/{book_id}/positions")
@@ -624,6 +832,128 @@ def delete_chat_session(sid: str):
     """Close and drop a session."""
     sessions.registry.drop(sid)
     return Response(status_code=204)
+
+
+# -- goodreads ------------------------------------------------------------------
+
+# Fixed lead-in order for `/api/goodreads/shelves`; anything else present in
+# the cache follows, alphabetically. Never hardcode a DNF shelf name here --
+# it's a user-chosen custom shelf, not one of Goodreads' exclusive three.
+_SHELF_ORDER_PREFIX = ("currently-reading", "read", "to-read")
+
+
+def _goodreads_book_payload(book: goodreads.GoodreadsBook) -> dict:
+    """The `GoodreadsBook` dataclass in snake_case, plus a derived `goodreads_url`."""
+    payload = asdict(book)
+    payload["custom_shelves"] = list(book.custom_shelves)
+    payload["goodreads_url"] = f"https://www.goodreads.com/book/show/{book.book_id}"
+    return payload
+
+
+@app.get("/api/goodreads/shelves")
+def get_goodreads_shelves(conn: GoodreadsDbDep):
+    """Per-shelf counts from the cache, plus each shelf's most recent truncation flag."""
+    count_rows = conn.execute(
+        "SELECT shelf, COUNT(*) AS count FROM goodreads_book GROUP BY shelf"
+    ).fetchall()
+    counts = {r["shelf"]: r["count"] for r in count_rows}
+
+    latest_sync_rows = conn.execute(
+        """
+        SELECT s.shelf, s.truncated
+        FROM goodreads_sync s
+        JOIN (SELECT shelf, MAX(id) AS max_id FROM goodreads_sync GROUP BY shelf) latest
+          ON s.id = latest.max_id
+        """
+    ).fetchall()
+    truncated_by_shelf = {r["shelf"]: bool(r["truncated"]) for r in latest_sync_rows}
+
+    synced_at = conn.execute("SELECT MAX(synced_at) AS m FROM goodreads_sync").fetchone()["m"]
+
+    others = sorted(s for s in counts if s not in _SHELF_ORDER_PREFIX)
+    order = [s for s in _SHELF_ORDER_PREFIX if s in counts] + others
+
+    shelves = [
+        {"shelf": s, "count": counts[s], "truncated": truncated_by_shelf.get(s, False)}
+        for s in order
+    ]
+    return {"shelves": shelves, "total": sum(counts.values()), "synced_at": synced_at}
+
+
+@app.get("/api/goodreads/books")
+def get_goodreads_books(conn: GoodreadsDbDep, shelf: str = "all"):
+    """Cached books on one shelf, or every cached book when `shelf` is `all` or omitted."""
+    books = goodreads.all_books(conn) if shelf == "all" else goodreads.books_on_shelf(conn, shelf)
+    books = sorted(books, key=lambda b: b.title)
+    return {"books": [_goodreads_book_payload(b) for b in books]}
+
+
+def _goodreads_settings_payload(conn: sqlite3.Connection) -> dict:
+    """The effective `user_id`/`dnf_shelf` and where the id came from.
+
+    Resolution order for `user_id`: stored setting, then `GOODREADS_USER_ID`.
+    """
+    stored_user_id = goodreads.get_setting(conn, "user_id")
+    dnf_shelf = goodreads.get_setting(conn, "dnf_shelf")
+    if stored_user_id:
+        return {"user_id": stored_user_id, "dnf_shelf": dnf_shelf, "source": "stored"}
+    env_user_id = os.environ.get("GOODREADS_USER_ID")
+    if env_user_id:
+        return {"user_id": env_user_id, "dnf_shelf": dnf_shelf, "source": "env"}
+    return {"user_id": None, "dnf_shelf": dnf_shelf, "source": "none"}
+
+
+@app.get("/api/goodreads/settings")
+def get_goodreads_settings(conn: GoodreadsDbDep):
+    """The effective Goodreads user id and DNF shelf, and where the id came from."""
+    return _goodreads_settings_payload(conn)
+
+
+@app.put("/api/goodreads/settings")
+def put_goodreads_settings(body: GoodreadsSettingsUpdate, conn: GoodreadsDbDep):
+    """Persist a Goodreads user id (accepting a bare id or a profile URL) and DNF shelf."""
+    try:
+        user_id = goodreads.normalize_user_id(body.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    goodreads.set_setting(conn, "user_id", user_id)
+    goodreads.set_setting(conn, "dnf_shelf", body.dnf_shelf)
+    return _goodreads_settings_payload(conn)
+
+
+@app.post("/api/goodreads/sync")
+def post_goodreads_sync(body: GoodreadsSyncRequest, conn: GoodreadsDbDep):
+    """Fetch the reader's Goodreads shelves live and refresh the cache.
+
+    `user_id` resolution order: the request body, then the stored setting,
+    then `GOODREADS_USER_ID`. `dnf_shelf` falls back to the stored setting
+    only when the body omits it entirely.
+    """
+    stored = _goodreads_settings_payload(conn)
+    user_id = body.user_id or stored["user_id"]
+    if not user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="no Goodreads user id: pass user_id, save it in settings, or set GOODREADS_USER_ID",
+        )
+    dnf_shelf = body.dnf_shelf if body.dnf_shelf is not None else stored["dnf_shelf"]
+    try:
+        report = goodreads.sync(conn, user_id, dnf_shelf=dnf_shelf)
+    except goodreads.GoodreadsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "shelf_counts": report.shelf_counts,
+        "truncated_shelves": list(report.truncated_shelves),
+        "total_books": report.total_books,
+    }
+
+
+@app.get("/api/goodreads/stats")
+def get_goodreads_stats(conn: GoodreadsDbDep):
+    """Reading statistics computed from the cache -- zeroed shape when empty."""
+    return goodreads.compute_stats(conn)
 
 
 # -- misc -------------------------------------------------------------------

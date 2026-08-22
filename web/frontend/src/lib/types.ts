@@ -174,3 +174,141 @@ export interface CreditsResponse {
 	usage_weekly: number;
 	usage_monthly: number;
 }
+
+export interface GoodreadsShelf {
+	shelf: string;
+	count: number;
+	truncated: boolean;
+}
+
+export interface GoodreadsShelvesResponse {
+	shelves: GoodreadsShelf[];
+	total: number;
+	synced_at: string | null;
+}
+
+export interface GoodreadsBook {
+	review_id: string;
+	book_id: string;
+	title: string;
+	author: string;
+	isbn: string | null;
+	num_pages: number | null;
+	published_year: number | null;
+	description: string | null;
+	cover_small: string | null;
+	cover_medium: string | null;
+	cover_large: string | null;
+	average_rating: number | null;
+	user_rating: number | null;
+	user_review: string | null;
+	shelf: string;
+	custom_shelves: string[];
+	date_added: string | null;
+	date_read: string | null;
+	date_created: string | null;
+	date_started: string | null;
+	goodreads_url: string | null;
+}
+
+export interface GoodreadsBooksResponse {
+	books: GoodreadsBook[];
+}
+
+export interface GoodreadsSyncResponse {
+	shelf_counts: Record<string, number>;
+	truncated_shelves: string[];
+	total_books: number;
+}
+
+export interface GoodreadsSettingsResponse {
+	user_id: string | null;
+	dnf_shelf: string | null;
+	source: 'stored' | 'env' | 'none';
+}
+
+export interface GoodreadsSettingsUpdate {
+	user_id: string;
+	dnf_shelf: string | null;
+}
+
+export interface GoodreadsStatsTotals {
+	books_read: number;
+	pages_read: number;
+	avg_pages: number;
+	dnf: number;
+	want_to_read: number;
+	currently_reading: number;
+	backlog_pages: number;
+	longest: { title: string; num_pages: number } | null;
+	shortest: { title: string; num_pages: number } | null;
+}
+
+export interface GoodreadsStatsCoverage {
+	read_total: number;
+	with_date_read: number;
+	with_date_started?: number;
+	with_genres?: number;
+}
+
+export interface GoodreadsStatsMonth {
+	month: string;
+	books: number;
+	pages: number;
+}
+
+export interface GoodreadsStatsAuthor {
+	author: string;
+	books: number;
+}
+
+export interface GoodreadsStatsDecade {
+	decade: number;
+	books: number;
+}
+
+export interface GoodreadsStatsSeries {
+	name: string;
+	read: number;
+	total: number;
+	shelves: string[];
+}
+
+export interface GoodreadsStatsDurationBook {
+	title: string;
+	days: number;
+	pages: number;
+	rating: number;
+}
+
+export interface GoodreadsStatsDurations {
+	count: number;
+	median_days: number;
+	mean_days: number;
+	fastest: { title: string; days: number } | null;
+	slowest: { title: string; days: number } | null;
+	books: GoodreadsStatsDurationBook[];
+}
+
+export interface GoodreadsStatsGenre {
+	genre: string;
+	books: number;
+}
+
+export interface GoodreadsStatsGenreRating {
+	genre: string;
+	avg_rating: number;
+	books: number;
+}
+
+export interface GoodreadsStatsResponse {
+	totals: GoodreadsStatsTotals;
+	coverage: GoodreadsStatsCoverage;
+	by_month: GoodreadsStatsMonth[];
+	top_authors: GoodreadsStatsAuthor[];
+	by_decade: GoodreadsStatsDecade[];
+	series: GoodreadsStatsSeries[];
+	durations?: GoodreadsStatsDurations;
+	genres?: GoodreadsStatsGenre[];
+	rating_by_genre?: GoodreadsStatsGenreRating[];
+}

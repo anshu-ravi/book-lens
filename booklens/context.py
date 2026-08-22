@@ -74,16 +74,20 @@ def assemble(tools: Tools, *, max_tokens: int = DEFAULT_MAX_TOKENS) -> Assembled
             if not paragraphs:
                 continue
 
+            # The header's spine_idx comes from the paragraphs themselves
+            # (not chapter_idx) so it always matches what parse_citation_id
+            # would recover from the paragraphs' own citation_ids.
+            _, header_spine_idx, _ = parse_citation_id(paragraphs[0]["citation_id"])
             label = f"{book_id}: {chapter['label']}"
-            lines.append(f"## {label}")
+            lines.append(f"## {book_id}:{header_spine_idx} | {chapter['label']}")
             if first_label is None:
                 first_label = label
             last_label = label
 
             for para in paragraphs:
-                lines.append(f"[{para['citation_id']}] {para['text']}")
-                para_count += 1
                 _, spine_idx, para_idx = parse_citation_id(para["citation_id"])
+                lines.append(f"{para_idx}|{para['text']}")
+                para_count += 1
                 seq = db.global_seq(book_order, spine_idx, para_idx)
                 if max_global_seq is None or seq > max_global_seq:
                     max_global_seq = seq

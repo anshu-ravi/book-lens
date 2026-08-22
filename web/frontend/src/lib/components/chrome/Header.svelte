@@ -6,6 +6,8 @@
 		{ href: '/', label: 'Library' },
 		{ href: '/upload', label: 'Upload' },
 		{ href: '/chat', label: 'Chat' },
+		{ href: '/goodreads', label: 'Goodreads' },
+		{ href: '/stats', label: 'Stats' },
 	];
 </script>
 

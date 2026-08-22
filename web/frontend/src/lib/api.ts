@@ -13,6 +13,12 @@ import type {
 	UpdateProgressRequest,
 	UpdateBookRequest,
 	Book,
+	GoodreadsShelvesResponse,
+	GoodreadsBooksResponse,
+	GoodreadsSyncResponse,
+	GoodreadsSettingsResponse,
+	GoodreadsSettingsUpdate,
+	GoodreadsStatsResponse,
 } from './types';
 
 export class ApiError extends Error {
@@ -138,4 +144,36 @@ export function getCredits(): Promise<CreditsResponse> {
 
 export function deleteBook(bookId: string): Promise<void> {
 	return request<void>(`/books/${encodeURIComponent(bookId)}`, { method: 'DELETE' });
+}
+
+export function getGoodreadsShelves(): Promise<GoodreadsShelvesResponse> {
+	return request<GoodreadsShelvesResponse>('/goodreads/shelves');
+}
+
+export function getGoodreadsBooks(shelf: string): Promise<GoodreadsBooksResponse> {
+	return request<GoodreadsBooksResponse>(`/goodreads/books?shelf=${encodeURIComponent(shelf)}`);
+}
+
+export function syncGoodreads(): Promise<GoodreadsSyncResponse> {
+	return request<GoodreadsSyncResponse>('/goodreads/sync', {
+		method: 'POST',
+		body: JSON.stringify({}),
+	});
+}
+
+export function getGoodreadsSettings(): Promise<GoodreadsSettingsResponse> {
+	return request<GoodreadsSettingsResponse>('/goodreads/settings');
+}
+
+export function putGoodreadsSettings(
+	body: GoodreadsSettingsUpdate,
+): Promise<GoodreadsSettingsResponse> {
+	return request<GoodreadsSettingsResponse>('/goodreads/settings', {
+		method: 'PUT',
+		body: JSON.stringify(body),
+	});
+}
+
+export function getGoodreadsStats(): Promise<GoodreadsStatsResponse> {
+	return request<GoodreadsStatsResponse>('/goodreads/stats');
 }

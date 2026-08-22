@@ -572,6 +572,26 @@ Operational detail lives in `CLAUDE.md`, including the scoping note that stops a
 
 **Why.** The old layout allowed 1000 paragraphs per spine document and 1000 documents per book. A perfectly ordinary novel — one whose EPUB puts each of its five parts in a single document — has over a thousand paragraphs in one document, and ingest refused it with `para_idx 1000 ... exceeds the supported bound`. The extractor was enforcing its own copy of that bound, which is how a packing detail became an error message about a book. It now imports the constants it protects. Existing databases were rescaled in place rather than rebuilt: the transform is monotonic, so every ordering and every stored ceiling survives it exactly, and `progress.db` is user state that must never be regenerated from a source file that may not exist.
 
+## 27. Goodreads is a public RSS feed and nothing more
+
+**Decision (2026-08-21):** shelf data is read from Goodreads' public `review/list_rss` feeds into a cache of its own at `data/goodreads.db`. It is read-only, it is not authenticated, and in this pass it does not touch `progress.db`, `index.db`, or the book library.
+
+**Why RSS and not anything else.** The official API stopped issuing keys in 2020. Of the three remaining routes, only one is automatic. The CSV export is the most complete source but is a click-to-generate flow, not something a sync can poll. The HTML shelf table at `/review/list/<user_id>` returns 302 to `/user/sign_in` — this reader's shelves are not publicly readable, so that route needs a stored session cookie. RSS needs nothing and covers all four exclusive shelves, each as its own feed. The third-party service that prompted this (piratereads) is a 363-line Go proxy over the same feed that discards ISBN, page count, publication year, description, and the added/created dates; calling the feed directly is strictly better and removes a dependency on someone else's uptime and goodwill.
+
+**The cap is the whole design problem.** A feed returns at most 100 items and Goodreads ignores `page` — asking for page 2 returns zero. So a shelf sitting at exactly 100 is presumed truncated, and truncation is loud. It also gates deletion: a book missing from a complete fetch is removed locally, but a book missing from a truncated fetch is left alone, because absence is only evidence when the fetch was whole. The same reasoning appears in the shelf-name check — an unknown shelf name does not 404, it silently serves the entire library, so a shelf whose count matches `#ALL#` is unverified rather than data.
+
+**What RSS cannot give, and what the cookie bought (2026-08-21).** RSS has no date-started field at all. A session cookie in `GOODREADS_COOKIE` was measured against the real account and returned three things at once: `date_started` on 21 of 33 read books, working pagination on `/review/list` (100 rows on page one, 2 on page two, so the 100-item cap is gone), and book-page genres that are otherwise unreachable — unauthenticated those pages return HTTP 202 with an empty body after roughly three requests. One credential, three unlocks, which is why enrichment is a single pass rather than three.
+
+It did **not** recover the 9 missing finish dates. Authenticated `date_read` is 24/33, exactly what RSS reports. Those dates were never recorded and no level of access invents them.
+
+**Enrichment is additive and never primary.** RSS stays the credential-free spine that always works. The authenticated pass only fills columns; it never deletes a row, and `apply_review_rows` fills `date_read` solely where it is null. A session expires in weeks, so a design where the tab dies with the cookie would be a design that dies. Enrichment is also a separate explicit command rather than part of `sync`, because it is ~102 authenticated requests against the reader's real account — throttled, resumable, and stamped per book so nothing is refetched.
+
+**Why its own database.** It is a refetchable cache, so it does not belong in `progress.db`. But `reindex` rebuilds `index.db` from EPUBs and would destroy it, and it is not derived from any EPUB. A third file is the honest answer.
+
+**Rejected (2026-08-21): Goodreads progress never seeds the reading cutoff.** A percentage from `currently-reading` plus `num_pages` looks like it could replace typing a chapter number, and it is the first thing anyone proposes. It is not going to happen. The cutoff is the one number the spoiler invariant rests on, and a Goodreads percentage is a coarse, self-reported, page-count-derived figure attached to some edition that is not necessarily the ingested EPUB. Deriving a `global_seq` ceiling from it means guessing, and a ceiling that guesses high leaks. The reader typing a chapter is not friction to be optimised away — it is the reader stating the bound deliberately, which is the only thing that makes the bound trustworthy.
+
+**Still undecided.** How a Goodreads book maps onto an ingested EPUB. Nothing in the app depends on it yet; the Goodreads tab reads its own cache and joins to nothing.
+
 ---
 
 # Appendix: superseded and rejected decisions
