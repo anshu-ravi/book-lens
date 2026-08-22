@@ -18,6 +18,9 @@ llm = ["claude-agent-sdk"]
 [project.scripts]
 booklens = "booklens.cli:main"
 
+[tool.setuptools.packages.find]
+include = ["booklens*"]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

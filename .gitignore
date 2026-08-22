@@ -5,18 +5,68 @@ data/
 # The dev-corpus EPUBs themselves.
 uploads/
 
-.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-.DS_Store
-
 # Secrets. Never committed, never read by tooling -- key names only.
 .env
 .env.*
 !.env.example
 
-# Frontend build artifacts and dependencies.
-web/frontend/node_modules/
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+sdist/
+wheels/
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing and type checking
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.cache
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# --- Node / SvelteKit frontend ---
+node_modules/
 web/frontend/build/
 web/frontend/.svelte-kit/
+web/frontend/.vite/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+
+# --- Editors and OS ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
