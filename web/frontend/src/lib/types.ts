@@ -312,10 +312,23 @@ export interface GoodreadsStatsCoverage {
 	with_genres?: number;
 }
 
+export interface GoodreadsStatsMonthBook {
+	goodreads_book_id: string;
+	title: string;
+	author: string | null;
+	series: string | null;
+	series_number: number | null;
+	cover: string | null;
+	pages: number | null;
+	rating: number | null;
+	date_read: string | null;
+}
+
 export interface GoodreadsStatsMonth {
 	month: string;
-	books: number;
+	count: number;
 	pages: number;
+	books: GoodreadsStatsMonthBook[];
 }
 
 export interface GoodreadsStatsAuthor {
