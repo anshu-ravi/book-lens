@@ -312,7 +312,7 @@
 		display: flex;
 		flex-direction: column;
 		position: sticky;
-		top: calc(var(--header-h) + var(--sp-4));
+		top: var(--sp-4);
 	}
 	.shelf-list {
 		display: flex;

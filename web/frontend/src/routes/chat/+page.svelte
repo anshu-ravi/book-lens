@@ -303,7 +303,7 @@
 		width: 100%;
 		max-width: 820px;
 		margin: 0 auto;
-		height: calc(100vh - var(--header-h) - calc(var(--frame-inset) * 2) - calc(var(--sp-8) * 2));
+		height: calc(100vh - var(--sp-6) - var(--sp-8) - var(--sp-6) - var(--sp-12));
 	}
 	.chat-head {
 		flex-shrink: 0;
