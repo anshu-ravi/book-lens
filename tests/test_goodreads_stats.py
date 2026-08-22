@@ -153,7 +153,9 @@ def test_totals_scoped_to_read_shelf_only(tmp_path, monkeypatch):
     assert totals["want_to_read"] == 1
     assert totals["currently_reading"] == 1
     assert totals["backlog_pages"] == 1000
-    assert {a["author"] for a in stats["top_authors"]} == {"Author A", "Author B"}
+    # Both authors were read exactly once here, so top_authors -- which now
+    # excludes single-book authors -- is empty; see the dedicated tests below.
+    assert stats["top_authors"] == []
 
 
 def test_dnf_counts_configured_dnf_shelf_only(tmp_path, monkeypatch):
@@ -259,9 +261,13 @@ def test_by_month_fills_gap_months_with_zero(tmp_path, monkeypatch):
     months = [m["month"] for m in stats["by_month"]]
     assert months == ["2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06"]
     by_key = {m["month"]: m for m in stats["by_month"]}
-    assert by_key["2025-01"] == {"month": "2025-01", "books": 1, "pages": 300}
-    assert by_key["2025-03"] == {"month": "2025-03", "books": 0, "pages": 0}
-    assert by_key["2025-06"] == {"month": "2025-06", "books": 1, "pages": 400}
+    assert by_key["2025-01"]["count"] == 1
+    assert by_key["2025-01"]["pages"] == 300
+    assert [b["title"] for b in by_key["2025-01"]["books"]] == ["Jan Book"]
+    assert by_key["2025-03"] == {"month": "2025-03", "count": 0, "pages": 0, "books": []}
+    assert by_key["2025-06"]["count"] == 1
+    assert by_key["2025-06"]["pages"] == 400
+    assert [b["title"] for b in by_key["2025-06"]["books"]] == ["June Book"]
 
 
 def test_by_month_empty_when_no_dates(tmp_path, monkeypatch):
@@ -274,6 +280,102 @@ def test_by_month_empty_when_no_dates(tmp_path, monkeypatch):
         conn.close()
 
     assert stats["by_month"] == []
+
+
+# -- by_month book records -----------------------------------------------------
+
+
+def test_by_month_book_record_shape_and_series_parsing(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    conn = goodreads.connect()
+    try:
+        _seed(
+            conn,
+            {
+                "read": (
+                    _book(
+                        "r1", "Skybound (Ironbound, #2)", "read",
+                        book_id="gr-1", author="Author A", num_pages=310,
+                        user_rating=4, date_read="2025-03-05T00:00:00+00:00",
+                        cover_small="http://example.com/s.jpg",
+                    ),
+                    _book(
+                        "r2", "A Standalone Book", "read",
+                        book_id="gr-2", author="Author B", num_pages=210,
+                        user_rating=5, date_read="2025-03-12T00:00:00+00:00",
+                    ),
+                ),
+            },
+        )
+        stats = compute_stats(conn)
+    finally:
+        conn.close()
+
+    march = next(m for m in stats["by_month"] if m["month"] == "2025-03")
+    assert march["count"] == 2
+    series_book, standalone_book = march["books"]
+
+    assert series_book == {
+        "goodreads_book_id": "gr-1",
+        "title": "Skybound",
+        "author": "Author A",
+        "series": "Ironbound",
+        "series_number": 2,
+        "cover": "http://example.com/s.jpg",
+        "pages": 310,
+        "rating": 4,
+        "date_read": "2025-03-05T00:00:00+00:00",
+    }
+    assert standalone_book["title"] == "A Standalone Book"
+    assert standalone_book["series"] is None
+    assert standalone_book["series_number"] is None
+    assert standalone_book["cover"] is None
+
+
+def test_by_month_books_ordered_by_date_read_ascending(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    conn = goodreads.connect()
+    try:
+        _seed(
+            conn,
+            {
+                "read": (
+                    _book("r1", "Later Book", "read", date_read="2025-03-25T00:00:00+00:00"),
+                    _book("r2", "Earlier Book", "read", date_read="2025-03-02T00:00:00+00:00"),
+                ),
+            },
+        )
+        stats = compute_stats(conn)
+    finally:
+        conn.close()
+
+    march = next(m for m in stats["by_month"] if m["month"] == "2025-03")
+    assert [b["title"] for b in march["books"]] == ["Earlier Book", "Later Book"]
+
+
+def test_by_month_excludes_read_book_with_no_date_read(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    conn = goodreads.connect()
+    try:
+        _seed(
+            conn,
+            {
+                "read": (
+                    _book("r1", "Dated Book", "read", date_read="2025-03-02T00:00:00+00:00"),
+                    _book("r2", "Undated Book", "read", date_read=None),
+                ),
+            },
+        )
+        stats = compute_stats(conn)
+    finally:
+        conn.close()
+
+    # The undated book is invisible to every month bucket, but still counted
+    # in coverage -- read_total - with_date_read expresses "can't be placed".
+    all_titles = [b["title"] for m in stats["by_month"] for b in m["books"]]
+    assert all_titles == ["Dated Book"]
+    assert stats["coverage"]["read_total"] == 2
+    assert stats["coverage"]["with_date_read"] == 1
 
 
 # -- by_decade gap filling ------------------------------------------------------
@@ -322,10 +424,52 @@ def test_top_authors_sorted_by_count_then_alpha_capped(tmp_path, monkeypatch):
     finally:
         conn.close()
 
+    # "Solo Author" was read exactly once, so it's excluded before the cap.
     authors = stats["top_authors"]
     assert authors[0] == {"author": "Alpha Author", "books": 3}
     assert authors[1] == {"author": "Zeta Author", "books": 3}
-    assert authors[2] == {"author": "Solo Author", "books": 1}
+    assert [a["author"] for a in authors] == ["Alpha Author", "Zeta Author"]
+
+
+def test_top_authors_excludes_single_book_authors(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    conn = goodreads.connect()
+    try:
+        _seed(
+            conn,
+            {
+                "read": (
+                    _book("r1", "Book One", "read", author="Duo Author"),
+                    _book("r2", "Book Two", "read", author="Duo Author"),
+                    _book("r3", "Solo Book", "read", author="Solo Author"),
+                ),
+            },
+        )
+        stats = compute_stats(conn)
+    finally:
+        conn.close()
+
+    assert stats["top_authors"] == [{"author": "Duo Author", "books": 2}]
+
+
+def test_top_authors_all_singletons_returns_empty(tmp_path, monkeypatch):
+    _isolate(tmp_path, monkeypatch)
+    conn = goodreads.connect()
+    try:
+        _seed(
+            conn,
+            {
+                "read": (
+                    _book("r1", "Book One", "read", author="Author A"),
+                    _book("r2", "Book Two", "read", author="Author B"),
+                ),
+            },
+        )
+        stats = compute_stats(conn)
+    finally:
+        conn.close()
+
+    assert stats["top_authors"] == []
 
 
 # -- series ---------------------------------------------------------------------

@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from booklens import goodreads
+from booklens import cli, goodreads, paths
 from booklens.goodreads.feed import GoodreadsBook, ShelfFetch
 from booklens.web.app import app
+from tests.test_ingest import _simple_epub
 
 client = TestClient(app)
 
@@ -44,6 +45,13 @@ def _book(review_id, title, shelf, **overrides) -> GoodreadsBook:
     )
     fields.update(overrides)
     return GoodreadsBook(**fields)
+
+
+def _ingest(tmp_path, monkeypatch, name, title, series="s1", start_order=1):
+    _isolate(tmp_path, monkeypatch)
+    epub = _simple_epub(tmp_path, name=name, title=title)
+    rc = cli.main(["ingest", str(epub), "--series", series, "--start-order", str(start_order)])
+    assert rc == 0
 
 
 def _seed(tmp_path, monkeypatch, fetches: dict[str, tuple[GoodreadsBook, ...]], truncated: set[str] = frozenset()):
@@ -366,3 +374,81 @@ def test_sync_400_when_nothing_configured(tmp_path, monkeypatch):
 
     resp = client.post("/api/goodreads/sync", json={})
     assert resp.status_code == 400
+
+
+# -- stats: month-strip cover fallback -------------------------------------------
+
+
+def test_stats_month_cover_falls_back_to_linked_epub_cover(tmp_path, monkeypatch):
+    _ingest(tmp_path, monkeypatch, "book.epub", "Cold Wind")
+    (paths.book_dir("cold-wind")).mkdir(parents=True, exist_ok=True)
+    (paths.book_dir("cold-wind") / "cover.jpg").write_bytes(b"fake-cover-bytes")
+
+    _seed(
+        tmp_path, monkeypatch,
+        {
+            "read": (
+                _book(
+                    "r1", "Cold Wind", "read", book_id="7235533",
+                    cover_small=None, cover_medium=None, cover_large=None,
+                    date_read="2025-03-05T00:00:00+00:00",
+                ),
+            ),
+        },
+    )
+    conn = goodreads.connect()
+    try:
+        goodreads.set_link(conn, "cold-wind", "7235533", source="manual")
+    finally:
+        conn.close()
+
+    body = client.get("/api/goodreads/stats").json()
+    march = next(m for m in body["by_month"] if m["month"] == "2025-03")
+    assert march["books"][0]["cover"] == "/api/books/cold-wind/cover"
+
+
+def test_stats_month_cover_stays_none_without_link(tmp_path, monkeypatch):
+    _seed(
+        tmp_path, monkeypatch,
+        {
+            "read": (
+                _book(
+                    "r1", "Unlinked Book", "read", book_id="999",
+                    cover_small=None, cover_medium=None, cover_large=None,
+                    date_read="2025-03-05T00:00:00+00:00",
+                ),
+            ),
+        },
+    )
+
+    body = client.get("/api/goodreads/stats").json()
+    march = next(m for m in body["by_month"] if m["month"] == "2025-03")
+    assert march["books"][0]["cover"] is None
+
+
+def test_stats_month_cover_prefers_goodreads_url_when_present(tmp_path, monkeypatch):
+    _ingest(tmp_path, monkeypatch, "book.epub", "Cold Wind")
+    (paths.book_dir("cold-wind")).mkdir(parents=True, exist_ok=True)
+    (paths.book_dir("cold-wind") / "cover.jpg").write_bytes(b"fake-cover-bytes")
+
+    _seed(
+        tmp_path, monkeypatch,
+        {
+            "read": (
+                _book(
+                    "r1", "Cold Wind", "read", book_id="7235533",
+                    cover_large="http://example.com/large.jpg",
+                    date_read="2025-03-05T00:00:00+00:00",
+                ),
+            ),
+        },
+    )
+    conn = goodreads.connect()
+    try:
+        goodreads.set_link(conn, "cold-wind", "7235533", source="manual")
+    finally:
+        conn.close()
+
+    body = client.get("/api/goodreads/stats").json()
+    march = next(m for m in body["by_month"] if m["month"] == "2025-03")
+    assert march["books"][0]["cover"] == "http://example.com/large.jpg"

@@ -48,6 +48,12 @@ def strip_series_suffix(title: str) -> str:
     return match.group("base").strip() if match is not None else title
 
 
+def _to_series_number(raw: str) -> int | float:
+    """A `parse_series` number string as JSON-friendly int or float."""
+    value = float(raw)
+    return int(value) if value.is_integer() else value
+
+
 def _read_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM goodreads_book WHERE shelf = 'read'").fetchall()
 
@@ -210,29 +216,56 @@ def _month_range(start: str, end: str) -> list[str]:
     return months
 
 
+def _book_record(row: sqlite3.Row) -> dict:
+    """A single finished-book record, as carried in a `by_month` entry."""
+    parsed = parse_series(row["title"])
+    return {
+        "goodreads_book_id": row["book_id"],
+        "title": strip_series_suffix(row["title"]),
+        "author": row["author"],
+        "series": parsed[0] if parsed else None,
+        "series_number": _to_series_number(parsed[1]) if parsed else None,
+        "cover": row["cover_large"] or row["cover_medium"] or row["cover_small"],
+        "pages": row["num_pages"],
+        "rating": row["user_rating"],
+        "date_read": row["date_read"],
+    }
+
+
 def _by_month(read_rows: list[sqlite3.Row]) -> list[dict]:
     dated = [r for r in read_rows if r["date_read"]]
     if not dated:
         return []
 
-    books = Counter()
+    books_by_month: dict[str, list[sqlite3.Row]] = defaultdict(list)
     pages = defaultdict(int)
     for r in dated:
         key = _month_key(r["date_read"])
-        books[key] += 1
+        books_by_month[key].append(r)
         pages[key] += r["num_pages"] or 0
 
-    keys = sorted(books)
+    keys = sorted(books_by_month)
     full_range = _month_range(keys[0], keys[-1])
-    return [
-        {"month": m, "books": books.get(m, 0), "pages": pages.get(m, 0)}
-        for m in full_range
-    ]
+    result = []
+    for m in full_range:
+        rows = sorted(books_by_month.get(m, []), key=lambda r: (r["date_read"], r["title"]))
+        result.append({
+            "month": m,
+            "count": len(rows),
+            "pages": pages.get(m, 0),
+            "books": [_book_record(r) for r in rows],
+        })
+    return result
 
 
 def _top_authors(read_rows: list[sqlite3.Row]) -> list[dict]:
+    """The most-read authors, capped at 10 -- authors read exactly once carry
+    no ranking information and are excluded before the cap is applied."""
     counts = Counter(r["author"] for r in read_rows)
-    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ranked = sorted(
+        ((author, n) for author, n in counts.items() if n >= 2),
+        key=lambda kv: (-kv[1], kv[0]),
+    )
     return [{"author": author, "books": n} for author, n in ranked[:10]]
 
 
