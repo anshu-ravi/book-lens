@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
+import re
 import shutil
 import sqlite3
 from dataclasses import asdict
@@ -101,6 +102,7 @@ class UploadCommitRequest(BaseModel):
     series_id: str
     book_order: int
     standalone: bool
+    goodreads_book_id: str | None = None
 
 
 class CreateSessionRequest(BaseModel):
@@ -253,6 +255,79 @@ def _suggest_series(iconn: sqlite3.Connection, book) -> dict:
     }
 
 
+_TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
+
+# `goodreads_book` is keyed by `review_id`, so one `book_id` can hold a row per
+# shelf. When a lookup has to pick one, it picks the shelf the reader has acted on.
+_SHELF_PRIORITY = {"read": 0, "currently-reading": 1}
+
+
+def _preferred_shelf_row(rows):
+    """The one row to represent a `book_id` that appears on more than one shelf."""
+    return min(rows, key=lambda r: _SHELF_PRIORITY.get(r["shelf"], 2))
+
+
+def _author_tokens(author: str | None) -> frozenset[str]:
+    """Lowercase alphanumeric name tokens, order- and punctuation-insensitive.
+
+    Goodreads writes "Chakraborty, S.A." where an EPUB writes "S. A.
+    Chakraborty"; splitting on non-alphanumerics and comparing as sets makes
+    both forms equivalent. Single-letter tokens (initials) are kept.
+    """
+    if not author:
+        return frozenset()
+    return frozenset(t for t in _TOKEN_SPLIT_RE.split(author.lower()) if t)
+
+
+def _match_goodreads(gconn: sqlite3.Connection, title: str, author: str | None) -> sqlite3.Row | None:
+    """The one cached Goodreads book this EPUB is, or `None`. Never guesses.
+
+    `goodreads_book` is keyed by `review_id`, so the same `book_id` can
+    appear on more than one row (different shelves); candidates are deduped
+    by `book_id` before counting, preferring the `read`/`currently-reading`
+    row when a `book_id` appears more than once.
+    """
+    title_keys = goodreads.match_keys(title)
+    if not title_keys:
+        return None
+
+    by_book_id: dict[str, list[sqlite3.Row]] = {}
+    for row in gconn.execute("SELECT * FROM goodreads_book"):
+        if goodreads.match_keys(row["title"]) & title_keys:
+            by_book_id.setdefault(row["book_id"], []).append(row)
+
+    candidates = [_preferred_shelf_row(rows) for rows in by_book_id.values()]
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1 and author:
+        author_tokens = _author_tokens(author)
+        narrowed = [
+            row for row in candidates
+            if any(len(t) >= 2 for t in (_author_tokens(row["author"]) & author_tokens))
+        ]
+        if len(narrowed) == 1:
+            return narrowed[0]
+    return None
+
+
+def _goodreads_match_payload(gconn: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    """The `goodreads_match` shape shared by `/api/upload/inspect` and `/api/goodreads/books/{id}`."""
+    parsed = goodreads.parse_series(row["title"])
+    linked = goodreads.linked_book_ids(gconn)
+    return {
+        "goodreads_book_id": row["book_id"],
+        "title": goodreads.strip_series_suffix(row["title"]),
+        "author": row["author"],
+        "series": parsed[0] if parsed else None,
+        "series_number": _to_series_number(parsed[1]) if parsed else None,
+        "cover": row["cover_large"] or row["cover_medium"] or row["cover_small"],
+        "num_pages": row["num_pages"],
+        "description": row["description"],
+        "goodreads_url": f"https://www.goodreads.com/book/show/{row['book_id']}",
+        "linked_book_id": linked.get(row["book_id"]),
+    }
+
+
 # -- library / progress --------------------------------------------------------
 
 
@@ -326,7 +401,10 @@ def _goodreads_unified_entry(row: sqlite3.Row, book_id: str | None, pconn: sqlit
         "title": title,
         "display_title": goodreads.strip_series_suffix(title),
         "author": row["author"],
-        "cover": row["cover_large"] or row["cover_medium"] or row["cover_small"],
+        "cover": (
+            row["cover_large"] or row["cover_medium"] or row["cover_small"]
+            or (f"/api/books/{book_id}/cover" if book_id and paths.cover_path(book_id) else None)
+        ),
         "series": parsed[0] if parsed else None,
         "series_number": _to_series_number(parsed[1]) if parsed else None,
         "user_rating": row["user_rating"],
@@ -615,7 +693,7 @@ def get_series(dbs: DbDep):
 
 
 @app.post("/api/upload/inspect")
-async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
+async def inspect_upload(dbs: DbDep, gconn: GoodreadsDbDep, file: UploadFile = File(...)):
     """Parse an EPUB into a catalog entry, writing nothing to `index.db`.
 
     The bytes are stashed under `data/uploads/`, content-addressed by hash,
@@ -646,6 +724,27 @@ async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
 
     existing = iconn.execute("SELECT id FROM book WHERE sha256 = ?", (sha256,)).fetchone()
 
+    match_row = _match_goodreads(gconn, book.title, book.author)
+    match_payload = _goodreads_match_payload(gconn, match_row) if match_row is not None else None
+
+    suggestion = _suggest_series(iconn, book)
+    if match_payload is not None and match_payload["series"]:
+        sid = _slugify_name(match_payload["series"])
+        prior = iconn.execute(
+            "SELECT COUNT(*) AS n FROM book WHERE series_id = ?", (sid,)
+        ).fetchone()["n"]
+        number = match_payload["series_number"]
+        suggestion = {
+            "suggested_series_id": sid,
+            "suggested_series_name": match_payload["series"],
+            "prior_volumes": prior,
+            # book_order is an integer column; a novella at #1.5 has no integer slot,
+            # so fall back to the ladder's answer rather than truncating it.
+            "suggested_book_order": (
+                int(number) if isinstance(number, int) else suggestion["suggested_book_order"]
+            ),
+        }
+
     return {
         "sha256": sha256,
         "filename": file.filename,
@@ -655,9 +754,10 @@ async def inspect_upload(dbs: DbDep, file: UploadFile = File(...)):
         "chapters_detected": len(body_chapters),
         "has_prologue": has_prologue,
         "has_cover": has_cover,
-        **_suggest_series(iconn, book),
+        **suggestion,
         "already_ingested": existing is not None,
         "existing_book_id": existing["id"] if existing else None,
+        "goodreads_match": match_payload,
     }
 
 
@@ -678,7 +778,7 @@ def get_inspect_cover(sha256: str):
 
 
 @app.post("/api/upload/commit")
-def commit_upload(body: UploadCommitRequest, dbs: DbDep):
+def commit_upload(body: UploadCommitRequest, dbs: DbDep, gconn: GoodreadsDbDep):
     """Ingest a previously inspected, stashed EPUB. Never writes into the user's Books directory."""
     iconn, _pconn = dbs
     stash_path = paths.upload_stash_path(body.sha256)
@@ -687,6 +787,16 @@ def commit_upload(body: UploadCommitRequest, dbs: DbDep):
             status_code=404,
             detail="this upload has expired or was never inspected -- please re-drop the file",
         )
+
+    if body.goodreads_book_id is not None:
+        known = gconn.execute(
+            "SELECT 1 FROM goodreads_book WHERE book_id = ?", (body.goodreads_book_id,)
+        ).fetchone()
+        if known is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown goodreads_book_id {body.goodreads_book_id!r}",
+            )
 
     existing = iconn.execute("SELECT id FROM book WHERE sha256 = ?", (body.sha256,)).fetchone()
     _check_slot_free(
@@ -718,6 +828,9 @@ def commit_upload(body: UploadCommitRequest, dbs: DbDep):
     stash_path.unlink(missing_ok=True)
     name_path.unlink(missing_ok=True)
 
+    if body.goodreads_book_id is not None:
+        goodreads.set_link(gconn, result.book_id, body.goodreads_book_id, source="manual")
+
     author_row = iconn.execute("SELECT author FROM book WHERE id = ?", (result.book_id,)).fetchone()
     manifest = paths.manifest_for(result.book_id)
 
@@ -732,6 +845,7 @@ def commit_upload(body: UploadCommitRequest, dbs: DbDep):
         "skipped": result.skipped,
         "excerpt_chapters": manifest.get("excerpt_chapters", []),
         "standalone": body.standalone,
+        "goodreads_book_id": body.goodreads_book_id,
     }
 
 
@@ -907,6 +1021,19 @@ def get_goodreads_books(conn: GoodreadsDbDep, shelf: str = "all"):
     books = goodreads.all_books(conn) if shelf == "all" else goodreads.books_on_shelf(conn, shelf)
     books = sorted(books, key=lambda b: b.title)
     return {"books": [_goodreads_book_payload(b) for b in books]}
+
+
+@app.get("/api/goodreads/books/{goodreads_book_id}")
+def get_goodreads_book(goodreads_book_id: str, conn: GoodreadsDbDep):
+    """One cached Goodreads book, in the same shape as `goodreads_match` on `/api/upload/inspect`."""
+    rows = conn.execute(
+        "SELECT * FROM goodreads_book WHERE book_id = ?", (goodreads_book_id,)
+    ).fetchall()
+    if not rows:
+        raise HTTPException(
+            status_code=404, detail=f"unknown goodreads_book_id {goodreads_book_id!r}"
+        )
+    return _goodreads_match_payload(conn, _preferred_shelf_row(rows))
 
 
 def _goodreads_settings_payload(conn: sqlite3.Connection) -> dict:

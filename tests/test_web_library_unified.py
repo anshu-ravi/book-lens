@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi.testclient import TestClient
 
-from booklens import cli, goodreads
+from booklens import cli, goodreads, paths
 from booklens.goodreads import store
 from booklens.goodreads.feed import GoodreadsBook, ShelfFetch
 from booklens.web.app import app
@@ -257,6 +257,74 @@ def test_series_group_ordered_by_most_recently_touched_volume(tmp_path, monkeypa
 
     # Ironbound (anchored by volume 3's 2026 date_read) sorts ahead of the unrelated 2025 book.
     assert groups[0]["series"] == "Ironbound"
+
+
+# -- cover precedence: Goodreads first, EPUB fallback --------------------------
+
+
+def test_cover_falls_back_to_epub_cover_when_goodreads_has_none(tmp_path, monkeypatch):
+    _ingest(tmp_path, monkeypatch, "book.epub", "Cold Wind")
+    (paths.book_dir("cold-wind")).mkdir(parents=True, exist_ok=True)
+    (paths.book_dir("cold-wind") / "cover.jpg").write_bytes(b"fake-cover-bytes")
+
+    _seed_gr(
+        tmp_path, monkeypatch, "read",
+        _gr_book(
+            "r1", "Cold Wind", "read", book_id="7235533",
+            cover_small=None, cover_medium=None, cover_large=None,
+        ),
+    )
+    conn = goodreads.connect()
+    try:
+        goodreads.set_link(conn, "cold-wind", "7235533", source="manual")
+    finally:
+        conn.close()
+
+    body = client.get("/api/library/unified").json()
+
+    completed = next(s for s in body["shelves"] if s["shelf"] == "completed")
+    entry = completed["groups"][0]["books"][0]
+    assert entry["cover"] == "/api/books/cold-wind/cover"
+
+
+def test_cover_prefers_goodreads_url_when_present(tmp_path, monkeypatch):
+    _ingest(tmp_path, monkeypatch, "book.epub", "Cold Wind")
+    (paths.book_dir("cold-wind")).mkdir(parents=True, exist_ok=True)
+    (paths.book_dir("cold-wind") / "cover.jpg").write_bytes(b"fake-cover-bytes")
+
+    _seed_gr(
+        tmp_path, monkeypatch, "read",
+        _gr_book(
+            "r1", "Cold Wind", "read", book_id="7235533",
+            cover_large="http://example.com/large.jpg",
+        ),
+    )
+    conn = goodreads.connect()
+    try:
+        goodreads.set_link(conn, "cold-wind", "7235533", source="manual")
+    finally:
+        conn.close()
+
+    body = client.get("/api/library/unified").json()
+
+    completed = next(s for s in body["shelves"] if s["shelf"] == "completed")
+    entry = completed["groups"][0]["books"][0]
+    assert entry["cover"] == "http://example.com/large.jpg"
+
+
+def test_cover_none_when_no_goodreads_cover_and_no_link(tmp_path, monkeypatch):
+    _seed_gr(
+        tmp_path, monkeypatch, "to-read",
+        _gr_book(
+            "r1", "Untouched Title", "to-read",
+            cover_small=None, cover_medium=None, cover_large=None,
+        ),
+    )
+
+    body = client.get("/api/library/unified").json()
+    tbr = next(s for s in body["shelves"] if s["shelf"] == "tbr")
+    entry = tbr["groups"][0]["books"][0]
+    assert entry["cover"] is None
 
 
 # -- no book appears twice ---------------------------------------------------
