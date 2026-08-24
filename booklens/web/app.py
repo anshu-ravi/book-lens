@@ -16,6 +16,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Literal
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
@@ -28,6 +29,9 @@ from booklens.goodreads.stats import _to_series_number
 from booklens.ingest import _slugify as _slugify_name
 from booklens.llm.base import FatalLLMError, TransientLLMError
 from booklens.web import sessions
+
+# uvicorn imports this module directly, so nothing has sourced .env for us.
+load_dotenv()
 
 app = FastAPI(title="booklens")
 app.state.llm_provider = "openrouter"
