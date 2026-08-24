@@ -27,6 +27,11 @@ html, body {
 
 a { color: inherit; }
 
+::selection {
+	background: color-mix(in srgb, var(--brass) 34%, transparent);
+	color: var(--bone);
+}
+
 button {
 	font: inherit;
 }

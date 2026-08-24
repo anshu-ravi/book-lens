@@ -1,6 +1,11 @@
 import type {
+	CitationMarksResponse,
 	CitationWindowResponse,
 	CommitRequest,
+	ConversationListResponse,
+	ConversationMessageResponse,
+	ConversationResponse,
+	ConversationSummary,
 	CommitResponse,
 	CreateSessionResponse,
 	CreditsResponse,
@@ -136,8 +141,60 @@ export function getCitationWindow(
 	);
 }
 
+export function getCitationMarks(
+	sessionId: string,
+	citationIds: string[],
+): Promise<CitationMarksResponse> {
+	return request<CitationMarksResponse>(`/chat/sessions/${sessionId}/citation-marks`, {
+		method: 'POST',
+		body: JSON.stringify({ citation_ids: citationIds }),
+	});
+}
+
 export function deleteSession(sessionId: string): Promise<void> {
 	return request<void>(`/chat/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
+export function listConversations(): Promise<ConversationListResponse> {
+	return request<ConversationListResponse>('/chat/conversations');
+}
+
+export function newConversation(bookId: string): Promise<ConversationResponse> {
+	return request<ConversationResponse>('/chat/conversations', {
+		method: 'POST',
+		body: JSON.stringify({ book_id: bookId }),
+	});
+}
+
+export function openConversation(conversationId: string): Promise<ConversationResponse> {
+	return request<ConversationResponse>(`/chat/conversations/${conversationId}`);
+}
+
+export function askInConversation(
+	conversationId: string,
+	question: string,
+	signal?: AbortSignal,
+): Promise<ConversationMessageResponse> {
+	return request<ConversationMessageResponse>(`/chat/conversations/${conversationId}/messages`, {
+		method: 'POST',
+		body: JSON.stringify({ question }),
+		signal,
+	});
+}
+
+export function undoConversationTurn(conversationId: string): Promise<{ ok: boolean }> {
+	return request<{ ok: boolean }>(`/chat/conversations/${conversationId}/undo`, { method: 'POST' });
+}
+
+export function renameConversation(conversationId: string, title: string) {
+	return request<ConversationSummary>(`/chat/conversations/${conversationId}`, {
+		method: 'PATCH',
+		body: JSON.stringify({ title }),
+	});
+}
+
+export function deleteConversation(conversationId: string): Promise<void> {
+	return request<void>(`/chat/conversations/${conversationId}`, { method: 'DELETE' });
 }
 
 export function getCredits(): Promise<CreditsResponse> {

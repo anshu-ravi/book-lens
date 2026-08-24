@@ -166,6 +166,83 @@ export interface SendMessageResponse {
 	debug: MessageDebug;
 }
 
+export interface ConversationSummary {
+	id: string;
+	book_id: string;
+	title: string;
+	chapter_idx: number;
+	chapter_label: string;
+	turn_count: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ConversationGroup {
+	book_id: string;
+	book_title: string;
+	book_author: string | null;
+	series_id: string;
+	book_order: number;
+	conversations: ConversationSummary[];
+}
+
+export interface ConversationListResponse {
+	groups: ConversationGroup[];
+}
+
+/** The header every chat screen carries: which volumes are in context, and where the ceiling sits. */
+export interface SessionHeader {
+	session_id: string;
+	book_id: string;
+	book_title: string;
+	book_author: string | null;
+	series_id: string;
+	prior_books: { id: string; title: string }[];
+	prior_titles: string[];
+	chapter_idx: number;
+	chapter_label: string;
+	chapter_count: number;
+	chapter_position: number;
+	para_count: number;
+	token_estimate: number;
+}
+
+export interface StoredTurn {
+	question: string;
+	answer: string;
+	citations: string[];
+	chapter_idx: number;
+	chapter_label: string;
+	created_at: string;
+}
+
+export interface ConversationResponse extends SessionHeader {
+	conversation: ConversationSummary;
+	turns: StoredTurn[];
+	started_at_chapter_idx: number;
+	started_at_chapter_label: string;
+	moved_on: boolean;
+}
+
+export interface ConversationMessageResponse extends SendMessageResponse {
+	session_id: string;
+	chapter_idx: number;
+	chapter_label: string;
+	conversation: ConversationSummary;
+}
+
+export interface CitationMark {
+	id: string;
+	book_id: string;
+	chapter_label: string;
+	/** Where the paragraph sits in its own book, 0 at the first page and 1 at the last. */
+	fraction: number;
+}
+
+export interface CitationMarksResponse {
+	marks: CitationMark[];
+}
+
 export interface UndoResponse {
 	ok: boolean;
 	turns: number;
