@@ -134,6 +134,12 @@ class AskRequest(BaseModel):
     question: str
 
 
+class CitationMarksRequest(BaseModel):
+    """Body of `POST /api/chat/sessions/{sid}/citation-marks`."""
+
+    citation_ids: list[str]
+
+
 class NewConversationRequest(BaseModel):
     """Body of `POST /api/chat/conversations`."""
 
@@ -923,13 +929,14 @@ def _open_session(
             book = next((b for b in t.list_books() if b["id"] == book_id), None)
 
         series_id, target_order = progress.series_and_order(session_iconn, book_id)
-        prior_titles = [
-            row["title"]
+        prior_books = [
+            {"id": row["id"], "title": row["title"]}
             for row in session_iconn.execute(
-                "SELECT title FROM book WHERE series_id = ? AND book_order < ? ORDER BY book_order",
+                "SELECT id, title FROM book WHERE series_id = ? AND book_order < ? ORDER BY book_order",
                 (series_id, target_order),
             )
         ]
+        prior_titles = [b["title"] for b in prior_books]
     except context.ContextOverflowError as exc:
         session_iconn.close()
         session_pconn.close()
@@ -959,6 +966,7 @@ def _open_session(
         "book_title": book["title"] if book else book_id,
         "book_author": book["author"] if book else None,
         "series_id": series_id,
+        "prior_books": prior_books,
         "prior_titles": prior_titles,
         "chapter_idx": chapter_idx,
         "chapter_label": _chapter_label(session_iconn, book_id, chapter_idx) or (
@@ -1041,6 +1049,49 @@ def get_chat_citation(sid: str, citation_id: str, window: int = 3):
             return t.context(citation_id, window=window)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def _citation_marks(record: sessions.SessionRecord, citation_ids: list[str]) -> list[dict]:
+    """Where each citation falls in its own book, as a fraction, for the bound bar.
+
+    Goes through the session's own bounded tools, so a citation the session
+    cannot read resolves to nothing rather than to a position on the bar.
+    """
+    marks: list[dict] = []
+    spans: dict[str, tuple[int, int]] = {}
+    with tools.Tools(record.iconn, record.session_pconn) as t:
+        for cid in citation_ids:
+            try:
+                book_id, spine_idx, para_idx = tools.parse_citation_id(cid)
+            except ValueError:
+                continue
+            row = t.readable_paragraph(book_id, spine_idx, para_idx)
+            if row is None:
+                continue
+            span = spans.get(book_id)
+            if span is None:
+                span = t.book_seq_span(book_id)
+                if span is None:
+                    continue
+                spans[book_id] = span
+            floor, ceil_ = span
+            width = max(ceil_ - floor, 1)
+            marks.append(
+                {
+                    "id": cid,
+                    "book_id": book_id,
+                    "chapter_label": row["chapter_label"],
+                    "fraction": min(max((row["global_seq"] - floor) / width, 0.0), 1.0),
+                }
+            )
+    return marks
+
+
+@app.post("/api/chat/sessions/{sid}/citation-marks")
+def get_citation_marks(sid: str, body: CitationMarksRequest):
+    """Resolve citation ids to positions on the reading bar, bounded by the session's ceiling."""
+    record = _get_session(sid)
+    return {"marks": _citation_marks(record, body.citation_ids)}
 
 
 @app.delete("/api/chat/sessions/{sid}", status_code=204)
@@ -1190,11 +1241,11 @@ def _session_meta_fallback(iconn: sqlite3.Connection, book_id: str, chapter_idx:
         "SELECT title, author, series_id, book_order FROM book WHERE id = ?", (book_id,)
     ).fetchone()
     if row is None:
-        return {"prior_titles": [], "chapter_count": 0, "chapter_position": 0}
-    prior_titles = [
-        r["title"]
+        return {"prior_books": [], "prior_titles": [], "chapter_count": 0, "chapter_position": 0}
+    prior_books = [
+        {"id": r["id"], "title": r["title"]}
         for r in iconn.execute(
-            "SELECT title FROM book WHERE series_id = ? AND book_order < ? ORDER BY book_order",
+            "SELECT id, title FROM book WHERE series_id = ? AND book_order < ? ORDER BY book_order",
             (row["series_id"], row["book_order"]),
         )
     ]
@@ -1209,7 +1260,8 @@ def _session_meta_fallback(iconn: sqlite3.Connection, book_id: str, chapter_idx:
     return {
         "book_author": row["author"],
         "series_id": row["series_id"],
-        "prior_titles": prior_titles,
+        "prior_books": prior_books,
+        "prior_titles": [b["title"] for b in prior_books],
         "chapter_count": len(chapters),
         "chapter_position": sum(1 for c in chapters if c <= chapter_idx),
     }

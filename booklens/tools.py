@@ -600,6 +600,42 @@ class Tools:
         """Stub until Phase 1 builds the identity graph."""
         return {"cast": [], "note": "entity graph is not built until Phase 1"}
 
+    # -- positions on the reading bar ---------------------------------------
+
+    def readable_paragraph(self, book_id: str, spine_idx: int, para_idx: int):
+        """One paragraph's chapter and seq, or None if it sits above the ceiling."""
+        return self._iconn.execute(
+            f"""
+            SELECT chapter_label, global_seq
+            FROM para AS p
+            WHERE p.book_id = ? AND p.spine_idx = ? AND p.para_idx = ?
+              AND p.kind IN {db.SERVABLE_KINDS_SQL}
+              AND EXISTS (
+                SELECT 1 FROM {self._table} r
+                WHERE r.book_id = p.book_id AND p.global_seq BETWEEN r.lo AND r.hi
+              )
+            """,
+            (book_id, spine_idx, para_idx),
+        ).fetchone()
+
+    def book_seq_span(self, book_id: str) -> tuple[int, int] | None:
+        """A book's first and last seq, over its whole text.
+
+        Deliberately unbounded by the ceiling: this is the denominator that
+        turns a seq into a position on the bar, and clamping it would make an
+        early citation in a barely-started book look like it sat at the end.
+        It exposes the length of the book, which the reader can see on the
+        shelf, and nothing about its content.
+        """
+        row = self._iconn.execute(
+            f"SELECT MIN(global_seq) AS lo, MAX(global_seq) AS hi FROM para"
+            f" WHERE book_id = ? AND kind IN {db.SERVABLE_KINDS_SQL}",
+            (book_id,),
+        ).fetchone()
+        if row is None or row["lo"] is None:
+            return None
+        return int(row["lo"]), int(row["hi"])
+
     # -- context expansion --------------------------------------------------
 
     def context(self, citation_id: str, window: int = 3) -> dict:
