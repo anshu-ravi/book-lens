@@ -1,0 +1,13 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",      "x": 0,    "y": 0,    "w": 1440, "h": 900, "title": "Chat — a conversation in progress" },
+    { "file": "Opening.dc.html",   "x": 1560, "y": 0,    "w": 1440, "h": 900, "title": "Chat — opening a new conversation" },
+    { "file": "Questions.dc.html", "x": 0,    "y": 1060, "w": 1180, "h": 680, "title": "Three weights for a question" }
+  ],
+  "annotations": [
+    { "id": "note-try", "x": 3120, "y": 40, "w": 310, "text": "Things to try on this artboard:\n\n· Press send — the bar sweeps across exactly the span the model can see, then the answer rises in a paragraph at a time. Press again to stop or reset.\n\n· Hover an answer: its citations light up as ticks along the bar, and quiet copy / follow-up / re-ask buttons fade in beneath it.\n\n· Hover a citation number for a one-line peek before you commit to opening the passage.\n\n· Hover the highlighted sentence in the first answer — select any phrase and ask about just that.\n\n· Collapse the conversations panel. Open the chapter-18 conversation to see what happens when you have read on since." },
+    { "id": "note-small", "x": 3120, "y": 560, "w": 310, "text": "The small things, in the spirit of the blurred cover on the book card:\n\nThe cover is blurred and bled down behind the header, so each conversation is tinted by the book it belongs to, and the book itself stands beside its title.\n\nThe reading indicator is not a spinner — it is the bound bar being read across.\n\nThe composer glows brass while it holds text and the send button turns oxblood into a stop." },
+    { "id": "note-q", "x": 1280, "y": 1060, "w": 320, "text": "You were right that a chapter heading per question is too much ceremony. Three lighter weights are below — A is what the main artboard uses now. Say which and I will settle it there." }
+  ],
+  "launch": { "view": "focused", "file": "Main.dc.html" }
+}

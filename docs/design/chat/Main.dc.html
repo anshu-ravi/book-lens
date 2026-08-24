@@ -1,0 +1,509 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter+Tight:wght@400;500&family=JetBrains+Mono:wght@400&display=swap">
+  <style>
+    body { margin: 0; background: #0b1118; font-family: 'Source Serif 4', Georgia, serif; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #b8924a; text-decoration: none; }
+    a:hover { color: #c79a52; }
+    button { font: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+    .caps { font-family: 'Inter Tight', system-ui, sans-serif; font-weight: 500; text-transform: uppercase; letter-spacing: 0.18em; }
+
+    /* citation chip, with a one-line peek before you commit to opening the sheet */
+    .cw { position: relative; }
+    .cite { font-family: 'Inter Tight', system-ui, sans-serif; font-weight: 500; font-size: 10px; line-height: 1; vertical-align: super; padding: 2px 4px; margin: 0 1px; border-radius: 3px; background: rgba(184,146,74,0.16); color: #c79a52; transition: background .14s, color .14s; }
+    .cite:hover, .cite.on { background: #b8924a; color: #0b1118; }
+    .peek { position: absolute; bottom: 26px; left: -8px; width: 268px; padding: 10px 12px; border: 1px solid #2b3541; border-radius: 7px; background: #0d141c; box-shadow: 0 12px 26px -12px rgba(0,0,0,.9); font-size: 13px; font-style: italic; line-height: 1.5; color: #a39c8c; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity .16s ease, transform .16s ease; z-index: 5; }
+    .cw:hover .peek { opacity: 1; transform: translateY(0); }
+
+    /* quiet per-answer actions, only while the eye is on that answer */
+    .acts { opacity: 0; transition: opacity .18s ease; }
+    .turn:hover .acts { opacity: 1; }
+    .act { width: 27px; height: 27px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #6c685e; transition: color .14s, background .14s; }
+    .act:hover { color: #c79a52; background: #16202b; }
+
+    /* select a phrase, ask about it */
+    .selq { background: rgba(184,146,74,.14); box-shadow: inset 0 -1px 0 rgba(184,146,74,.5); border-radius: 2px; position: relative; cursor: text; }
+    .selchip { position: absolute; bottom: 28px; left: 50%; transform: translate(-50%, 4px); white-space: nowrap; padding: 6px 11px; border-radius: 6px; background: #b8924a; color: #0b1118; font-family: 'Inter Tight', system-ui, sans-serif; font-weight: 500; font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; opacity: 0; pointer-events: none; transition: opacity .16s ease, transform .16s ease; }
+    .selq:hover .selchip { opacity: 1; transform: translate(-50%, 0); }
+
+    .hitem { transition: background .14s, color .14s; }
+    .hitem:hover { background: #0d141c; }
+    .ghost { transition: color .14s; }
+    .ghost:hover { color: #e9e1cf; }
+    .tick { transition: background .18s ease, height .18s ease, opacity .18s ease; }
+    .sendbtn { transition: transform .14s ease, background .14s ease, opacity .14s ease; }
+    .sendbtn:hover { transform: translateY(-1px); background: #c79a52; }
+
+    /* the model is reading: a sweep across exactly the span it can see */
+    @keyframes sweep { 0% { left: -14%; opacity: 0; } 14% { opacity: 1; } 82% { opacity: 1; } 100% { left: 62%; opacity: 0; } }
+    .sweep { position: absolute; top: -4px; bottom: -4px; width: 62px; border-radius: 4px; pointer-events: none; background: linear-gradient(90deg, rgba(199,154,82,0), rgba(199,154,82,.8), rgba(199,154,82,0)); animation: sweep 1.7s cubic-bezier(.4,0,.3,1) infinite; }
+    @keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+    .breathe { animation: breathe 1.7s ease-in-out infinite; }
+
+    /* an answer arrives a paragraph at a time */
+    @keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+    .rise > * { animation: rise .55s cubic-bezier(.2,.7,.3,1) both; }
+    .rise > *:nth-child(2) { animation-delay: .14s; }
+    .rise > *:nth-child(3) { animation-delay: .28s; }
+
+    .thread::-webkit-scrollbar { width: 8px; }
+    .thread::-webkit-scrollbar-thumb { background: #1f2a36; border-radius: 4px; }
+    .thread::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; padding: 24px; background: #0b1118;">
+  <div style="display: grid; grid-template-columns: 250px minmax(0, 1fr); height: 852px; background: #101821; border: 1px solid #1f2a36; border-radius: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 28px 64px -28px rgba(0,0,0,.62); overflow: hidden;">
+
+    <!-- ========== the app rail, as it already is ========== -->
+    <aside style="background: #0b1118; border-right: 1px solid #1f2a36; padding: 24px 16px; display: flex; flex-direction: column; gap: 24px;">
+      <div style="padding: 0 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 22px; color: #e9e1cf;">BookLens</span>
+          <span style="font-style: italic; font-size: 13px; color: #a39c8c;">a reader's index</span>
+        </div>
+        <div style="width: 34px; height: 34px; border: 1px solid #1f2a36; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #a39c8c;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
+        </div>
+      </div>
+      <nav style="display: flex; flex-direction: column; gap: 2px;">
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #a39c8c; border-left: 2px solid transparent; border-radius: 4px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5"/></svg><span>Home</span>
+        </div>
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #a39c8c; border-left: 2px solid transparent; border-radius: 4px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h5v16H4zM11 4h4v16h-4zM17.2 4.6l3.4.9-4 15.4-3.3-.9z"/></svg><span>Library</span>
+        </div>
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #a39c8c; border-left: 2px solid transparent; border-radius: 4px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 17v3h16v-3"/></svg><span>Upload</span>
+        </div>
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #c79a52; border-left: 2px solid #b8924a; border-radius: 4px; background: #101821;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-4.6A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8Z"/></svg><span>Chat</span>
+        </div>
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #a39c8c; border-left: 2px solid transparent; border-radius: 4px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Stats</span>
+        </div>
+      </nav>
+      <div style="border: 1px solid #1f2a36; border-radius: 4px; padding: 12px; background: #101821;">
+        <span class="caps" style="font-size: 12px; color: #6c685e; display: block; margin-bottom: 12px;">Continue reading</span>
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          <div style="width: 44px; height: 66px; border-radius: 1px 6px 6px 1px; background: linear-gradient(155deg, #1d3a44, #3a2b33 55%, #12181f); box-shadow: 0 4px 10px rgba(0,0,0,.4); flex: 0 0 auto;"></div>
+          <div style="min-width: 0;">
+            <p style="font-size: 14px; margin: 0 0 2px; line-height: 1.25; color: #e9e1cf;">The Salt Road</p>
+            <span style="font-size: 12px; color: #6c685e;">R. M. Havel</span>
+          </div>
+        </div>
+        <div style="height: 2px; background: #1f2a36; margin-top: 12px;"><span style="display: block; height: 100%; width: 62%; background: #b8924a;"></span></div>
+        <span class="caps" style="font-size: 10px; color: #6c685e; display: block; margin-top: 6px;">Chapter 22 · 62%</span>
+      </div>
+    </aside>
+
+    <div style="display: flex; min-width: 0;">
+
+      <!-- ---------- conversations ---------- -->
+      <sc-if value="{{ historyOpen }}" hint-placeholder-val="{{ true }}">
+      <div style="width: 268px; flex: 0 0 268px; border-right: 1px solid #1f2a36; background: #0d141c; display: flex; flex-direction: column; min-height: 0;">
+        <div style="padding: 22px 18px 14px; display: flex; align-items: center; justify-content: space-between;">
+          <span class="caps" style="font-size: 10px; color: #6c685e;">Conversations</span>
+          <button onClick="{{ toggleHistory }}" class="ghost" style="color: #6c685e; display: flex; padding: 4px;" aria-label="Collapse conversations">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 6l-6 6 6 6"/></svg>
+          </button>
+        </div>
+        <div style="padding: 0 14px 14px;">
+          <button class="caps" style="width: 100%; display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 10px; color: #c79a52; border: 1px solid #5a4830; border-radius: 6px; padding: 10px 12px;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>New conversation
+          </button>
+        </div>
+        <div style="flex: 1; overflow-y: auto; padding: 4px 8px 20px;">
+          <div style="padding: 10px 10px 6px; display: flex; align-items: baseline; gap: 8px;">
+            <span style="font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 16px; color: #c79a52;">The Salt Road</span>
+            <span style="flex: 1; height: 1px; background: #1f2a36;"></span>
+          </div>
+          <button class="hitem" onClick="{{ pickA }}" style="display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 6px; border-left: 2px solid {{ selA.bar }}; background: {{ selA.bg }};">
+            <span style="display: block; font-size: 14.5px; line-height: 1.42; color: {{ selA.fg }};">Who is Kell, and why does Ansa keep him at arm's length?</span>
+            <span class="caps" style="display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Ch 22 · today · {{ selA.turns }} turns</span>
+          </button>
+          <button class="hitem" style="display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 6px; border-left: 2px solid transparent;">
+            <span style="display: block; font-size: 14.5px; line-height: 1.42; color: #a39c8c;">What was actually agreed at the weir?</span>
+            <span class="caps" style="display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Ch 22 · 2 days ago · 2 turns</span>
+          </button>
+          <button class="hitem" onClick="{{ pickB }}" style="display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 6px; border-left: 2px solid {{ selB.bar }}; background: {{ selB.bg }};">
+            <span style="display: block; font-size: 14.5px; line-height: 1.42; color: {{ selB.fg }};">Remind me who I've met so far</span>
+            <span class="caps" style="display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Ch 18 · last week · 3 turns</span>
+          </button>
+          <div style="padding: 20px 10px 6px; display: flex; align-items: baseline; gap: 8px;">
+            <span style="font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 16px; color: #c79a52;">The Drowned Coast</span>
+            <span style="flex: 1; height: 1px; background: #1f2a36;"></span>
+          </div>
+          <button class="hitem" style="display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 6px; border-left: 2px solid transparent;">
+            <span style="display: block; font-size: 14.5px; line-height: 1.42; color: #a39c8c;">How did the siege actually end?</span>
+            <span class="caps" style="display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Finished · 3 weeks ago · 6 turns</span>
+          </button>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ historyShut }}" hint-placeholder-val="{{ false }}">
+      <div style="width: 54px; flex: 0 0 54px; border-right: 1px solid #1f2a36; background: #0d141c; display: flex; flex-direction: column; align-items: center; padding: 18px 0;">
+        <button onClick="{{ toggleHistory }}" class="ghost" style="color: #a39c8c; display: flex; padding: 5px;" aria-label="Expand conversations">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 6l6 6-6 6"/></svg>
+        </button>
+        <div style="height: 22px;"></div>
+        <div style="display: flex; flex-direction: column; gap: 7px; align-items: center;">
+          <span style="width: 18px; height: 2px; background: #b8924a;"></span>
+          <span style="width: 18px; height: 2px; background: #5a4830;"></span>
+          <span style="width: 18px; height: 2px; background: #5a4830;"></span>
+          <span style="width: 12px; height: 2px; background: #2b3541;"></span>
+        </div>
+        <div style="height: 26px;"></div>
+        <span class="caps" style="font-size: 9.5px; color: #6c685e; writing-mode: vertical-rl; letter-spacing: .22em;">4 conversations</span>
+      </div>
+      </sc-if>
+
+      <!-- ---------- the conversation ---------- -->
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative;">
+
+        <!-- the book's cover, blurred, bleeding down behind the header -->
+        <div style="position: absolute; top: 0; left: 0; right: 0; height: 260px; overflow: hidden; pointer-events: none;">
+          <div style="position: absolute; top: -80px; left: -10%; right: -10%; height: 300px; filter: blur(58px); opacity: .38; background: linear-gradient(120deg, #1d3a44 0%, #3a2b33 42%, #6b4a2e 68%, #12181f 100%);"></div>
+          <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(16,24,33,0) 0%, rgba(16,24,33,.55) 62%, #101821 100%);"></div>
+        </div>
+
+        <!-- header -->
+        <div style="position: relative; padding: 26px 34px 18px; border-bottom: 1px solid #1f2a36; flex-shrink: 0;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 24px;">
+            <div style="display: flex; gap: 16px; align-items: flex-start; min-width: 0;">
+              <div style="width: 42px; height: 63px; flex: 0 0 auto; border-radius: 1px 5px 5px 1px; background: linear-gradient(155deg, #1d3a44, #3a2b33 55%, #12181f); box-shadow: 0 8px 18px -6px rgba(0,0,0,.75), inset 2px 0 0 rgba(0,0,0,.28);"></div>
+              <div style="min-width: 0;">
+                <span class="caps" style="font-size: 10px; color: #c79a52;">The Tidewater Cycle · Book Two</span>
+                <h1 style="margin: 5px 0 0; font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 31px; line-height: 1.1; letter-spacing: -0.005em; color: #e9e1cf;">The Salt Road</h1>
+                <span style="display: block; margin-top: 3px; font-size: 13px; color: #a39c8c;">R. M. Havel</span>
+              </div>
+            </div>
+            <button class="ghost caps" style="display: flex; align-items: center; gap: 9px; flex-shrink: 0; font-size: 10px; color: #a39c8c; border: 1px solid #1f2a36; border-radius: 6px; padding: 9px 13px; background: rgba(13,20,28,.7);">
+              Switch book
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+
+          <!-- the bound, drawn rather than described -->
+          <div style="margin-top: 20px;">
+            <div style="display: flex; gap: 7px; margin-bottom: 7px;">
+              <span class="caps" style="flex: 0 0 30%; font-size: 9px; letter-spacing: .16em; color: #6c685e;">The Drowned Coast</span>
+              <span class="caps" style="flex: 1; font-size: 9px; letter-spacing: .16em; color: #6c685e;">The Salt Road</span>
+            </div>
+            <div style="display: flex; gap: 7px; align-items: center; height: 5px;">
+              <span style="flex: 0 0 30%; height: 5px; border-radius: 3px; background: {{ accent }}; opacity: .55;"></span>
+              <span style="flex: 1; height: 5px; border-radius: 3px; background: #1f2a36; position: relative;">
+                <span style="position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 3px; background: {{ accent }};"></span>
+                <sc-for list="{{ ticks }}" as="tk" hint-placeholder-count="3">
+                  <button class="tick" onClick="{{ tk.open }}" style="position: absolute; left: {{ tk.left }}%; bottom: 9px; width: 2px; height: {{ tk.h }}px; padding: 0; border-radius: 1px; background: {{ tk.color }}; opacity: {{ tk.op }};" aria-label="Cited passage"></button>
+                </sc-for>
+                <sc-if value="{{ thinking }}" hint-placeholder-val="{{ false }}"><span class="sweep"></span></sc-if>
+                <span style="position: absolute; left: 62%; top: -5px; bottom: -5px; width: 1px; background: {{ accent }};"></span>
+                <span style="position: absolute; left: 62%; top: -9px; width: 5px; height: 5px; margin-left: -2px; transform: rotate(45deg); background: {{ accent }};"></span>
+              </span>
+            </div>
+            <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 13px; gap: 20px;">
+              <p style="margin: 0; font-style: italic; font-size: 13.5px; color: #6c685e;">
+                You are at <span class="caps" style="color: #c79a52; font-style: normal; font-size: 11px; letter-spacing: .1em;">Chapter 22</span>. Answers will not reach beyond this point.
+              </p>
+              <span class="caps" style="flex-shrink: 0; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">84,120 tokens in context</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- thread -->
+        <div class="thread" style="flex: 1; overflow-y: auto; padding: 6px 34px 20px; min-height: 0;">
+
+          <sc-if value="{{ showA }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <!-- turn 1 -->
+            <div class="turn" onMouseEnter="{{ hoverT1 }}" onMouseLeave="{{ hoverNone }}" style="padding: 26px 0 0;">
+              <div style="display: flex; gap: 14px; align-items: stretch; max-width: 620px; margin-bottom: 18px;">
+                <span style="flex: 0 0 2px; border-radius: 1px; background: {{ accent }};"></span>
+                <p style="margin: 0; font-style: italic; font-size: 18.5px; line-height: 1.5; color: #e9e1cf;">Who is Kell, and why does Ansa keep him at arm's length?</p>
+              </div>
+              <div style="max-width: 640px; font-size: 17px; line-height: 1.78; color: #e9e1cf;">
+                <p style="margin: 0 0 17px;">Kell runs the tally house at the foot of the causeway, which in a town that lives off the tide makes him the closest thing the salt trade has to a magistrate.<span class="cw"><button class="cite {{ c1.cls }}" onClick="{{ openC1 }}">1</button><span class="peek">"Kell kept the numbers for everyone and traded for no one…"</span></span> He is not a merchant himself; he keeps other people's numbers, and he keeps them well enough that nobody has managed to prove he keeps two sets.</p>
+                <p style="margin: 0 0 17px;">Ansa's wariness reads less like dislike than like caution around someone whose interests she cannot locate. <span class="selq">Their first real exchange is entirely about the weight of a shipment, and she notices that he corrects her arithmetic without once looking at the ledger.<span class="selchip">Ask about this</span></span><span class="cw"><button class="cite {{ c2.cls }}" onClick="{{ openC2 }}">2</button><span class="peek">"Eleven short," he said, before the ledger was open…</span></span> After that she is careful to tell him true things and incomplete ones.</p>
+                <p style="margin: 0;">What she actually suspects hasn't been said out loud yet — the text keeps her reasoning to herself, and by chapter twenty-two it is still something she is testing rather than something she has decided.<span class="cw"><button class="cite {{ c3.cls }}" onClick="{{ openC3 }}">3</button><span class="peek">"She had a shape for it by then but no name…"</span></span></p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; margin-top: 14px; max-width: 640px;">
+                <div class="acts" style="display: flex; gap: 2px; margin-left: -6px;">
+                  <button class="act" aria-label="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg></button>
+                  <button class="act" aria-label="Ask a follow-up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-4.6A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8Z"/></svg></button>
+                  <button class="act" aria-label="Ask again"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 11a8 8 0 1 0-1.8 6M20 5v6h-6"/></svg></button>
+                </div>
+                <sc-if value="{{ debug }}" hint-placeholder-val="{{ false }}">
+                  <p style="margin: 0; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #6c685e;">ctx 84120 · cached 83904 · $0.0038</p>
+                </sc-if>
+              </div>
+            </div>
+
+            <!-- turn 2 -->
+            <div class="turn" onMouseEnter="{{ hoverT2 }}" onMouseLeave="{{ hoverNone }}" style="padding: 30px 0 0;">
+              <div style="display: flex; gap: 14px; align-items: stretch; max-width: 620px; margin-bottom: 18px;">
+                <span style="flex: 0 0 2px; border-radius: 1px; background: {{ accent }};"></span>
+                <p style="margin: 0; font-style: italic; font-size: 18.5px; line-height: 1.5; color: #e9e1cf;">Has he given her any reason to, though?</p>
+              </div>
+              <div style="max-width: 640px; font-size: 17px; line-height: 1.78; color: #e9e1cf;">
+                <p style="margin: 0 0 17px;">Nothing she could put in front of anyone. The nearest thing to a slip is at the weir, where he answers a question she hadn't finished asking<span class="cw"><button class="cite {{ c4.cls }}" onClick="{{ openC4 }}">4</button><span class="peek">"Because the second barge never came," he said…</span></span> — which tells her he already knew the shape of it, and nothing at all about how.</p>
+                <p style="margin: 0;">Set against that, he has twice been straightforwardly useful to her at some cost to himself, and she notes both times without deciding what they mean.<span class="cw"><button class="cite {{ c5.cls }}" onClick="{{ openC5 }}">5</button><span class="peek">He signed for the shortfall himself, which nobody had asked…</span></span></p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; margin-top: 14px; max-width: 640px;">
+                <div class="acts" style="display: flex; gap: 2px; margin-left: -6px;">
+                  <button class="act" aria-label="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg></button>
+                  <button class="act" aria-label="Ask a follow-up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-4.6A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8Z"/></svg></button>
+                  <button class="act" aria-label="Ask again"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 11a8 8 0 1 0-1.8 6M20 5v6h-6"/></svg></button>
+                </div>
+                <sc-if value="{{ debug }}" hint-placeholder-val="{{ false }}">
+                  <p style="margin: 0; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11px; color: #6c685e;">ctx 84120 · cached 84120 · $0.0031</p>
+                </sc-if>
+              </div>
+            </div>
+
+            <!-- turn 3: the one you send -->
+            <sc-if value="{{ asked }}" hint-placeholder-val="{{ false }}">
+            <div class="turn" onMouseEnter="{{ hoverT3 }}" onMouseLeave="{{ hoverNone }}" style="padding: 30px 0 0;">
+              <div style="display: flex; gap: 14px; align-items: stretch; max-width: 620px; margin-bottom: 18px;">
+                <span style="flex: 0 0 2px; border-radius: 1px; background: {{ accent }};"></span>
+                <p style="margin: 0; font-style: italic; font-size: 18.5px; line-height: 1.5; color: #e9e1cf;">Has he ever actually lied to her?</p>
+              </div>
+              <sc-if value="{{ thinking }}" hint-placeholder-val="{{ true }}">
+                <p class="breathe" style="margin: 0; font-style: italic; font-size: 16px; color: #c79a52;">Reading the twenty-two chapters you've read…</p>
+              </sc-if>
+              <sc-if value="{{ answered }}" hint-placeholder-val="{{ false }}">
+              <div class="rise" style="max-width: 640px; font-size: 17px; line-height: 1.78; color: #e9e1cf;">
+                <p style="margin: 0 0 17px;">Not in anything you've seen. He has withheld — twice, visibly — but every statement of his that the book lets you check has turned out to be true, including the ones that cost him.<span class="cw"><button class="cite {{ c6.cls }}" onClick="{{ openC6 }}">6</button><span class="peek">"Ask me a straight question and I'll give you a straight number."</span></span></p>
+                <p style="margin: 0;">Which is, of course, exactly what makes Ansa uneasy rather than reassured.</p>
+              </div>
+              </sc-if>
+            </div>
+            </sc-if>
+            <div style="height: 26px;"></div>
+          </div>
+          </sc-if>
+
+          <!-- an older conversation, reopened -->
+          <sc-if value="{{ showB }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="margin: 24px 0 0; display: flex; gap: 12px; align-items: flex-start; padding: 13px 16px; border: 1px solid #5a4830; border-radius: 8px; background: rgba(184,146,74,0.06);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c79a52" stroke-width="1.5" style="flex: 0 0 auto; margin-top: 2px;"><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>
+              <p style="margin: 0; font-size: 14.5px; line-height: 1.6; color: #a39c8c;">
+                You started this at <span style="color: #c79a52;">chapter 18</span> and have read to <span style="color: #c79a52;">chapter 22</span> since. Anything you ask now reaches the further mark — the answers below still stop where they did.
+              </p>
+            </div>
+            <div class="turn" style="padding: 26px 0 0;">
+              <div style="display: flex; gap: 14px; align-items: stretch; max-width: 620px; margin-bottom: 18px;">
+                <span style="flex: 0 0 2px; border-radius: 1px; background: {{ accent }};"></span>
+                <p style="margin: 0; font-style: italic; font-size: 18.5px; line-height: 1.5; color: #e9e1cf;">Remind me who I've met so far</p>
+              </div>
+              <div style="max-width: 640px; font-size: 17px; line-height: 1.78; color: #e9e1cf;">
+                <p style="margin: 0 0 17px;">Ansa you've been with since the first page of the previous book, and she is still the one whose head you are in. Around her, four people have had enough room on the page to matter: Kell at the tally house, the harbourmaster she reports to and does not trust, her sister's husband, and the woman who runs the weir crew.</p>
+                <p style="margin: 0;">A handful of others have been named once and not returned. I'd leave them; the book doesn't seem finished introducing people.</p>
+              </div>
+            </div>
+            <div style="height: 26px;"></div>
+          </div>
+          </sc-if>
+        </div>
+
+        <!-- composer -->
+        <div style="flex-shrink: 0; border-top: 1px solid #1f2a36; padding: 16px 34px 18px;">
+          <div style="display: flex; gap: 14px; align-items: flex-end;">
+            <div style="flex: 1; background: #0d141c; border: 1px solid {{ comp.border }}; box-shadow: {{ comp.glow }}; border-radius: 10px; padding: 14px 16px; min-height: 54px; display: flex; align-items: center; transition: border-color .16s ease, box-shadow .16s ease;">
+              <sc-if value="{{ comp.typed }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size: 17px; color: #e9e1cf;">Has he ever actually lied to her?</span><span class="breathe" style="display: inline-block; width: 1.5px; height: 20px; background: {{ accent }}; margin-left: 2px;"></span>
+              </sc-if>
+              <sc-if value="{{ comp.empty }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 17px; font-style: italic; color: #6c685e;">Ask about what you've read so far…</span>
+              </sc-if>
+            </div>
+            <button class="sendbtn" onClick="{{ send }}" style="flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; background: {{ comp.btn }}; color: #0b1118; display: flex; align-items: center; justify-content: center; opacity: {{ comp.op }};" aria-label="Send">
+              <sc-if value="{{ notThinking }}" hint-placeholder-val="{{ true }}">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M12 5l-6 6M12 5l6 6"/></svg>
+              </sc-if>
+              <sc-if value="{{ thinking }}" hint-placeholder-val="{{ false }}">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+              </sc-if>
+            </button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 22px; margin-top: 13px;">
+            <button class="caps ghost" onClick="{{ toggleDebug }}" style="display: flex; align-items: center; gap: 8px; font-size: 9.5px; letter-spacing: .16em; color: {{ dbg.fg }};">
+              <span style="width: 20px; height: 11px; border-radius: 6px; background: {{ dbg.track }}; position: relative; display: inline-block; transition: background .16s ease;">
+                <span style="position: absolute; top: 2px; left: {{ dbg.knob }}px; width: 7px; height: 7px; border-radius: 50%; background: {{ dbg.dot }}; transition: left .16s ease, background .16s ease;"></span>
+              </span>
+              Debug
+            </button>
+            <span class="caps" style="font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Session {{ cost }}</span>
+            <span style="flex: 1;"></span>
+            <span style="font-size: 12.5px; font-style: italic; color: #6c685e;">{{ comp.hint }}</span>
+          </div>
+        </div>
+
+        <!-- cited passage -->
+        <sc-if value="{{ citeOpen }}" hint-placeholder-val="{{ true }}">
+        <div style="position: absolute; top: 0; right: 0; bottom: 0; width: 356px; background: #0d141c; border-left: 1px solid #1f2a36; box-shadow: -22px 0 44px -26px rgba(0,0,0,.85); display: flex; flex-direction: column;">
+          <div style="padding: 22px 22px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1f2a36;">
+            <div>
+              <span class="caps" style="font-size: 9.5px; letter-spacing: .16em; color: #b8924a;">Cited passage</span>
+              <p style="margin: 5px 0 0; font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 18px; color: #e9e1cf;">{{ cite.chapter }}</p>
+            </div>
+            <button onClick="{{ closeCite }}" class="ghost" style="color: #6c685e; display: flex; padding: 4px;" aria-label="Close">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+          <div style="flex: 1; overflow-y: auto; padding: 18px 22px 24px;">
+            <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.72; color: #6c685e;">{{ cite.before }}</p>
+            <div style="border-left: 2px solid #b8924a; padding: 4px 0 4px 15px; margin: 0 0 16px; background: rgba(184,146,74,0.05);">
+              <p style="margin: 0; font-size: 15.5px; line-height: 1.72; color: #e9e1cf;">{{ cite.text }}</p>
+              <span style="display: block; margin-top: 10px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 10.5px; color: #b8924a;">{{ cite.id }}</span>
+            </div>
+            <p style="margin: 0; font-size: 15px; line-height: 1.72; color: #6c685e;">{{ cite.after }}</p>
+          </div>
+        </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#b8924a","options":["#b8924a","#8a6f9c","#6a8f72","#a14a3a"],"section":"Theme"}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { historyOpen: true, conv: 'A', cite: 1, debug: false, hover: 0, phase: 'idle' };
+  }
+
+  componentWillUnmount() {
+    if (this.t) clearTimeout(this.t);
+  }
+
+  renderVals() {
+    const s = this.state || {};
+    const accent = this.props.accent || '#b8924a';
+    const conv = s.conv || 'A';
+    const cite = s.cite;
+    const hover = s.hover || 0;
+    const phase = s.phase || 'idle';
+
+    const marks = [
+      { n: 1, turn: 1, left: 14, chapter: 'Chapter 9', id: 'salt-road:p04412',
+        before: 'The causeway had been dry for three days and the tally house smelled of it.',
+        text: 'Kell kept the numbers for everyone and traded for no one, which in Weirholm made him either the only honest man on the water or the patient one.',
+        after: 'Ansa put her sheet on the counter face down, and he turned it over without asking.' },
+      { n: 2, turn: 1, left: 37, chapter: 'Chapter 14', id: 'salt-road:p07130',
+        before: 'She had done the arithmetic twice on the walk over and once again at the door.',
+        text: '"Eleven short," he said, before the ledger was open, and did not look up when she asked him how he knew.',
+        after: 'It was the not looking up that she thought about later.' },
+      { n: 3, turn: 1, left: 58, chapter: 'Chapter 21', id: 'salt-road:p10884',
+        before: 'The tide came in under the boards and went out again.',
+        text: 'She had a shape for it by then but no name, and she had learned young not to say a thing out loud until it would hold weight.',
+        after: 'So she said nothing, and watched the water instead.' },
+      { n: 4, turn: 2, left: 26, chapter: 'Chapter 11', id: 'salt-road:p05903',
+        before: 'The weir crew had stopped working to listen, which was its own kind of answer.',
+        text: '"Because the second barge never came," he said, and she had only got as far as asking about the first.',
+        after: 'Ansa let the silence sit where the rest of her question would have gone.' },
+      { n: 5, turn: 2, left: 49, chapter: 'Chapter 17', id: 'salt-road:p08761',
+        before: 'It cost him the morning and a good deal of standing with the harbourmaster.',
+        text: 'He signed for the shortfall himself, which nobody had asked him to do and nobody thanked him for.',
+        after: 'She wrote it down in the column she kept for things that did not fit.' },
+      { n: 6, turn: 3, left: 55, chapter: 'Chapter 20', id: 'salt-road:p10195',
+        before: 'She had come to accuse him of something and had not settled on what.',
+        text: '"Ask me a straight question and I’ll give you a straight number," he said. "That is the whole of what I sell."',
+        after: 'It was not a denial, and they both let it stand as one.' },
+    ];
+
+    const visible = phase === 'answered' ? marks : marks.filter((m) => m.turn !== 3);
+    const ticks = visible.map((m) => {
+      const lit = hover === m.turn || cite === m.n;
+      return {
+        left: m.left,
+        h: lit ? 15 : 9,
+        color: lit ? accent : '#5a4830',
+        op: lit ? 1 : 0.75,
+        open: () => this.setState({ cite: m.n }),
+      };
+    });
+
+    const chip = (n) => ({ cls: cite === n ? 'on' : '' });
+    const active = marks.find((m) => m.n === cite) || marks[0];
+    const on = { bar: accent, bg: '#101821', fg: '#e9e1cf' };
+    const off = { bar: 'transparent', bg: 'transparent', fg: '#a39c8c' };
+
+    const comp =
+      phase === 'idle'
+        ? { typed: true, empty: false, border: '#5a4830', glow: '0 0 0 3px rgba(184,146,74,.07)', btn: accent, op: 1, hint: 'Enter to send · Shift+Enter for a new line' }
+        : phase === 'thinking'
+          ? { typed: false, empty: true, border: '#1f2a36', glow: 'none', btn: '#a14a3a', op: 1, hint: 'Reading… press stop to cancel' }
+          : { typed: false, empty: true, border: '#1f2a36', glow: 'none', btn: accent, op: 0.4, hint: 'Enter to send · Shift+Enter for a new line' };
+
+    return {
+      accent,
+      historyOpen: s.historyOpen !== false,
+      historyShut: s.historyOpen === false,
+      toggleHistory: () => this.setState({ historyOpen: s.historyOpen === false }),
+
+      showA: conv === 'A',
+      showB: conv === 'B',
+      selA: conv === 'A' ? { bar: on.bar, bg: on.bg, fg: on.fg, turns: phase === 'answered' ? 5 : 4 } : { bar: off.bar, bg: off.bg, fg: off.fg, turns: 4 },
+      selB: conv === 'B' ? on : off,
+      pickA: () => this.setState({ conv: 'A', cite: 1, hover: 0 }),
+      pickB: () => this.setState({ conv: 'B', cite: null, hover: 0 }),
+
+      ticks,
+      c1: chip(1), c2: chip(2), c3: chip(3), c4: chip(4), c5: chip(5), c6: chip(6),
+      openC1: () => this.setState({ cite: 1 }),
+      openC2: () => this.setState({ cite: 2 }),
+      openC3: () => this.setState({ cite: 3 }),
+      openC4: () => this.setState({ cite: 4 }),
+      openC5: () => this.setState({ cite: 5 }),
+      openC6: () => this.setState({ cite: 6 }),
+      closeCite: () => this.setState({ cite: null }),
+      citeOpen: cite !== null && conv === 'A',
+      cite: active,
+
+      hoverT1: () => this.setState({ hover: 1 }),
+      hoverT2: () => this.setState({ hover: 2 }),
+      hoverT3: () => this.setState({ hover: 3 }),
+      hoverNone: () => this.setState({ hover: 0 }),
+
+      asked: phase !== 'idle',
+      thinking: phase === 'thinking',
+      notThinking: phase !== 'thinking',
+      answered: phase === 'answered',
+      cost: phase === 'answered' ? '$0.0169' : '$0.0142',
+      comp,
+      send: () => {
+        if (phase === 'idle') {
+          this.setState({ conv: 'A', phase: 'thinking', cite: null });
+          this.t = setTimeout(() => this.setState({ phase: 'answered' }), 2300);
+        } else if (phase === 'thinking') {
+          if (this.t) clearTimeout(this.t);
+          this.setState({ phase: 'idle' });
+        } else {
+          this.setState({ phase: 'idle', cite: 1 });
+        }
+      },
+
+      debug: !!s.debug,
+      toggleDebug: () => this.setState({ debug: !s.debug }),
+      dbg: s.debug
+        ? { fg: '#c79a52', track: '#5a4830', knob: 11, dot: accent }
+        : { fg: '#6c685e', track: '#1f2a36', knob: 2, dot: '#6c685e' },
+    };
+  }
+}
+</script>
+</body>
+</html>

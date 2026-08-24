@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;1,8..60,400&family=Inter+Tight:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #101821; font-family: 'Source Serif 4', Georgia, serif; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #b8924a; text-decoration: none; }
+    a:hover { color: #c79a52; }
+    .caps { font-family: 'Inter Tight', system-ui, sans-serif; font-weight: 500; text-transform: uppercase; letter-spacing: .16em; }
+    .ans { max-width: 620px; font-size: 17px; line-height: 1.78; color: #e9e1cf; margin: 0; }
+    .row { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 46px; padding: 30px 0; border-top: 1px solid #1f2a36; }
+    .why { font-family: 'Inter Tight', system-ui, sans-serif; font-size: 13px; line-height: 1.62; color: #a39c8c; margin: 0; }
+    .why b { color: #e9e1cf; font-weight: 500; }
+    .tag { display: inline-block; margin-bottom: 9px; font-size: 9px; }
+  </style>
+</helmet>
+
+<div style="width: 1180px; min-height: 680px; padding: 34px 40px 40px; background: #101821;">
+  <span class="caps" style="font-size: 10px; color: #b8924a;">Pick one</span>
+  <h1 style="margin: 6px 0 4px; font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 28px; color: #e9e1cf;">How a question sits in the thread</h1>
+  <p class="why" style="max-width: 640px; margin-bottom: 6px;">Same question, same answer, three weights. The version in the main artboard is the first one.</p>
+
+  <!-- A -->
+  <div class="row">
+    <div>
+      <div style="display: flex; gap: 14px; align-items: stretch; max-width: 600px; margin-bottom: 18px;">
+        <span style="flex: 0 0 2px; border-radius: 1px; background: #b8924a;"></span>
+        <p style="margin: 0; font-style: italic; font-size: 18.5px; line-height: 1.5; color: #e9e1cf;">Has he given her any reason to, though?</p>
+      </div>
+      <p class="ans">Nothing she could put in front of anyone. The nearest thing to a slip is at the weir, where he answers a question she hadn't finished asking — which tells her he already knew the shape of it.</p>
+    </div>
+    <div>
+      <span class="caps tag" style="color: #b8924a;">A · Marked</span>
+      <p class="why"><b>A brass rule and italic, at body scale.</b> Reads as one continuous document — question and answer are the same voice at the same size, so nothing is announced. Cheapest to scan when the exchange is quick.<br><br>Weakest separation of the three: in a long thread the turns can run together.</p>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="row">
+    <div>
+      <div style="display: flex; justify-content: flex-end; max-width: 620px; margin-bottom: 20px;">
+        <p style="margin: 0; max-width: 420px; padding: 12px 17px; border-radius: 14px 14px 4px 14px; background: #0d141c; border: 1px solid #1f2a36; font-size: 16.5px; line-height: 1.5; color: #e9e1cf;">Has he given her any reason to, though?</p>
+      </div>
+      <p class="ans">Nothing she could put in front of anyone. The nearest thing to a slip is at the weir, where he answers a question she hadn't finished asking — which tells her he already knew the shape of it.</p>
+    </div>
+    <div>
+      <span class="caps tag" style="color: #b8924a;">B · Bubble</span>
+      <p class="why"><b>The shape everyone already knows,</b> in the app's own materials rather than a stock blue pill. Zero learning curve, unmistakable turn boundaries, and it survives a fast back-and-forth better than anything else here.<br><br>It also makes the screen look like every other chatbot, which is the thing you said it currently does badly.</p>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="row">
+    <div>
+      <div style="max-width: 620px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-radius: 8px; background: #0d141c; border-left: 2px solid #b8924a;">
+        <p style="margin: 0; flex: 1; font-style: italic; font-size: 17px; line-height: 1.45; color: #e9e1cf;">Has he given her any reason to, though?</p>
+        <span class="caps" style="flex: 0 0 auto; font-size: 8.5px; color: #6c685e;">pinned</span>
+      </div>
+      <p class="ans">Nothing she could put in front of anyone. The nearest thing to a slip is at the weir, where he answers a question she hadn't finished asking — which tells her he already knew the shape of it.</p>
+    </div>
+    <div>
+      <span class="caps tag" style="color: #b8924a;">C · Pinned band</span>
+      <p class="why"><b>A quiet band that sticks to the top of the thread</b> while you read its answer, then releases as the next question scrolls up. Answers here run long, and this is the only option that keeps what you asked in view while you read the reply.<br><br>More chrome than A, and the pinning needs to feel weightless or it will nag.</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

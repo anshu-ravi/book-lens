@@ -1,0 +1,237 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Inter+Tight:wght@400;500&family=JetBrains+Mono:wght@400&display=swap">
+  <style>
+    body { margin: 0; background: #0b1118; font-family: 'Source Serif 4', Georgia, serif; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #b8924a; text-decoration: none; }
+    a:hover { color: #c79a52; }
+    button { font: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+    .caps { font-family: 'Inter Tight', system-ui, sans-serif; font-weight: 500; text-transform: uppercase; letter-spacing: 0.18em; }
+    .sug { transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+    .sug:hover { border-color: #5a4830; background: #131c26; transform: translateY(-2px); }
+    .sug:hover .arw { opacity: 1; transform: translateX(0); }
+    .arw { opacity: 0; transform: translateX(-5px); transition: opacity .16s ease, transform .16s ease; }
+    .ghost { transition: color .14s; }
+    .ghost:hover { color: #e9e1cf; }
+    .sendbtn { transition: transform .14s ease, background .14s ease; }
+    .sendbtn:hover { transform: translateY(-1px); background: #c79a52; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; padding: 24px; background: #0b1118;">
+  <div style="display: grid; grid-template-columns: 250px minmax(0, 1fr); height: 852px; background: #101821; border: 1px solid #1f2a36; border-radius: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.2), 0 28px 64px -28px rgba(0,0,0,.62); overflow: hidden;">
+
+    <aside style="background: #0b1118; border-right: 1px solid #1f2a36; padding: 24px 16px; display: flex; flex-direction: column; gap: 24px;">
+      <div style="padding: 0 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-family: 'Source Serif 4', Georgia, serif; font-size: 22px; color: #e9e1cf;">BookLens</span>
+          <span style="font-style: italic; font-size: 13px; color: #a39c8c;">a reader's index</span>
+        </div>
+        <div style="width: 34px; height: 34px; border: 1px solid #1f2a36; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #a39c8c;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/></svg>
+        </div>
+      </div>
+      <nav style="display: flex; flex-direction: column; gap: 2px;">
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #a39c8c; border-left: 2px solid transparent; border-radius: 4px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5"/></svg><span>Home</span>
+        </div>
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #a39c8c; border-left: 2px solid transparent; border-radius: 4px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h5v16H4zM11 4h4v16h-4zM17.2 4.6l3.4.9-4 15.4-3.3-.9z"/></svg><span>Library</span>
+        </div>
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #a39c8c; border-left: 2px solid transparent; border-radius: 4px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 17v3h16v-3"/></svg><span>Upload</span>
+        </div>
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #c79a52; border-left: 2px solid #b8924a; border-radius: 4px; background: #101821;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-4.6A8 8 0 0 1 11 4h2a8 8 0 0 1 8 8Z"/></svg><span>Chat</span>
+        </div>
+        <div class="caps" style="display: flex; align-items: center; gap: 12px; padding: 9px 12px; font-size: 12px; color: #a39c8c; border-left: 2px solid transparent; border-radius: 4px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Stats</span>
+        </div>
+      </nav>
+      <div style="border: 1px solid #1f2a36; border-radius: 4px; padding: 12px; background: #101821;">
+        <span class="caps" style="font-size: 12px; color: #6c685e; display: block; margin-bottom: 12px;">Continue reading</span>
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          <div style="width: 44px; height: 66px; border-radius: 1px 6px 6px 1px; background: linear-gradient(155deg, #1d3a44, #3a2b33 55%, #12181f); box-shadow: 0 4px 10px rgba(0,0,0,.4); flex: 0 0 auto;"></div>
+          <div style="min-width: 0;">
+            <p style="font-size: 14px; margin: 0 0 2px; line-height: 1.25; color: #e9e1cf;">The Salt Road</p>
+            <span style="font-size: 12px; color: #6c685e;">R. M. Havel</span>
+          </div>
+        </div>
+        <div style="height: 2px; background: #1f2a36; margin-top: 12px;"><span style="display: block; height: 100%; width: 62%; background: #b8924a;"></span></div>
+        <span class="caps" style="font-size: 10px; color: #6c685e; display: block; margin-top: 6px;">Chapter 22 · 62%</span>
+      </div>
+    </aside>
+
+    <div style="display: flex; min-width: 0;">
+
+      <div style="width: 268px; flex: 0 0 268px; border-right: 1px solid #1f2a36; background: #0d141c; display: flex; flex-direction: column; min-height: 0;">
+        <div style="padding: 22px 18px 14px; display: flex; align-items: center; justify-content: space-between;">
+          <span class="caps" style="font-size: 10px; color: #6c685e;">Conversations</span>
+          <span class="ghost" style="color: #6c685e; display: flex; padding: 4px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 6l-6 6 6 6"/></svg>
+          </span>
+        </div>
+        <div style="padding: 0 14px 14px;">
+          <button class="caps" style="width: 100%; display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 10px; color: #0b1118; border-radius: 6px; padding: 10px 12px; background: {{ accent }};">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>New conversation
+          </button>
+        </div>
+        <div style="flex: 1; overflow-y: auto; padding: 4px 8px 20px;">
+          <div style="padding: 10px 10px 6px; display: flex; align-items: baseline; gap: 8px;">
+            <span style="font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 16px; color: #c79a52;">The Salt Road</span>
+            <span style="flex: 1; height: 1px; background: #1f2a36;"></span>
+          </div>
+          <div style="padding: 10px 12px; border-left: 2px solid transparent;">
+            <span style="display: block; font-size: 14.5px; line-height: 1.42; color: #a39c8c;">Who is Kell, and why does Ansa keep him at arm's length?</span>
+            <span class="caps" style="display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Ch 22 · today · 4 turns</span>
+          </div>
+          <div style="padding: 10px 12px; border-left: 2px solid transparent;">
+            <span style="display: block; font-size: 14.5px; line-height: 1.42; color: #a39c8c;">What was actually agreed at the weir?</span>
+            <span class="caps" style="display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Ch 22 · 2 days ago · 2 turns</span>
+          </div>
+          <div style="padding: 10px 12px; border-left: 2px solid transparent;">
+            <span style="display: block; font-size: 14.5px; line-height: 1.42; color: #a39c8c;">Remind me who I've met so far</span>
+            <span class="caps" style="display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Ch 18 · last week · 3 turns</span>
+          </div>
+          <div style="padding: 20px 10px 6px; display: flex; align-items: baseline; gap: 8px;">
+            <span style="font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 16px; color: #c79a52;">The Drowned Coast</span>
+            <span style="flex: 1; height: 1px; background: #1f2a36;"></span>
+          </div>
+          <div style="padding: 10px 12px; border-left: 2px solid transparent;">
+            <span style="display: block; font-size: 14.5px; line-height: 1.42; color: #a39c8c;">How did the siege actually end?</span>
+            <span class="caps" style="display: block; margin-top: 6px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">Finished · 3 weeks ago · 6 turns</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative;">
+
+        <div style="position: absolute; top: 0; left: 0; right: 0; height: 260px; overflow: hidden; pointer-events: none;">
+          <div style="position: absolute; top: -80px; left: -10%; right: -10%; height: 300px; filter: blur(58px); opacity: .38; background: linear-gradient(120deg, #1d3a44 0%, #3a2b33 42%, #6b4a2e 68%, #12181f 100%);"></div>
+          <div style="position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(16,24,33,0) 0%, rgba(16,24,33,.55) 62%, #101821 100%);"></div>
+        </div>
+
+        <div style="position: relative; padding: 26px 34px 18px; border-bottom: 1px solid #1f2a36; flex-shrink: 0;">
+          <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 24px;">
+            <div style="display: flex; gap: 16px; align-items: flex-start; min-width: 0;">
+              <div style="width: 42px; height: 63px; flex: 0 0 auto; border-radius: 1px 5px 5px 1px; background: linear-gradient(155deg, #1d3a44, #3a2b33 55%, #12181f); box-shadow: 0 8px 18px -6px rgba(0,0,0,.75), inset 2px 0 0 rgba(0,0,0,.28);"></div>
+              <div style="min-width: 0;">
+                <span class="caps" style="font-size: 10px; color: #c79a52;">The Tidewater Cycle · Book Two</span>
+                <h1 style="margin: 5px 0 0; font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 600; font-size: 31px; line-height: 1.1; letter-spacing: -0.005em; color: #e9e1cf;">The Salt Road</h1>
+                <span style="display: block; margin-top: 3px; font-size: 13px; color: #a39c8c;">R. M. Havel</span>
+              </div>
+            </div>
+            <button class="ghost caps" style="display: flex; align-items: center; gap: 9px; flex-shrink: 0; font-size: 10px; color: #a39c8c; border: 1px solid #1f2a36; border-radius: 6px; padding: 9px 13px; background: rgba(13,20,28,.7);">
+              Switch book
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+          <div style="margin-top: 22px;">
+            <div style="display: flex; gap: 7px; margin-bottom: 7px;">
+              <span class="caps" style="flex: 0 0 30%; font-size: 9px; letter-spacing: .16em; color: #6c685e;">The Drowned Coast</span>
+              <span class="caps" style="flex: 1; font-size: 9px; letter-spacing: .16em; color: #6c685e;">The Salt Road</span>
+            </div>
+            <div style="display: flex; gap: 7px; align-items: center; height: 5px;">
+              <span style="flex: 0 0 30%; height: 5px; border-radius: 3px; background: {{ accent }}; opacity: .55;"></span>
+              <span style="flex: 1; height: 5px; border-radius: 3px; background: #1f2a36; position: relative;">
+                <span style="position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 3px; background: {{ accent }};"></span>
+                <span style="position: absolute; left: 62%; top: -5px; bottom: -5px; width: 1px; background: {{ accent }};"></span>
+                <span style="position: absolute; left: 62%; top: -9px; width: 5px; height: 5px; margin-left: -2px; transform: rotate(45deg); background: {{ accent }};"></span>
+              </span>
+            </div>
+            <div style="display: flex; align-items: baseline; justify-content: space-between; margin-top: 13px; gap: 20px;">
+              <p style="margin: 0; font-style: italic; font-size: 13.5px; color: #6c685e;">
+                You are at <span style="color: #c79a52; font-style: normal; font-family: 'Inter Tight', system-ui, sans-serif; font-weight: 500; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;">Chapter 22</span>. Answers will not reach beyond this point.
+              </p>
+              <span class="caps" style="flex-shrink: 0; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">84,120 tokens in context</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- the opening: not a blank thread -->
+        <div style="flex: 1; overflow-y: auto; padding: 0 34px; display: flex; flex-direction: column; justify-content: center; min-height: 0;">
+          <div style="max-width: 720px;">
+            <p style="margin: 0 0 10px; font-family: 'Cormorant Garamond', Georgia, serif; font-style: italic; font-weight: 400; font-size: 34px; line-height: 1.25; color: #e9e1cf;">
+              Twenty-two chapters in.
+            </p>
+            <p style="margin: 0 0 30px; font-size: 16px; line-height: 1.7; color: #a39c8c; max-width: 560px;">
+              Everything up to here is on the table — including all of <span style="font-style: italic; color: #c79a52;">The Drowned Coast</span>. Ask anything, or start with one of these.
+            </p>
+
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 660px;">
+              <button class="sug" style="text-align: left; border: 1px solid #1f2a36; border-radius: 10px; padding: 16px 17px; background: #0d141c;">
+                <span class="caps" style="display: block; font-size: 9px; letter-spacing: .16em; color: #b8924a; margin-bottom: 9px;">Pick up the thread</span>
+                <span style="display: flex; align-items: baseline; gap: 8px; font-size: 16px; line-height: 1.45; color: #e9e1cf;">
+                  Catch me up — what's happened since chapter 18?
+                  <svg class="arw" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b8924a" stroke-width="1.8" style="flex: 0 0 auto;"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </span>
+              </button>
+              <button class="sug" style="text-align: left; border: 1px solid #1f2a36; border-radius: 10px; padding: 16px 17px; background: #0d141c;">
+                <span class="caps" style="display: block; font-size: 9px; letter-spacing: .16em; color: #b8924a; margin-bottom: 9px;">Who's who</span>
+                <span style="display: flex; align-items: baseline; gap: 8px; font-size: 16px; line-height: 1.45; color: #e9e1cf;">
+                  Remind me who I've met so far
+                  <svg class="arw" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b8924a" stroke-width="1.8" style="flex: 0 0 auto;"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </span>
+              </button>
+              <button class="sug" style="text-align: left; border: 1px solid #1f2a36; border-radius: 10px; padding: 16px 17px; background: #0d141c;">
+                <span class="caps" style="display: block; font-size: 9px; letter-spacing: .16em; color: #b8924a; margin-bottom: 9px;">Where things stand</span>
+                <span style="display: flex; align-items: baseline; gap: 8px; font-size: 16px; line-height: 1.45; color: #e9e1cf;">
+                  What is Ansa actually trying to do?
+                  <svg class="arw" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b8924a" stroke-width="1.8" style="flex: 0 0 auto;"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </span>
+              </button>
+              <button class="sug" style="text-align: left; border: 1px solid #1f2a36; border-radius: 10px; padding: 16px 17px; background: #0d141c;">
+                <span class="caps" style="display: block; font-size: 9px; letter-spacing: .16em; color: #b8924a; margin-bottom: 9px;">Carried over</span>
+                <span style="display: flex; align-items: baseline; gap: 8px; font-size: 16px; line-height: 1.45; color: #e9e1cf;">
+                  What from book one still hasn't paid off?
+                  <svg class="arw" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b8924a" stroke-width="1.8" style="flex: 0 0 auto;"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex-shrink: 0; border-top: 1px solid #1f2a36; padding: 16px 34px 18px;">
+          <div style="display: flex; gap: 14px; align-items: flex-end;">
+            <div style="flex: 1; background: #0d141c; border: 1px solid #5a4830; border-radius: 10px; padding: 14px 16px; min-height: 54px; display: flex; align-items: center;">
+              <span style="font-size: 17px; color: #e9e1cf;">Who is Kell, and why does Ansa keep him at arm's l</span><span style="display: inline-block; width: 1.5px; height: 20px; background: {{ accent }}; margin-left: 1px;"></span>
+            </div>
+            <button class="sendbtn" style="flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; background: {{ accent }}; color: #0b1118; display: flex; align-items: center; justify-content: center;" aria-label="Send">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M12 5l-6 6M12 5l6 6"/></svg>
+            </button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 22px; margin-top: 13px;">
+            <span class="caps" style="display: flex; align-items: center; gap: 8px; font-size: 9.5px; letter-spacing: .16em; color: #6c685e;">
+              <span style="width: 20px; height: 11px; border-radius: 6px; background: #1f2a36; position: relative; display: inline-block;">
+                <span style="position: absolute; top: 2px; left: 2px; width: 7px; height: 7px; border-radius: 50%; background: #6c685e;"></span>
+              </span>
+              Debug
+            </span>
+            <span style="flex: 1;"></span>
+            <span style="font-size: 12.5px; font-style: italic; color: #6c685e;">Enter to send · Shift+Enter for a new line</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"accent":{"editor":"color","default":"#b8924a","options":["#b8924a","#8a6f9c","#6a8f72","#a14a3a"],"section":"Theme"}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent || '#b8924a' };
+  }
+}
+</script>
+</body>
+</html>

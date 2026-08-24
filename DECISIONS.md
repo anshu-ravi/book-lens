@@ -664,6 +664,24 @@ It did **not** recover the 9 missing finish dates. Authenticated `date_read` is 
 
 **Five `svelte-check` warnings in the chart components are expected and must not be "fixed".** A chart with discrete marks is a `listbox` on the wrapper, `option` on each hit target, and a roving `aria-activedescendant` — the WAI-ARIA pattern where the wrapper holds focus and the options are never individually tabbable. `a11y_interactive_supports_focus` does not model that pattern and demands a `tabindex` on every element with an interactive role. Adding `tabindex="-1"` back would silence it and reintroduce exactly the imprecision the roles were changed to remove. The scatter is the one chart that is not a listbox: it has no discrete marks, so it is a `role="img"` with the summary in its label, unfocusable, with the tooltip as a pointer-only affordance.
 
+## 31. A conversation is a saved thing, and the bound is drawn rather than described
+
+**Decision (2026-08-24):** chat conversations persist in `progress.db`, grouped by book. Two tables: a `conversation` records the position it was opened at, and a `conversation_turn` records the position each exchange was answered at. Reopening a conversation re-ceilings it at where the reader is *now* and replays the stored turns into the model history.
+
+**Why it had to be persisted at all.** Sessions lived only in `booklens/web/sessions.py` — an in-memory registry capped at eight, dropped on restart and evicted oldest-first under load. A conversation was therefore unreturnable, which made the chat screen a scratchpad rather than a place. Nothing else in the product is that disposable; a reading position survives, a shelf survives.
+
+**Why reopening re-ceilings forward.** The alternative is to pin a reopened conversation at the position it was started at, which is exactly reproducible and useless: the reader has read on, and the first thing they want to ask is about what they just read. Re-ceilining forward is safe in the direction that matters — every stored answer was produced at this ceiling or a lower one, so replaying it into the history cannot reintroduce anything above the current bound. The stored per-turn stamp is what lets the screen say *you have read to chapter 22 since; the answers below still stop where they did* without pretending the old answers knew more than they did.
+
+**Why the turn stamp and not just the conversation stamp.** A conversation spanning a week of reading has turns answered at several different positions. One stamp on the conversation would misreport all but the first.
+
+**Decision: the scope line becomes a bar.** Section 21 called the scope line the product, and it was a sentence. It is now drawn: one segment per volume in context, prior volumes whole, the current book filled to the reading position, and a diamond at the ceiling. Citations from the conversation plot as ticks along it, and hovering an answer lights the ones that answer used.
+
+**Why this is worth the pixels.** It is the only thing on the screen no other chat interface has. A sentence naming a chapter is a claim the reader has to take on faith; a bar with the read part filled and the evidence plotted inside it is the same claim made checkable at a glance — you can see that every tick sits behind the mark. It also answers a question the sentence could not: *where in what I have read did this come from.*
+
+**A measurement decision inside it.** A citation's position is a fraction of its own book's whole length, not of the read portion. Clamping to the read portion would put an early citation in a barely-started book at the far right of the filled segment, which is wrong and looks like a spoiler. Book length is visible on the shelf already, so the denominator reveals nothing.
+
+**Decision: a question is a bubble, tinted.** Rejected on the way: a question set as a chapter heading in display italic. It was tried and read as ceremony — every two-word follow-up became an event. The familiar right-aligned bubble is what survived, in the app's own materials: brass-tinted ground, a brass rule at the leading edge, body serif. Familiarity is worth more here than novelty, and the screen gets its character from the header, the typography and the bar instead.
+
 ---
 
 # Appendix: superseded and rejected decisions
