@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import {
 		getSeries,
 		inspectUpload,
@@ -188,6 +189,14 @@
 		commitResult = null;
 		commitError = '';
 		committing = false;
+		// The next volume is a different book, so the card the user arrived from
+		// no longer pins anything -- drop it and strip it out of the URL too.
+		pinnedMatch = null;
+		pinnedMatchNote = '';
+		pinnedMatchPromise = null;
+		if (page.url.searchParams.has('goodreads')) {
+			replaceState('/upload', page.state);
+		}
 		loadSeries();
 	}
 
