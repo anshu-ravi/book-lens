@@ -22,6 +22,8 @@ class SessionRecord:
     session: ChatSession
     iconn: sqlite3.Connection
     session_pconn: sqlite3.Connection
+    conversation_id: str | None = None
+    chapter_idx: int | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -39,11 +41,19 @@ class SessionRegistry:
         session: ChatSession,
         iconn: sqlite3.Connection,
         session_pconn: sqlite3.Connection,
+        conversation_id: str | None = None,
+        chapter_idx: int | None = None,
     ) -> str:
         """Register a new session and return its id, evicting the oldest if over capacity."""
         sid = uuid.uuid4().hex
         record = SessionRecord(
-            session_id=sid, book_id=book_id, session=session, iconn=iconn, session_pconn=session_pconn
+            session_id=sid,
+            book_id=book_id,
+            session=session,
+            iconn=iconn,
+            session_pconn=session_pconn,
+            conversation_id=conversation_id,
+            chapter_idx=chapter_idx,
         )
         with self._lock:
             self._sessions[sid] = record
@@ -56,6 +66,23 @@ class SessionRegistry:
         """Look up a session by id, or None if it doesn't exist."""
         with self._lock:
             return self._sessions.get(sid)
+
+    def for_conversation(self, conversation_id: str) -> SessionRecord | None:
+        """The live session backing a saved conversation, if one is still resident."""
+        with self._lock:
+            for record in self._sessions.values():
+                if record.conversation_id == conversation_id:
+                    return record
+            return None
+
+    def drop_for_conversation(self, conversation_id: str) -> None:
+        """Close the live session backing a conversation; a no-op if there isn't one."""
+        with self._lock:
+            sids = [
+                sid for sid, r in self._sessions.items() if r.conversation_id == conversation_id
+            ]
+            for sid in sids:
+                self._drop_locked(sid)
 
     def drop(self, sid: str) -> None:
         """Close a session's connections and remove it; a no-op if unknown."""

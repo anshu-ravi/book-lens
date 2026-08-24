@@ -23,7 +23,19 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from booklens import chat, classify, context, db, goodreads, ingest, paths, progress, reseq, tools
+from booklens import (
+    chat,
+    classify,
+    context,
+    conversations,
+    db,
+    goodreads,
+    ingest,
+    paths,
+    progress,
+    reseq,
+    tools,
+)
 from booklens.extract import extract_book, extract_cover, read_series_hint
 from booklens.goodreads.stats import _to_series_number
 from booklens.ingest import _slugify as _slugify_name
@@ -120,6 +132,18 @@ class AskRequest(BaseModel):
     """Body of `POST /api/chat/sessions/{sid}/messages`."""
 
     question: str
+
+
+class NewConversationRequest(BaseModel):
+    """Body of `POST /api/chat/conversations`."""
+
+    book_id: str
+
+
+class RenameConversationRequest(BaseModel):
+    """Body of `PATCH /api/chat/conversations/{cid}`."""
+
+    title: str
 
 
 class GoodreadsSyncRequest(BaseModel):
@@ -634,6 +658,7 @@ def delete_book(book_id: str, dbs: DbDep):
 
     pconn.execute("DELETE FROM book_progress WHERE book_id = ?", (book_id,))
     pconn.commit()
+    conversations.delete_for_book(pconn, book_id)
 
     book_dir = paths.book_dir(book_id).resolve()
     data_root = paths.data_dir().resolve()
@@ -851,30 +876,53 @@ def commit_upload(body: UploadCommitRequest, dbs: DbDep, gconn: GoodreadsDbDep):
 # -- chat -----------------------------------------------------------------------
 
 
-@app.post("/api/chat/sessions")
-def create_chat_session(body: CreateSessionRequest, dbs: DbDep):
-    """Start a session ceilinged at the reader's real, persisted position -- never a client-supplied one."""
-    iconn, pconn = dbs
-    prog = progress.get_progress(pconn, body.book_id)
+def _resolved_chapter_idx(
+    iconn: sqlite3.Connection, pconn: sqlite3.Connection, book_id: str
+) -> int:
+    """The chapter a session on this book must be ceilinged at, or 409 if there isn't one."""
+    prog = progress.get_progress(pconn, book_id)
     chapter_idx = prog.position_chapter_idx
     # A book marked finished before positions were recorded for 'finished' has no
     # stored position; the last chapter is what finished has always meant.
     if chapter_idx is None and prog.status == "finished":
-        chapter_idx = progress.last_addressable_chapter_idx(iconn, body.book_id)
+        chapter_idx = progress.last_addressable_chapter_idx(iconn, book_id)
     if chapter_idx is None or prog.status == "unread":
-        raise HTTPException(status_code=409, detail=f"no reading position set for {body.book_id}")
+        raise HTTPException(status_code=409, detail=f"no reading position set for {book_id}")
+    return chapter_idx
 
+
+def _chapter_label(iconn: sqlite3.Connection, book_id: str, chapter_idx: int) -> str:
+    """A chapter's reader-facing label, or an empty string if the index has no such row."""
+    row = iconn.execute(
+        "SELECT label FROM chapter WHERE book_id = ? AND chapter_idx = ?",
+        (book_id, chapter_idx),
+    ).fetchone()
+    return row["label"] if row else ""
+
+
+def _open_session(
+    book_id: str,
+    chapter_idx: int,
+    *,
+    conversation_id: str | None = None,
+    replay: list[tuple[str, str]] | None = None,
+) -> tuple[str, dict]:
+    """Assemble the readable set at `chapter_idx` and register a live session over it.
+
+    `replay` seeds the model-visible history with already-answered turns. They
+    were produced at this ceiling or a lower one, so nothing above it re-enters.
+    """
     session_iconn = db.connect_index(check_same_thread=False)
     session_pconn = chat.ephemeral_ceiling_conn(
-        session_iconn, body.book_id, chapter_idx, check_same_thread=False
+        session_iconn, book_id, chapter_idx, check_same_thread=False
     )
     try:
         with tools.Tools(session_iconn, session_pconn) as t:
             assembled = context.assemble(t)
-            chapters = t.list_chapters(body.book_id)["chapters"]
-            book = next((b for b in t.list_books() if b["id"] == body.book_id), None)
+            chapters = t.list_chapters(book_id)["chapters"]
+            book = next((b for b in t.list_books() if b["id"] == book_id), None)
 
-        series_id, target_order = progress.series_and_order(session_iconn, body.book_id)
+        series_id, target_order = progress.series_and_order(session_iconn, book_id)
         prior_titles = [
             row["title"]
             for row in session_iconn.execute(
@@ -893,17 +941,43 @@ def create_chat_session(body: CreateSessionRequest, dbs: DbDep):
 
     llm = chat.build_llm(app.state.llm_provider)
     session = chat.ChatSession(llm, assembled)
-    sid = sessions.registry.create(body.book_id, session, session_iconn, session_pconn)
+    for question, answer in replay or []:
+        session.history.append(chat.Message(role="user", content=question))
+        session.history.append(chat.Message(role="assistant", content=answer))
 
-    return {
+    sid = sessions.registry.create(
+        book_id,
+        session,
+        session_iconn,
+        session_pconn,
+        conversation_id=conversation_id,
+        chapter_idx=chapter_idx,
+    )
+    return sid, {
         "session_id": sid,
-        "book_id": body.book_id,
-        "book_title": book["title"] if book else body.book_id,
+        "book_id": book_id,
+        "book_title": book["title"] if book else book_id,
+        "book_author": book["author"] if book else None,
+        "series_id": series_id,
         "prior_titles": prior_titles,
-        "chapter_label": chapters[-1]["label"] if chapters else "",
+        "chapter_idx": chapter_idx,
+        "chapter_label": _chapter_label(session_iconn, book_id, chapter_idx) or (
+            chapters[-1]["label"] if chapters else ""
+        ),
+        "chapter_count": len(chapters),
+        "chapter_position": sum(1 for c in chapters if c["chapter_idx"] <= chapter_idx),
         "para_count": assembled.para_count,
         "token_estimate": assembled.token_estimate,
     }
+
+
+@app.post("/api/chat/sessions")
+def create_chat_session(body: CreateSessionRequest, dbs: DbDep):
+    """Start a session ceilinged at the reader's real, persisted position -- never a client-supplied one."""
+    iconn, pconn = dbs
+    chapter_idx = _resolved_chapter_idx(iconn, pconn, body.book_id)
+    _, meta = _open_session(body.book_id, chapter_idx)
+    return meta
 
 
 def _get_session(sid: str) -> sessions.SessionRecord:
@@ -914,17 +988,8 @@ def _get_session(sid: str) -> sessions.SessionRecord:
     return record
 
 
-@app.post("/api/chat/sessions/{sid}/messages")
-def post_chat_message(sid: str, body: AskRequest):
-    """Ask a question in an existing session."""
-    record = _get_session(sid)
-    try:
-        result = record.session.ask(body.question)
-    except TransientLLMError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except FatalLLMError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
+def _turn_payload(record: sessions.SessionRecord, result) -> dict:
+    """The wire shape one answered turn takes, shared by the session and conversation routes."""
     r = result.response
     return {
         "answer": result.text,
@@ -938,6 +1003,23 @@ def post_chat_message(sid: str, body: AskRequest):
             "session_cost_usd": result.session_cost_usd,
         },
     }
+
+
+def _ask(record: sessions.SessionRecord, question: str):
+    """Put one question to a live session, mapping provider failures onto HTTP."""
+    try:
+        return record.session.ask(question)
+    except TransientLLMError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except FatalLLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/chat/sessions/{sid}/messages")
+def post_chat_message(sid: str, body: AskRequest):
+    """Ask a question in an existing session."""
+    record = _get_session(sid)
+    return _turn_payload(record, _ask(record, body.question))
 
 
 @app.post("/api/chat/sessions/{sid}/undo")
@@ -965,6 +1047,238 @@ def get_chat_citation(sid: str, citation_id: str, window: int = 3):
 def delete_chat_session(sid: str):
     """Close and drop a session."""
     sessions.registry.drop(sid)
+    return Response(status_code=204)
+
+
+# -- saved conversations ---------------------------------------------------
+
+
+def _conversation_summary(
+    iconn: sqlite3.Connection, conv: conversations.Conversation
+) -> dict:
+    return {
+        "id": conv.id,
+        "book_id": conv.book_id,
+        "title": conv.title,
+        "chapter_idx": conv.chapter_idx,
+        "chapter_label": _chapter_label(iconn, conv.book_id, conv.chapter_idx),
+        "turn_count": conv.turn_count,
+        "created_at": conv.created_at,
+        "updated_at": conv.updated_at,
+    }
+
+
+@app.get("/api/chat/conversations")
+def list_conversations(dbs: DbDep):
+    """Every saved conversation, grouped by book, most recently used book first.
+
+    Conversations whose book has since been deleted are dropped from the
+    listing rather than shown against a title nobody can resolve.
+    """
+    iconn, pconn = dbs
+    books = {
+        r["id"]: r
+        for r in iconn.execute("SELECT id, title, author, series_id, book_order FROM book")
+    }
+    groups: list[dict] = []
+    index: dict[str, dict] = {}
+    for conv in conversations.all_conversations(pconn):
+        book = books.get(conv.book_id)
+        if book is None:
+            continue
+        group = index.get(conv.book_id)
+        if group is None:
+            group = {
+                "book_id": conv.book_id,
+                "book_title": book["title"],
+                "book_author": book["author"],
+                "series_id": book["series_id"],
+                "book_order": book["book_order"],
+                "conversations": [],
+            }
+            index[conv.book_id] = group
+            groups.append(group)
+        group["conversations"].append(_conversation_summary(iconn, conv))
+    return {"groups": groups}
+
+
+@app.post("/api/chat/conversations")
+def create_conversation(body: NewConversationRequest, dbs: DbDep):
+    """Open a new conversation on a book, at the reader's current position."""
+    iconn, pconn = dbs
+    chapter_idx = _resolved_chapter_idx(iconn, pconn, body.book_id)
+    conv = conversations.create(pconn, body.book_id, chapter_idx)
+    _, meta = _open_session(body.book_id, chapter_idx, conversation_id=conv.id)
+    return {
+        **meta,
+        "conversation": _conversation_summary(iconn, conv),
+        "turns": [],
+        "started_at_chapter_idx": chapter_idx,
+        "started_at_chapter_label": meta["chapter_label"],
+        "moved_on": False,
+    }
+
+
+def _get_conversation(pconn: sqlite3.Connection, cid: str) -> conversations.Conversation:
+    conv = conversations.get(pconn, cid)
+    if conv is None:
+        raise HTTPException(status_code=404, detail=f"unknown conversation {cid!r}")
+    return conv
+
+
+@app.get("/api/chat/conversations/{cid}")
+def open_conversation(cid: str, dbs: DbDep):
+    """Reopen a saved conversation, re-ceilinged at where the reader is *now*.
+
+    The stored turns keep the position they were answered at; only new questions
+    reach further. Nothing above the current ceiling can enter either way.
+    """
+    iconn, pconn = dbs
+    conv = _get_conversation(pconn, cid)
+    chapter_idx = _resolved_chapter_idx(iconn, pconn, conv.book_id)
+    stored = conversations.turns(pconn, cid)
+
+    record = sessions.registry.for_conversation(cid)
+    if record is not None and record.chapter_idx == chapter_idx:
+        meta = {
+            "session_id": record.session_id,
+            "book_id": conv.book_id,
+            "book_title": _book_title(iconn, conv.book_id),
+            "chapter_idx": chapter_idx,
+            "chapter_label": _chapter_label(iconn, conv.book_id, chapter_idx),
+            "token_estimate": record.session.assembled.token_estimate,
+            "para_count": record.session.assembled.para_count,
+        }
+        meta = {**_session_meta_fallback(iconn, conv.book_id, chapter_idx), **meta}
+    else:
+        sessions.registry.drop_for_conversation(cid)
+        _, meta = _open_session(
+            conv.book_id,
+            chapter_idx,
+            conversation_id=cid,
+            replay=[(t.question, t.answer) for t in stored],
+        )
+
+    return {
+        **meta,
+        "conversation": _conversation_summary(iconn, conv),
+        "turns": [
+            {
+                "question": t.question,
+                "answer": t.answer,
+                "citations": t.citations,
+                "chapter_idx": t.chapter_idx,
+                "chapter_label": _chapter_label(iconn, conv.book_id, t.chapter_idx),
+                "created_at": t.created_at,
+            }
+            for t in stored
+        ],
+        "started_at_chapter_idx": conv.chapter_idx,
+        "started_at_chapter_label": _chapter_label(iconn, conv.book_id, conv.chapter_idx),
+        "moved_on": chapter_idx > conv.chapter_idx,
+    }
+
+
+def _book_title(iconn: sqlite3.Connection, book_id: str) -> str:
+    row = iconn.execute("SELECT title FROM book WHERE id = ?", (book_id,)).fetchone()
+    return row["title"] if row else book_id
+
+
+def _session_meta_fallback(iconn: sqlite3.Connection, book_id: str, chapter_idx: int) -> dict:
+    """The parts of a session's header that come from the index rather than the session."""
+    row = iconn.execute(
+        "SELECT title, author, series_id, book_order FROM book WHERE id = ?", (book_id,)
+    ).fetchone()
+    if row is None:
+        return {"prior_titles": [], "chapter_count": 0, "chapter_position": 0}
+    prior_titles = [
+        r["title"]
+        for r in iconn.execute(
+            "SELECT title FROM book WHERE series_id = ? AND book_order < ? ORDER BY book_order",
+            (row["series_id"], row["book_order"]),
+        )
+    ]
+    chapters = [
+        r["chapter_idx"]
+        for r in iconn.execute(
+            f"SELECT chapter_idx FROM chapter WHERE book_id = ? AND kind IN {db.ADDRESSABLE_KINDS_SQL}"
+            " ORDER BY chapter_idx",
+            (book_id,),
+        )
+    ]
+    return {
+        "book_author": row["author"],
+        "series_id": row["series_id"],
+        "prior_titles": prior_titles,
+        "chapter_count": len(chapters),
+        "chapter_position": sum(1 for c in chapters if c <= chapter_idx),
+    }
+
+
+@app.post("/api/chat/conversations/{cid}/messages")
+def post_conversation_message(cid: str, body: AskRequest, dbs: DbDep):
+    """Ask a question in a saved conversation, persisting the exchange."""
+    iconn, pconn = dbs
+    conv = _get_conversation(pconn, cid)
+    chapter_idx = _resolved_chapter_idx(iconn, pconn, conv.book_id)
+
+    record = sessions.registry.for_conversation(cid)
+    if record is None or record.chapter_idx != chapter_idx:
+        sessions.registry.drop_for_conversation(cid)
+        stored = conversations.turns(pconn, cid)
+        sid, _ = _open_session(
+            conv.book_id,
+            chapter_idx,
+            conversation_id=cid,
+            replay=[(t.question, t.answer) for t in stored],
+        )
+        record = _get_session(sid)
+
+    result = _ask(record, body.question)
+    conversations.append_turn(
+        pconn,
+        cid,
+        question=body.question,
+        answer=result.text,
+        citations=result.citation_ids,
+        chapter_idx=chapter_idx,
+        cost_usd=result.response.cost_usd or 0.0,
+    )
+    payload = _turn_payload(record, result)
+    payload["session_id"] = record.session_id
+    payload["chapter_idx"] = chapter_idx
+    payload["chapter_label"] = _chapter_label(iconn, conv.book_id, chapter_idx)
+    payload["conversation"] = _conversation_summary(iconn, _get_conversation(pconn, cid))
+    return payload
+
+
+@app.post("/api/chat/conversations/{cid}/undo")
+def undo_conversation_turn(cid: str, dbs: DbDep):
+    """Drop the last exchange from both the stored transcript and the live session."""
+    _, pconn = dbs
+    _get_conversation(pconn, cid)
+    conversations.drop_last_turn(pconn, cid)
+    record = sessions.registry.for_conversation(cid)
+    if record is not None and len(record.session.history) >= 2:
+        del record.session.history[-2:]
+    return {"ok": True}
+
+
+@app.patch("/api/chat/conversations/{cid}")
+def rename_conversation(cid: str, body: RenameConversationRequest, dbs: DbDep):
+    """Retitle a conversation."""
+    iconn, pconn = dbs
+    _get_conversation(pconn, cid)
+    conversations.rename(pconn, cid, body.title)
+    return _conversation_summary(iconn, _get_conversation(pconn, cid))
+
+
+@app.delete("/api/chat/conversations/{cid}", status_code=204)
+def delete_conversation(cid: str, dbs: DbDep):
+    """Delete a conversation, its turns, and any live session behind it."""
+    _, pconn = dbs
+    sessions.registry.drop_for_conversation(cid)
+    conversations.delete(pconn, cid)
     return Response(status_code=204)
 
 

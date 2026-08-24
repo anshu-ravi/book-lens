@@ -246,6 +246,30 @@ CREATE TABLE IF NOT EXISTS setting(
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS conversation(
+  id          TEXT PRIMARY KEY,
+  book_id     TEXT NOT NULL,
+  title       TEXT NOT NULL DEFAULT '',
+  chapter_idx INTEGER NOT NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS conversation_turn(
+  id              INTEGER PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+  ord             INTEGER NOT NULL,
+  question        TEXT NOT NULL,
+  answer          TEXT NOT NULL,
+  citations       TEXT NOT NULL DEFAULT '[]',
+  chapter_idx     INTEGER NOT NULL,
+  cost_usd        REAL NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL,
+  UNIQUE(conversation_id, ord)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conv_book ON conversation(book_id, updated_at DESC);
 """
 
 
