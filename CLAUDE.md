@@ -53,24 +53,10 @@ EPUB ──► one-time batch ingest ──► index.db ──► bounded tool l
 
 ## How work gets done
 
-> **Scope of this section: it governs the top-level agent only.**
-> If you are a subagent, this section does not apply to you. You were dispatched to do the work — do it yourself, directly, with your own tools. Do not delegate onward, do not spawn further subagents, and do not treat "implementation is delegated" as an instruction to hand the task back. Write the code.
+**Delegation follows the global "Delegating implementation" rule** — triage before dispatching, brief the `implementer` agent against the contract set out there, keep parallelism serial by default, and verify against disk rather than against the agent's report. Two things bind harder here than the global rule states:
 
-**Implementation is always delegated to a Sonnet 5 subagent.** The top-level agent owns reasoning, design, decomposition, review, and communication with the user. It does not write implementation code itself.
-
-Before dispatching, the top-level agent must give the subagent a brief that stands on its own:
-
-- The exact files to create or modify.
-- The contract — signatures, schema, return shapes, error behaviour.
-- Which invariants apply (almost always the cutoff filter; see below).
-- How to verify — the tests to write or run, and what passing looks like.
-- What is out of scope for that task.
-
-A subagent should never have to infer the design. If the brief isn't specific enough to implement against without guessing, it isn't ready to dispatch.
-
-**Use parallel subagents where the work genuinely splits.** Independent modules with no shared files — ingest parser, tool layer, eval harness — are good candidates. Do not manufacture parallelism: if tasks touch the same files, depend on each other's output, or need a shared decision that hasn't been made yet, run them sequentially. Two well-briefed sequential subagents beat four that conflict. Serial is the default; parallel is the exception you justify.
-
-**After a subagent returns, the top-level agent reviews the work** against the invariants and the brief before moving on. Delegation is not abdication — a returned diff that violates the cutoff invariant is the top-level agent's error, not the subagent's.
+- **Every brief must name the cutoff invariant**, and the review after a subagent returns checks the diff against it specifically. A returned diff that lets a token above the reader's cutoff reach an answering context is the top-level agent's error, not the subagent's.
+- **The spoiler guard binds subagents too.** Their briefs, their reports, and any example they invent are assistant output and go through the same audit. Do not put real reveals in a brief to illustrate what to build.
 
 **Feature development follows the `/git-workflow` skill, with one change: merge directly to the main branch instead of opening a PR.** Everything else in that skill — branching, commit discipline, checks before merge — applies as written.
 
