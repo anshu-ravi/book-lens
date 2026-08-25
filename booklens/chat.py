@@ -77,13 +77,7 @@ def extract_citation_ids(text: str) -> list[str]:
 
 
 def build_llm(provider_name: str = "openrouter") -> LLM:
-    """The answering provider: Luna Pro (reasoning.mode=pro) by default, per DECISIONS.md section 13.
-
-    Other provider names (e.g. 'fake' for tests) are constructed with no
-    extra kwargs, since `reasoning_mode` is an OpenRouter-only parameter.
-    """
-    if provider_name == "openrouter":
-        return get_provider("openrouter", reasoning_mode="pro")
+    """The answering provider: base Luna, no `reasoning.mode`, per DECISIONS.md section 13."""
     return get_provider(provider_name)
 
 

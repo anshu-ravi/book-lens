@@ -390,12 +390,12 @@ def test_repl_transient_error_during_turn_prints_error_and_keeps_history_empty()
 # -- build_llm: provider selection -------------------------------------------
 
 
-def test_build_llm_openrouter_gets_pro_reasoning_mode(monkeypatch):
+def test_build_llm_openrouter_does_not_set_reasoning_mode():
     from booklens.llm.openrouter import OpenRouterProvider
 
     llm = chat.build_llm("openrouter")
     assert isinstance(llm, OpenRouterProvider)
-    assert llm.reasoning_mode == "pro"
+    assert llm.reasoning_mode is None
 
 
 def test_build_llm_fake_does_not_pass_reasoning_mode():

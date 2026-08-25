@@ -383,7 +383,7 @@ Both model pages were flagged "50% off" when checked, so list price is double th
 
 **Decision — model roles:**
 
-- **Answering** → Luna Pro (`reasoning.mode: pro`) over the full readable set.
+- **Answering** → plain Luna over the full readable set. **Amended 2026-08-25:** `reasoning.mode: pro` was the original choice and is now off — the knob stays on the adapter, but nothing sets it.
 - **Auditing** → plain Luna at low reasoning effort. Cheap, supports structured outputs, and entailment is not a reasoning task.
 - **Ingestion** → heuristics and regex. No LLM for parsing, ever.
 
