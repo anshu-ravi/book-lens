@@ -141,9 +141,14 @@ class CitationMarksRequest(BaseModel):
 
 
 class NewConversationRequest(BaseModel):
-    """Body of `POST /api/chat/conversations`."""
+    """Body of `POST /api/chat/conversations`.
+
+    `session_id` adopts a session the client already opened as a draft, so
+    naming a conversation does not re-assemble a context that is already built.
+    """
 
     book_id: str
+    session_id: str | None = None
 
 
 class RenameConversationRequest(BaseModel):
@@ -1104,6 +1109,14 @@ def delete_chat_session(sid: str):
 # -- saved conversations ---------------------------------------------------
 
 
+def _position_label(iconn: sqlite3.Connection, book_id: str, chapter_idx: int) -> str:
+    """How a saved position reads in a list: a chapter, or "Finished" at the end."""
+    last = progress.last_addressable_chapter_idx(iconn, book_id)
+    if last is not None and chapter_idx >= last:
+        return "Finished"
+    return _chapter_label(iconn, book_id, chapter_idx)
+
+
 def _conversation_summary(
     iconn: sqlite3.Connection, conv: conversations.Conversation
 ) -> dict:
@@ -1112,7 +1125,7 @@ def _conversation_summary(
         "book_id": conv.book_id,
         "title": conv.title,
         "chapter_idx": conv.chapter_idx,
-        "chapter_label": _chapter_label(iconn, conv.book_id, conv.chapter_idx),
+        "chapter_label": _position_label(iconn, conv.book_id, conv.chapter_idx),
         "turn_count": conv.turn_count,
         "created_at": conv.created_at,
         "updated_at": conv.updated_at,
@@ -1153,13 +1166,46 @@ def list_conversations(dbs: DbDep):
     return {"groups": groups}
 
 
+def _meta_from_record(iconn: sqlite3.Connection, record: sessions.SessionRecord) -> dict:
+    """The session header for a session that is already open."""
+    chapter_idx = record.chapter_idx or 0
+    return {
+        **_session_meta_fallback(iconn, record.book_id, chapter_idx),
+        "session_id": record.session_id,
+        "book_id": record.book_id,
+        "book_title": _book_title(iconn, record.book_id),
+        "chapter_idx": chapter_idx,
+        "chapter_label": _chapter_label(iconn, record.book_id, chapter_idx),
+        "para_count": record.session.assembled.para_count,
+        "token_estimate": record.session.assembled.token_estimate,
+    }
+
+
 @app.post("/api/chat/conversations")
 def create_conversation(body: NewConversationRequest, dbs: DbDep):
-    """Open a new conversation on a book, at the reader's current position."""
+    """Name a conversation, adopting the draft session the client is already holding.
+
+    A conversation row is only ever created here, and the UI only calls this
+    when a first question is about to be asked -- so an opened-and-abandoned
+    chat leaves nothing behind.
+    """
     iconn, pconn = dbs
     chapter_idx = _resolved_chapter_idx(iconn, pconn, body.book_id)
+
+    draft = sessions.registry.get(body.session_id) if body.session_id else None
+    adoptable = (
+        draft is not None
+        and draft.book_id == body.book_id
+        and draft.conversation_id is None
+        and draft.chapter_idx == chapter_idx
+    )
+
     conv = conversations.create(pconn, body.book_id, chapter_idx)
-    _, meta = _open_session(body.book_id, chapter_idx, conversation_id=conv.id)
+    if adoptable and draft is not None:
+        draft.conversation_id = conv.id
+        meta = _meta_from_record(iconn, draft)
+    else:
+        _, meta = _open_session(body.book_id, chapter_idx, conversation_id=conv.id)
     return {
         **meta,
         "conversation": _conversation_summary(iconn, conv),

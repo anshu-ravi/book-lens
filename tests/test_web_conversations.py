@@ -156,3 +156,40 @@ def test_unknown_conversation_is_404(tmp_path, monkeypatch):
         client.post("/api/chat/conversations/nope/messages", json={"question": "x"}).status_code
         == 404
     )
+
+
+def test_a_draft_session_is_adopted_rather_than_reassembled(tmp_path, monkeypatch):
+    """Naming a conversation must reuse the context the draft already built."""
+    _setup(tmp_path, monkeypatch, status="reading", chapter="1")
+
+    draft = client.post("/api/chat/sessions", json={"book_id": "sample-book"}).json()
+    sid = draft["session_id"]
+    assert registry.get(sid).conversation_id is None
+
+    named = client.post(
+        "/api/chat/conversations", json={"book_id": "sample-book", "session_id": sid}
+    ).json()
+    assert named["session_id"] == sid
+    assert registry.get(sid).conversation_id == named["conversation"]["id"]
+    assert named["token_estimate"] == draft["token_estimate"]
+
+
+def test_a_stale_draft_id_falls_back_to_a_fresh_session(tmp_path, monkeypatch):
+    _setup(tmp_path, monkeypatch, status="reading", chapter="1")
+
+    named = client.post(
+        "/api/chat/conversations", json={"book_id": "sample-book", "session_id": "gone"}
+    ).json()
+    assert named["session_id"] != "gone"
+    assert registry.get(named["session_id"]) is not None
+
+
+def test_a_finished_book_reports_finished_rather_than_a_chapter(tmp_path, monkeypatch):
+    """The last addressable chapter is often an appendix, which reads as nonsense."""
+    _setup(tmp_path, monkeypatch, status="finished", chapter=None)
+
+    cid = _new_conversation()["conversation"]["id"]
+    client.post(f"/api/chat/conversations/{cid}/messages", json={"question": "a question"})
+
+    group = client.get("/api/chat/conversations").json()["groups"][0]
+    assert group["conversations"][0]["chapter_label"] == "Finished"

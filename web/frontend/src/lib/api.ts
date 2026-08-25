@@ -159,10 +159,14 @@ export function listConversations(): Promise<ConversationListResponse> {
 	return request<ConversationListResponse>('/chat/conversations');
 }
 
-export function newConversation(bookId: string): Promise<ConversationResponse> {
+/** Names a conversation, adopting the draft session the page already opened. */
+export function newConversation(
+	bookId: string,
+	sessionId?: string,
+): Promise<ConversationResponse> {
 	return request<ConversationResponse>('/chat/conversations', {
 		method: 'POST',
-		body: JSON.stringify({ book_id: bookId }),
+		body: JSON.stringify({ book_id: bookId, session_id: sessionId ?? null }),
 	});
 }
 

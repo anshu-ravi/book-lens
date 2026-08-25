@@ -4,6 +4,7 @@
 	import {
 		ApiError,
 		askInConversation,
+		createChatSession,
 		deleteConversation,
 		getCitationMarks,
 		getCitationWindow,
@@ -36,10 +37,14 @@
 
 	let books = $state<Book[]>([]);
 	let groups = $state<ConversationGroup[]>([]);
-	let listOpen = $state(true);
+	// Collapsed by default: the thread is what the reader came for.
+	let listOpen = $state(false);
 
 	let header = $state<SessionHeader | null>(null);
+	// Null while the chat is a draft: a conversation is only written once it
+	// has a question in it, so opening the screen leaves nothing behind.
 	let conversationId = $state<string | null>(null);
+	let draftBookId = $state<string | null>(null);
 	let turns = $state<Turn[]>([]);
 	let startedAtLabel = $state('');
 	let movedOn = $state(false);
@@ -60,6 +65,8 @@
 	let peekTimer: ReturnType<typeof setTimeout> | null = null;
 
 	let selection = $state<{ text: string; x: number; y: number } | null>(null);
+
+	let switching = $state(false);
 
 	let threadEl = $state<HTMLDivElement | null>(null);
 	let textareaEl = $state<HTMLTextAreaElement | null>(null);
@@ -98,9 +105,9 @@
 		} else if (wantedBook && books.some((b) => b.id === wantedBook)) {
 			await start(wantedBook);
 		} else {
-			const first = groups[0]?.conversations[0];
-			if (first) await load(first.id);
-			else if (books.length > 0) await start(books[0].id);
+			const lastBook = groups[0]?.book_id;
+			const book = books.find((b) => b.id === lastBook) ?? books[0];
+			if (book) await start(book.id);
 		}
 	});
 
@@ -115,6 +122,7 @@
 	function adopt(res: ConversationResponse) {
 		header = res;
 		conversationId = res.conversation.id;
+		draftBookId = null;
 		turns = res.turns.map((t) => ({
 			question: t.question,
 			answer: t.answer,
@@ -131,11 +139,24 @@
 		void refreshMarks();
 	}
 
+	/** Open a draft on a book: a live session with no conversation row behind it. */
 	async function start(bookId: string) {
 		try {
-			adopt(await newConversation(bookId));
-			await refreshList();
-			await scrollToBottom();
+			const session = await createChatSession(bookId);
+			header = session;
+			conversationId = null;
+			draftBookId = bookId;
+			turns = [];
+			marks = [];
+			startedAtLabel = '';
+			movedOn = false;
+			sessionCost = 0;
+			openCitation = null;
+			hoveredTurn = null;
+			loadError = '';
+			noPosition = null;
+			switching = false;
+			await tick();
 			textareaEl?.focus();
 		} catch (e) {
 			handleOpenError(e, bookId);
@@ -168,12 +189,16 @@
 		} catch {
 			// Already gone is the outcome we wanted anyway.
 		}
-		if (id === conversationId) {
-			header = null;
-			conversationId = null;
-			turns = [];
-		}
 		await refreshList();
+		if (id === conversationId) {
+			const bookId = header?.book_id;
+			if (bookId) await start(bookId);
+			else {
+				header = null;
+				conversationId = null;
+				turns = [];
+			}
+		}
 	}
 
 	async function refreshMarks() {
@@ -192,7 +217,7 @@
 
 	async function submit() {
 		const q = question.trim();
-		if (!q || !conversationId || sending) return;
+		if (!q || sending || (!conversationId && !draftBookId)) return;
 
 		question = '';
 		autoGrow();
@@ -202,8 +227,17 @@
 
 		sending = true;
 		controller = new AbortController();
+		let named = false;
 		try {
-			const res = await askInConversation(conversationId, q, controller.signal);
+			// The first question is what brings the conversation into existence.
+			if (!conversationId && draftBookId) {
+				const created = await newConversation(draftBookId, header?.session_id);
+				conversationId = created.conversation.id;
+				draftBookId = null;
+				named = true;
+				if (header) header.session_id = created.session_id;
+			}
+			const res = await askInConversation(conversationId!, q, controller.signal);
 			const t = turns[turns.length - 1];
 			t.answer = res.answer;
 			t.citations = res.citations;
@@ -221,6 +255,15 @@
 				turns.pop();
 				loadError = e instanceof ApiError ? e.detail : 'That question could not be answered.';
 			}
+			// A conversation named a moment ago for a question that never landed
+			// would otherwise sit in the list empty.
+			if (named && conversationId && turns.length === 0) {
+				const orphan = conversationId;
+				conversationId = null;
+				draftBookId = header?.book_id ?? null;
+				await deleteConversation(orphan).catch(() => {});
+				await refreshList();
+			}
 		} finally {
 			sending = false;
 			controller = null;
@@ -230,13 +273,19 @@
 	async function cancel() {
 		controller?.abort();
 		turns.pop();
-		if (conversationId) {
-			try {
-				await undoConversationTurn(conversationId);
-			} catch {
-				// Best effort: the server-side turn may never have landed.
-			}
+		if (!conversationId) return;
+		try {
+			await undoConversationTurn(conversationId);
+		} catch {
+			// Best effort: the server-side turn may never have landed.
 		}
+		if (turns.length === 0) {
+			const orphan = conversationId;
+			conversationId = null;
+			draftBookId = header?.book_id ?? null;
+			await deleteConversation(orphan).catch(() => {});
+		}
+		await refreshList();
 	}
 
 	async function scrollToBottom() {
@@ -350,16 +399,6 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="chat">
-	<ConversationList
-		{groups}
-		{books}
-		activeId={conversationId}
-		bind:open={listOpen}
-		onopen={load}
-		onnew={start}
-		ondelete={remove}
-	/>
-
 	<div class="pane">
 		<div class="convo">
 		{#if loadError}
@@ -401,6 +440,36 @@
 								<span class="author">{header.book_author}</span>
 							{/if}
 						</div>
+					</div>
+
+					<div class="switcher">
+						<button
+							type="button"
+							class="small-caps switch"
+							onclick={() => (switching = !switching)}
+						>
+							Switch book
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+								<path d="M6 9l6 6 6-6" />
+							</svg>
+						</button>
+						{#if switching}
+							<div class="menu">
+								{#each books as b (b.id)}
+									<button
+										type="button"
+										class="menu-item"
+										class:on={b.id === header.book_id}
+										onclick={() => start(b.id)}
+									>
+										<span class="menu-title">{b.title}</span>
+										<span class="small-caps menu-pos">
+											{b.status === 'finished' ? 'Finished' : `Chapter ${b.chapters_read}`}
+										</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</div>
 				</div>
 
@@ -595,6 +664,15 @@
 			/>
 		{/if}
 	</div>
+
+	<ConversationList
+		{groups}
+		activeId={conversationId}
+		bind:open={listOpen}
+		onopen={load}
+		onnew={() => header && start(header.book_id)}
+		ondelete={remove}
+	/>
 </div>
 
 {#if peek}
@@ -709,6 +787,74 @@
 	}
 	.titles {
 		min-width: 0;
+	}
+	.switcher {
+		position: relative;
+		flex-shrink: 0;
+	}
+	.switch {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		font-size: 10px;
+		color: var(--bone-muted);
+		border: var(--hairline);
+		border-radius: 6px;
+		padding: 9px 13px;
+		background: color-mix(in srgb, var(--alcove) 70%, transparent);
+		cursor: pointer;
+		transition: color 0.14s, border-color 0.14s;
+	}
+	.switch svg {
+		width: 12px;
+		height: 12px;
+	}
+	.switch:hover {
+		color: var(--bone);
+		border-color: var(--brass-dim);
+	}
+	.menu {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 6px);
+		z-index: 30;
+		width: 280px;
+		max-height: 340px;
+		overflow-y: auto;
+		background: var(--ink-surface);
+		border: var(--hairline);
+		border-radius: 8px;
+		box-shadow: 0 16px 34px -18px rgba(0, 0, 0, 0.9);
+		padding: 6px;
+	}
+	.menu-item {
+		display: block;
+		width: 100%;
+		text-align: left;
+		background: none;
+		border: none;
+		padding: 9px 10px;
+		border-radius: 5px;
+		cursor: pointer;
+	}
+	.menu-item:hover {
+		background: var(--alcove);
+	}
+	.menu-item.on .menu-title {
+		color: var(--brass-text);
+	}
+	.menu-title {
+		display: block;
+		font-size: var(--fs-14);
+		line-height: 1.35;
+		color: var(--bone);
+	}
+	.menu-pos {
+		display: block;
+		margin-top: 3px;
+		font-size: 9px;
+		letter-spacing: 0.16em;
+		color: var(--bone-faint);
 	}
 	.series {
 		font-size: 10px;

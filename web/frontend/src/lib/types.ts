@@ -137,15 +137,8 @@ export interface CreateSessionRequest {
 	book_id: string;
 }
 
-export interface CreateSessionResponse {
-	session_id: string;
-	book_id: string;
-	book_title: string;
-	prior_titles: string[];
-	chapter_label: string;
-	para_count: number;
-	token_estimate: number;
-}
+/** `POST /chat/sessions` returns the same header a conversation does, minus the transcript. */
+export type CreateSessionResponse = SessionHeader;
 
 export interface SendMessageRequest {
 	question: string;
